@@ -9,68 +9,21 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: fcg-production-deployment
-  cancel-in-progress: true
-
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Show versions
+      - name: Verify production build exists
         run: |
-          node --version
-          npm --version
-          npm config get registry
-
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund --legacy-peer-deps
-        timeout-minutes: 10
-
-      - name: Build website
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npm run build
-
-      - name: Verify production build
-        run: |
+          ls -la
           test -f dist/index.html
           test -d dist/assets
 
-      - name: Add cPanel routing
-        run: |
-          cat > dist/.htaccess <<'EOF'
-          Options -Indexes
-
-          RewriteEngine On
-
-          RewriteCond %{HTTPS} !=on
-          RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
-
-          RewriteCond %{REQUEST_FILENAME} !-f
-          RewriteCond %{REQUEST_FILENAME} !-d
-          RewriteRule ^ index.html [L]
-
-          <IfModule mod_headers.c>
-            Header always set X-Content-Type-Options "nosniff"
-            Header always set X-Frame-Options "SAMEORIGIN"
-            Header always set Referrer-Policy "strict-origin-when-cross-origin"
-          </IfModule>
-          EOF
-
-      - name: Deploy to cPanel
+      - name: Upload to cPanel
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
           server: ${{ secrets.CPANEL_FTP_SERVER }}
