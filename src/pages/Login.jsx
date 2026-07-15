@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Eye, EyeOff, Mail } from "lucide-react";
+import { Loader2, Eye, EyeOff, Mail, CheckCircle2, ShieldCheck, BarChart3 } from "lucide-react";
+
+const LOGO_URL = 'https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6979737791aaf996d5335e29/016378777_TheFigaroCoffeeGroup_logo.png';
 
 const NEEDS_VERIFICATION_HINTS = ['verify', 'verification', 'otp', 'confirm your'];
 
@@ -83,46 +85,64 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#1fd655]/5 to-white flex items-center justify-center px-4">
+    <div className="min-h-screen bg-white lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(480px,0.95fr)]">
+      <section className="relative hidden overflow-hidden bg-slate-950 p-12 text-white lg:flex lg:flex-col lg:justify-between xl:p-16">
+        <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_20%_20%,#10b981_0,transparent_34%),radial-gradient(circle_at_85%_75%,#166534_0,transparent_32%)]" />
+        <div className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(rgba(255,255,255,.8)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.8)_1px,transparent_1px)] [background-size:48px_48px]" />
+        <div className="relative">
+          <div className="inline-flex rounded-2xl bg-white px-5 py-3 shadow-xl shadow-black/10">
+            <img src={LOGO_URL} alt="Figaro Coffee Group" className="h-12 w-auto object-contain" />
+          </div>
+        </div>
+        <div className="relative max-w-xl">
+          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-emerald-400">Internal operations workspace</p>
+          <h1 className="text-4xl font-semibold leading-tight tracking-tight xl:text-5xl">Support that keeps every store moving.</h1>
+          <p className="mt-5 max-w-lg text-base leading-7 text-slate-300">Manage requests, approvals, and quality audits in one secure, reliable place built for the Figaro team.</p>
+          <div className="mt-10 grid grid-cols-3 gap-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm"><CheckCircle2 className="mb-3 h-5 w-5 text-emerald-400" /><p className="text-sm font-medium">Faster resolution</p></div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm"><ShieldCheck className="mb-3 h-5 w-5 text-emerald-400" /><p className="text-sm font-medium">Secure access</p></div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm"><BarChart3 className="mb-3 h-5 w-5 text-emerald-400" /><p className="text-sm font-medium">Clear insights</p></div>
+          </div>
+        </div>
+        <p className="relative text-xs text-slate-500">© {new Date().getFullYear()} Figaro Coffee Group</p>
+      </section>
+
+      <section className="flex min-h-screen items-center justify-center bg-slate-50 px-5 py-10 sm:px-10 lg:bg-white">
       <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="flex justify-center mb-8">
-          <img
-            src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6979737791aaf996d5335e29/016378777_TheFigaroCoffeeGroup_logo.png"
-            alt="Logo"
-            className="h-20 w-auto object-contain"
-          />
+        <div className="mb-9 lg:hidden">
+          <img src={LOGO_URL} alt="Figaro Coffee Group" className="h-14 w-auto object-contain" />
         </div>
 
-        <Card className="border-2 border-slate-200 shadow-xl">
+        <Card className="rounded-2xl border-slate-200 bg-white shadow-sm lg:border-0 lg:shadow-none">
           {step === 'login' ? (
             <>
-              <CardHeader className="text-center pb-2">
-                <CardTitle className="text-2xl font-bold text-slate-900">Sign In</CardTitle>
-                <p className="text-slate-500 text-sm mt-1">Enter your credentials to access the HelpDesk</p>
+              <CardHeader className="px-6 pb-3 pt-7 text-left sm:px-8 lg:px-0">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Welcome back</p>
+                <CardTitle className="text-3xl font-bold tracking-tight text-slate-950">Sign in to your account</CardTitle>
+                <p className="mt-2 text-sm leading-6 text-slate-500">Use your work credentials to access the support and audit workspace.</p>
               </CardHeader>
-              <CardContent className="pt-4">
-                <form onSubmit={handleLogin} className="space-y-4">
+              <CardContent className="px-6 pb-7 pt-4 sm:px-8 lg:px-0">
+                <form onSubmit={handleLogin} className="space-y-5">
                   {error && (
                     <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2">
                       {error}
                     </div>
                   )}
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email" className="text-sm font-semibold text-slate-700">Work email</Label>
                     <Input
                       id="email"
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@example.com"
+                      placeholder="name@figaro.ph"
                       required
                       autoFocus
-                      className="h-11"
+                      className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 shadow-none focus:bg-white"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
+                    <Label htmlFor="password" className="text-sm font-semibold text-slate-700">Password</Label>
                     <div className="relative">
                       <Input
                         id="password"
@@ -131,7 +151,7 @@ export default function Login() {
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Your password"
                         required
-                        className="h-11 pr-10"
+                        className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 pr-11 shadow-none focus:bg-white"
                       />
                       <button
                         type="button"
@@ -143,7 +163,7 @@ export default function Login() {
                       </button>
                     </div>
                     <div className="text-right">
-                      <Link to="/forgot-password" className="text-xs text-slate-500 hover:text-slate-700 underline">
+                      <Link to="/forgot-password" className="text-xs font-medium text-emerald-700 hover:text-emerald-800">
                         Forgot password?
                       </Link>
                     </div>
@@ -151,7 +171,7 @@ export default function Login() {
                   <Button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-11 bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900 font-bold shadow-md"
+                    className="h-12 w-full rounded-xl bg-emerald-700 font-semibold text-white shadow-sm hover:bg-emerald-800"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                     {loading ? 'Signing in...' : 'Sign In'}
@@ -161,13 +181,14 @@ export default function Login() {
             </>
           ) : (
             <>
-              <CardHeader className="text-center pb-2">
-                <CardTitle className="text-2xl font-bold text-slate-900">Verify Your Account</CardTitle>
+              <CardHeader className="px-6 pb-3 pt-7 text-left sm:px-8 lg:px-0">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">One more step</p>
+                <CardTitle className="text-3xl font-bold tracking-tight text-slate-950">Verify your account</CardTitle>
                 <p className="text-slate-500 text-sm mt-1">
                   Enter the 6-digit code sent to <strong>{email}</strong>
                 </p>
               </CardHeader>
-              <CardContent className="pt-4">
+              <CardContent className="px-6 pb-7 pt-4 sm:px-8 lg:px-0">
                 <form onSubmit={handleVerify} className="space-y-4">
                   {error && (
                     <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2">
@@ -188,7 +209,7 @@ export default function Login() {
                   <Button
                     type="submit"
                     disabled={loading || otpCode.length !== 6}
-                    className="w-full h-11 bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900 font-bold shadow-md"
+                    className="h-12 w-full rounded-xl bg-emerald-700 font-semibold text-white shadow-sm hover:bg-emerald-800"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                     {loading ? 'Verifying...' : 'Verify & Sign In'}
@@ -215,10 +236,8 @@ export default function Login() {
           )}
         </Card>
 
-        <p className="text-center text-xs text-slate-400 mt-6">
-          © {new Date().getFullYear()} HelpDesk System
-        </p>
       </div>
+      </section>
     </div>
   );
 }

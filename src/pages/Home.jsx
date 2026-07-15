@@ -158,43 +158,50 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#1fd655]/5 to-white">
-      <div className="max-w-7xl mx-auto px-4 py-10">
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-[1440px] px-4 py-7 sm:px-6 sm:py-9 lg:px-8">
         {/* Header */}
-        <div className="mb-10">
-          <h1 className="text-4xl font-bold text-slate-900 mb-3">
-            {isStaff ? 'Support Dashboard' : isApprover ? 'Ticket Approvals' : 'My Support Tickets'}
-          </h1>
-          <p className="text-slate-600 text-lg">
-            {isStaff 
-              ? user.user_type === 'admin' 
-                ? 'Managing all department tickets' 
-                : `Managing tickets for ${user.department_name}`
-              : 'Track and manage your support requests'}
-          </p>
+        <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Ticket workspace</p>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+              {isStaff ? 'Support overview' : isApprover ? 'Ticket approvals' : 'My support tickets'}
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              {isStaff
+                ? user.user_type === 'admin'
+                  ? 'Monitor requests, priorities, and resolution progress across every department.'
+                  : `Monitor and coordinate requests assigned to ${user.department_name}.`
+                : 'Submit requests, follow their progress, and keep every conversation in one place.'}
+            </p>
+          </div>
+          <Button onClick={() => setShowForm(true)} className="h-11 shrink-0 rounded-xl bg-emerald-700 px-5 font-semibold text-white shadow-sm hover:bg-emerald-800">
+            <Plus className="mr-2 h-4 w-4" />
+            Create ticket
+          </Button>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
-          <StatsCard title="Total Tickets" value={stats.total} icon={Ticket} color="bg-[#1fd655]" />
-          <StatsCard title="Open" value={stats.open} icon={AlertCircle} color="bg-blue-500" />
-          <StatsCard title="In Progress" value={stats.inProgress} icon={Clock} color="bg-amber-500" />
-          <StatsCard title="Resolved" value={stats.resolved} icon={CheckCircle} color="bg-emerald-500" />
+        <div className="mb-8 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          <StatsCard title="Total tickets" value={stats.total} icon={Ticket} color="bg-slate-900" />
+          <StatsCard title="Open" value={stats.open} icon={AlertCircle} color="bg-blue-600" />
+          <StatsCard title="In progress" value={stats.inProgress} icon={Clock} color="bg-amber-500" />
+          <StatsCard title="Resolved" value={stats.resolved} icon={CheckCircle} color="bg-emerald-600" />
         </div>
 
         {/* Actions */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-8">
+        <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:flex-row">
           <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="Search tickets..."
+              placeholder="Search by title or description"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-12 bg-white border-2 border-slate-200 h-12 text-base focus:border-[#1fd655]"
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+              className="h-11 rounded-xl border-slate-200 bg-slate-50 pl-10 text-sm shadow-none focus:bg-white"
             />
           </div>
           <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}>
-            <SelectTrigger className="w-full sm:w-48 bg-white border-2 border-slate-200 h-12 focus:border-[#1fd655]">
+            <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white sm:w-44">
               <SelectValue placeholder="Filter status" />
             </SelectTrigger>
             <SelectContent>
@@ -208,7 +215,7 @@ export default function Home() {
             </SelectContent>
           </Select>
           <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setCurrentPage(1); }}>
-            <SelectTrigger className="w-full sm:w-48 bg-white border-2 border-slate-200 h-12 focus:border-[#1fd655]">
+            <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white sm:w-48">
               <SelectValue placeholder="Filter category" />
             </SelectTrigger>
             <SelectContent>
@@ -218,10 +225,6 @@ export default function Home() {
               ))}
             </SelectContent>
           </Select>
-          <Button onClick={() => setShowForm(true)} className="bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900 font-bold h-12 px-6 shadow-lg hover:shadow-xl transition-all">
-            <Plus className="w-5 h-5 mr-2" />
-            New Ticket
-          </Button>
         </div>
 
         {/* Tickets List */}
@@ -238,14 +241,14 @@ export default function Home() {
         ) : filteredTickets.length > 0 ? (
           <>
             {/* Page size + count */}
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-slate-500">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-slate-500 sm:text-sm">
                 Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredTickets.length)} of {filteredTickets.length} tickets
               </p>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-slate-500">Per page:</span>
+                <span className="hidden text-sm text-slate-500 sm:inline">Per page:</span>
                 <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}>
-                  <SelectTrigger className="w-20 h-9 bg-white border-2 border-slate-200">
+                  <SelectTrigger className="h-9 w-20 rounded-lg border-slate-200 bg-white">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -258,7 +261,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="grid gap-4">
+            <div className="grid gap-3">
               {paginatedTickets.map(ticket => (
                 <TicketCard 
                   key={ticket.id} 
@@ -285,7 +288,7 @@ export default function Home() {
                     variant={currentPage === page ? 'default' : 'outline'}
                     size="icon"
                     onClick={() => setCurrentPage(page)}
-                    className={currentPage === page ? 'bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900' : ''}
+                    className={currentPage === page ? 'bg-emerald-700 text-white hover:bg-emerald-800' : ''}
                   >
                     {page}
                   </Button>
@@ -302,17 +305,19 @@ export default function Home() {
             )}
           </>
         ) : (
-          <div className="text-center py-20 bg-white border-2 border-dashed border-slate-300 rounded-2xl">
-            <Ticket className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600 text-lg mb-6 font-medium">
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-20 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+              <Ticket className="h-6 w-6 text-slate-400" />
+            </div>
+            <p className="mb-6 text-base font-medium text-slate-600">
               {searchTerm || statusFilter !== 'all' 
                 ? 'No tickets match your search' 
                 : 'No tickets yet'}
             </p>
             {!isStaff && (
-              <Button onClick={() => setShowForm(true)} className="bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900 font-bold h-12 px-8 shadow-lg hover:shadow-xl">
-                <Plus className="w-5 h-5 mr-2" />
-                Create Your First Ticket
+              <Button onClick={() => setShowForm(true)} className="h-11 rounded-xl bg-emerald-700 px-6 font-semibold text-white hover:bg-emerald-800">
+                <Plus className="mr-2 h-4 w-4" />
+                Create your first ticket
               </Button>
             )}
           </div>

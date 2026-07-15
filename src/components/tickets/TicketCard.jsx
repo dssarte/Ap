@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, User, Building2, AlertCircle, Tag } from "lucide-react";
+import { Clock, User, Building2, AlertCircle, Tag, ChevronRight } from "lucide-react";
 import { formatPHDateTime } from "@/lib/dateUtils";
 import SLAIndicator from "./SLAIndicator";
 
@@ -23,14 +23,14 @@ const priorityColors = {
 
 export default function TicketCard({ ticket, onClick }) {
   return (
-    <Card 
-      className="hover:shadow-xl hover:border-[#1fd655]/30 transition-all duration-300 cursor-pointer border border-slate-200 bg-white"
+    <Card
+      className="group cursor-pointer rounded-2xl border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
       onClick={() => onClick(ticket)}
     >
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between gap-4">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3 sm:gap-5">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <Badge className={`${priorityColors[ticket.priority] || priorityColors.medium} text-xs font-semibold uppercase tracking-wide`}>
                 {ticket.priority}
               </Badge>
@@ -52,15 +52,15 @@ export default function TicketCard({ ticket, onClick }) {
               <SLAIndicator ticket={ticket} compact />
             </div>
             
-            <h3 className="font-bold text-slate-900 truncate mb-2 text-lg">
+            <h3 className="mb-1.5 truncate text-base font-semibold text-slate-900 sm:text-lg">
               {ticket.title}
             </h3>
             
-            <p className="text-sm text-slate-600 line-clamp-2 mb-4">
+            <p className="mb-4 line-clamp-2 text-sm leading-6 text-slate-500">
               {ticket.description}
             </p>
             
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
               <span className="flex items-center gap-1">
                 <Building2 className="w-3 h-3" />
                 {ticket.department_name}
@@ -76,9 +76,10 @@ export default function TicketCard({ ticket, onClick }) {
             </div>
           </div>
           
-          {ticket.priority === 'urgent' && (
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-          )}
+          <div className="mt-1 flex shrink-0 items-center gap-2">
+            {ticket.priority === 'urgent' && <AlertCircle className="h-5 w-5 text-red-500" />}
+            <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-700" />
+          </div>
         </div>
       </CardContent>
     </Card>

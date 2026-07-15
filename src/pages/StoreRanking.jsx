@@ -392,15 +392,10 @@ export default function StoreRanking() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+    <div className="app-page app-page-narrow">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-[#1fd655] flex items-center justify-center shadow-md">
-            <Trophy className="w-6 h-6 text-white" />
-          </div>
-          Store Ranking
-        </h1>
+      <div className="app-page-header">
+        <div><p className="app-page-eyebrow">Quality leaderboard</p><h1 className="app-page-heading">Store ranking</h1><p className="app-page-description">Compare audit performance across stores and brands.</p></div>
         <div className="flex items-center gap-2">
           <Button onClick={handleExportCsv} variant="outline" className="font-bold gap-2 border-slate-300">
             <Download className="w-4 h-4" /> CSV

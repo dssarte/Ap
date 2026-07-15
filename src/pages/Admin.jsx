@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Building2, Users, Settings, Loader2, ShieldAlert, Tags, Clock, Zap, BarChart3, GitBranch, ClipboardList, Store, Download, CalendarCheck, Database, FileDown } from "lucide-react";
+import { Building2, Users, Loader2, ShieldAlert, Tags, Clock, Zap, BarChart3, GitBranch, ClipboardList, Store, Download, CalendarCheck, Database, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import DepartmentManager from "@/components/admin/DepartmentManager";
 import UserManager from "@/components/admin/UserManager";
@@ -88,17 +88,13 @@ export default function Admin() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#1fd655]/5 to-white">
-      <div className="max-w-7xl mx-auto px-4 py-10">
-        <div className="mb-10 flex items-start justify-between flex-wrap gap-4">
+    <div className="app-page-shell">
+      <div className="app-page">
+        <div className="app-page-header">
           <div>
-            <h1 className="text-4xl font-bold text-slate-900 mb-3 flex items-center gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-[#1fd655] flex items-center justify-center shadow-lg">
-                <Settings className="w-7 h-7 text-white" />
-              </div>
-              Admin Panel
-            </h1>
-            <p className="text-slate-600 text-lg">Manage departments, users, and system settings</p>
+            <p className="app-page-eyebrow">Workspace configuration</p>
+            <h1 className="app-page-heading">Administration</h1>
+            <p className="app-page-description">Manage departments, users, policies, audits, and system settings.</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <Button
@@ -127,7 +123,7 @@ export default function Admin() {
         </div>
 
         <Tabs defaultValue="departments" className="space-y-8">
-          <TabsList className="bg-white shadow-md border-2 border-slate-200 p-1.5 rounded-xl h-auto flex-wrap gap-1">
+          <TabsList className="app-tabs-list">
             <TabsTrigger value="departments" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-6 h-11 transition-all">
               <Building2 className="w-5 h-5 mr-2" />
               Departments

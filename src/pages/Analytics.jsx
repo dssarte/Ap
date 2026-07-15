@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ShieldAlert, Ticket, Clock, CheckCircle2, TrendingUp } from "lucide-react";
+import { Loader2, ShieldAlert, Ticket, Clock, CheckCircle2 } from "lucide-react";
 import { subDays, differenceInHours } from 'date-fns';
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
@@ -191,17 +191,13 @@ export default function Analytics() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+    <div className="app-page">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="app-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-[#1fd655] flex items-center justify-center shadow-md">
-              <TrendingUp className="w-6 h-6 text-white" />
-            </div>
-            Analytics Overview
-          </h1>
-          <p className="text-slate-500 mt-1 ml-14">
+          <p className="app-page-eyebrow">Operational intelligence</p>
+          <h1 className="app-page-heading">Analytics overview</h1>
+          <p className="app-page-description">
             {user?.user_type === 'store_manager' ? `Metrics for ${(user.assigned_stores || []).join(', ') || 'your stores'}` : 'System-wide ticket performance metrics'}
           </p>
         </div>

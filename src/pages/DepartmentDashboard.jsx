@@ -207,17 +207,18 @@ export default function DepartmentDashboard() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
+    <div className="app-page">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="app-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Department Dashboard</h1>
-          <p className="text-slate-600 mt-1">{user.department_name}</p>
+          <p className="app-page-eyebrow">Department workspace</p>
+          <h1 className="app-page-heading">My tickets</h1>
+          <p className="app-page-description">{user.department_name}</p>
         </div>
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList className="bg-white shadow-md border-2 border-slate-200 p-1 rounded-xl h-auto mb-6 flex gap-1">
+        <TabsList className="app-tabs-list">
           <TabsTrigger value="overview" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-5 h-10 gap-2">
             <BarChart3 className="w-4 h-4" /> Overview
           </TabsTrigger>

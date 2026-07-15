@@ -4,14 +4,14 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 0 0% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
+    --primary: 158 64% 27%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 0 0% 96.1%;
     --secondary-foreground: 0 0% 9%;
     --muted: 0 0% 96.1%;
@@ -22,13 +22,13 @@
     --destructive-foreground: 0 0% 98%;
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
+    --ring: 158 64% 27%;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
+    --radius: 0.75rem;
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -75,6 +75,89 @@
   }
 }
 
+@layer components {
+  .app-page-shell {
+    @apply min-h-screen bg-slate-50;
+  }
+
+  .app-page {
+    @apply mx-auto w-full max-w-[1440px] space-y-6 px-4 py-7 sm:px-6 sm:py-9 lg:px-8;
+  }
+
+  .app-page-narrow {
+    @apply max-w-5xl;
+  }
+
+  .app-page-header {
+    @apply mb-2 flex flex-col justify-between gap-5 sm:flex-row sm:items-end;
+  }
+
+  .app-page-heading {
+    @apply text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl;
+  }
+
+  .app-page-eyebrow {
+    @apply mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700;
+  }
+
+  .app-page-description {
+    @apply mt-2 max-w-2xl text-sm leading-6 text-slate-500;
+  }
+
+  .app-tabs-list {
+    @apply mb-6 flex h-auto max-w-full flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm;
+  }
+
+  .app-tabs-trigger {
+    @apply h-10 rounded-lg px-4 text-sm font-medium text-slate-600 transition-colors data-[state=active]:bg-emerald-50 data-[state=active]:font-semibold data-[state=active]:text-emerald-900 data-[state=active]:shadow-none;
+  }
+}
+
+/* Normalize legacy internal panels while keeping their behavior untouched. */
+.app-page [class~="border-2"] {
+  border-width: 1px;
+}
+
+.app-page [class~="shadow-xl"],
+.app-page [class~="shadow-lg"],
+.app-page [class~="shadow-md"] {
+  box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+}
+
+.app-page [class~="bg-[#1fd655]"] {
+  background-color: rgb(4 120 87);
+}
+
+.app-page [class~="bg-[#1fd655]"][class~="text-slate-900"] {
+  color: white;
+}
+
+.app-page [class~="bg-[#1fd655]"]:hover {
+  background-color: rgb(6 95 70);
+}
+
+.app-page [class~="text-[#1fd655]"] {
+  color: rgb(4 120 87);
+}
+
+.app-page [data-state="active"][class*="data-[state=active]:bg-[#1fd655]"] {
+  background-color: rgb(236 253 245);
+  color: rgb(6 78 59);
+  box-shadow: none;
+}
+
+.app-page table thead {
+  background-color: rgb(248 250 252);
+}
+
+.app-page table tbody tr {
+  transition: background-color 150ms ease;
+}
+
+.app-page table tbody tr:hover {
+  background-color: rgb(248 250 252 / 0.8);
+}
+
 
 
 @layer base {
@@ -83,6 +166,16 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  ::selection {
+    @apply bg-emerald-200 text-emerald-950;
+  }
+
+  button, a, input, textarea, select {
+    -webkit-tap-highlight-color: transparent;
   }
 }

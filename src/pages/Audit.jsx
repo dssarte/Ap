@@ -209,9 +209,9 @@ export default function Audit() {
   const titleMap = { list: 'Audit', history: 'Audit History', fill: selectedTemplate?.title, edit: selectedSubmission?.template_title, detail: selectedSubmission?.template_title };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+    <div className="app-page app-page-narrow">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="app-page-header">
         <div>
           {view !== 'list' && view !== 'history' && (
             <Button variant="ghost" size="sm" className="mb-2 -ml-2 gap-1 text-slate-500" onClick={() => setView(view === 'fill' ? 'list' : 'history')}>
@@ -223,13 +223,9 @@ export default function Audit() {
               <ChevronLeft className="w-4 h-4" /> Back
             </Button>
           )}
-          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-[#1fd655] flex items-center justify-center shadow-md">
-              <ClipboardList className="w-6 h-6 text-white" />
-            </div>
-            {titleMap[view] || 'Audit'}
-          </h1>
-          {view === 'list' && <p className="text-slate-500 mt-1 ml-14">Select a checklist to start an audit</p>}
+          <p className="app-page-eyebrow">Quality assurance</p>
+          <h1 className="app-page-heading">{titleMap[view] || 'Audit'}</h1>
+          {view === 'list' && <p className="app-page-description">Select a checklist to start an audit.</p>}
         </div>
         {view === 'list' && (
           <Button variant="outline" onClick={() => setView('history')} className="gap-2">

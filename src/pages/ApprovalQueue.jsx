@@ -293,15 +293,16 @@ export default function ApprovalQueue() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#1fd655]/5 to-white">
-      <div className="max-w-7xl mx-auto px-4 py-10">
-        <div className="mb-10 flex items-start justify-between gap-4">
+    <div className="app-page-shell">
+      <div className="app-page">
+        <div className="app-page-header">
           <div>
-            <h1 className="text-4xl font-bold text-slate-900 mb-3">Approval Queue</h1>
-            <p className="text-slate-600 text-lg">Review and approve pending ticket requests</p>
+            <p className="app-page-eyebrow">Request governance</p>
+            <h1 className="app-page-heading">Approval queue</h1>
+            <p className="app-page-description">Review and approve pending ticket requests.</p>
           </div>
           {!isLoading && (
-            <div className="flex items-center gap-2 bg-amber-50 border-2 border-amber-200 rounded-xl px-5 py-3 shrink-0">
+            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
               <Clock className="w-5 h-5 text-amber-500" />
               <span className="text-amber-800 font-semibold text-lg">{stats.pending}</span>
               <span className="text-amber-700 text-sm font-medium">ticket{stats.pending !== 1 ? 's' : ''} awaiting approval</span>
@@ -326,7 +327,7 @@ export default function ApprovalQueue() {
           </div>
         ) : (
           <Tabs defaultValue="pending">
-            <TabsList className="mb-6">
+            <TabsList className="app-tabs-list">
               <TabsTrigger value="pending">Pending ({stats.pending})</TabsTrigger>
               <TabsTrigger value="approved">Approved ({stats.approved})</TabsTrigger>
               <TabsTrigger value="rejected">Rejected ({stats.rejected})</TabsTrigger>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Database, FileDown, ShieldAlert, ArrowLeft } from "lucide-react";
+import { Loader2, FileDown, ShieldAlert, ArrowLeft } from "lucide-react";
 import { Link } from 'react-router-dom';
 
 export default function SqlExport() {
@@ -39,21 +39,19 @@ export default function SqlExport() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#1fd655]/5 to-white">
-      <div className="max-w-3xl mx-auto px-4 py-10">
+    <div className="app-page-shell">
+      <div className="app-page app-page-narrow">
         <Link to="/Admin">
           <Button variant="ghost" size="sm" className="mb-4 -ml-2 gap-1 text-slate-500">
             <ArrowLeft className="w-4 h-4" /> Back to Admin
           </Button>
         </Link>
 
-        <div className="flex items-center gap-4 mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-[#1fd655] flex items-center justify-center shadow-lg">
-            <Database className="w-7 h-7 text-white" />
-          </div>
+        <div className="app-page-header">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">Export to Supabase (PostgreSQL)</h1>
-            <p className="text-slate-600">Download all app data as a ready-to-import <code className="text-[#1fd655] font-semibold">.sql</code> file.</p>
+            <p className="app-page-eyebrow">Data portability</p>
+            <h1 className="app-page-heading">Export to Supabase</h1>
+            <p className="app-page-description">Download all app data as a ready-to-import PostgreSQL <code className="font-semibold text-emerald-700">.sql</code> file.</p>
           </div>
         </div>
 

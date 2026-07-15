@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, BarChart3, ShieldAlert } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
 import { subDays, differenceInHours } from 'date-fns';
 import VolumeChart from '@/components/dept-analytics/VolumeChart';
 import StaffResolutionChart from '@/components/dept-analytics/StaffResolutionChart';
@@ -195,17 +195,13 @@ export default function DeptAnalytics() {
     : user?.department_name || 'Your Department';
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+    <div className="app-page">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="app-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-[#1fd655] flex items-center justify-center shadow-md">
-              <BarChart3 className="w-6 h-6 text-white" />
-            </div>
-            Department Analytics
-          </h1>
-          <p className="text-slate-500 mt-1 ml-14">{activeDeptName}</p>
+          <p className="app-page-eyebrow">Team performance</p>
+          <h1 className="app-page-heading">Department analytics</h1>
+          <p className="app-page-description">{activeDeptName}</p>
         </div>
         <div className="flex items-center gap-3">
           <Badge className="bg-[#1fd655]/10 text-slate-700 border border-[#1fd655]/30 font-semibold self-start sm:self-center">

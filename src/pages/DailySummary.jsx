@@ -153,19 +153,17 @@ export default function DailySummary() {
   const loading = loadingTemplates || loadingStores || loadingSubs;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+    <div className="app-page app-page-narrow">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-[#1fd655] flex items-center justify-center shadow-md">
-            <ClipboardCheck className="w-6 h-6 text-white" />
-          </div>
+      <div className="app-page-header">
+        <div>
+          <p className="app-page-eyebrow">Checklist monitoring</p>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Daily Summary</h1>
-            <p className="text-sm text-slate-500">
+            <h1 className="app-page-heading">Daily summary</h1>
+            <p className="app-page-description">
               {isStoreManager ? `Checklist completion for ${assignedStores.length} linked store${assignedStores.length !== 1 ? 's' : ''}` : 'Checklist completion across all stores'}
             </p>
-          </div>
+        </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">

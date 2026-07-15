@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, BarChart3, TrendingUp, TrendingDown, Minus, Store, ClipboardCheck } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, Store, ClipboardCheck } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, Cell
@@ -213,16 +213,14 @@ export default function AuditDashboard() {
   const COLORS = ['#1fd655', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div className="app-page">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-[#1fd655] flex items-center justify-center shadow-md">
-            <BarChart3 className="w-6 h-6 text-white" />
-          </div>
+      <div className="app-page-header">
+        <div>
+          <p className="app-page-eyebrow">Quality intelligence</p>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Audit Dashboard</h1>
-            <p className="text-sm text-slate-500">Store quality performance summary</p>
+            <h1 className="app-page-heading">Audit dashboard</h1>
+            <p className="app-page-description">Store quality performance summary.</p>
           </div>
         </div>
         <ExcelExportButton onClick={handleExportExcel} disabled={filtered.length === 0} />

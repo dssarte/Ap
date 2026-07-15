@@ -5,7 +5,7 @@ import { queryClientInstance } from '@/lib/query-client';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, TrendingUp, TrendingDown, Minus, BarChart3, ClipboardCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, ClipboardCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell
@@ -229,21 +229,19 @@ export default function StoreAuditAnalytics() {
   );
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+    <div className="app-page app-page-narrow">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-[#1fd655] flex items-center justify-center shadow-md">
-            <BarChart3 className="w-6 h-6 text-white" />
-          </div>
+      <div className="app-page-header">
+        <div>
+          <p className="app-page-eyebrow">Store performance</p>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">My Store Analytics</h1>
+            <h1 className="app-page-heading">Store analytics</h1>
             {/*}
             <p className="text-sm text-slate-500">
               {selectedStore === 'all' ? storeNames.join(', ') : selectedStore} · Audit performance summary
             </p>
             */}
-          </div>
+        </div>
         </div>
         <div className="flex items-center gap-3">
           {isStoreManager && storeNames.length > 1 && (

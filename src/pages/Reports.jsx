@@ -166,23 +166,20 @@ export default function Reports() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#1fd655]/5 to-white">
-      <div className="max-w-7xl mx-auto px-4 py-10">
+    <div className="app-page-shell">
+      <div className="app-page">
         {/* Header */}
-        <div className="mb-10">
-          <h1 className="text-4xl font-bold text-slate-900 mb-3 flex items-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-[#1fd655] flex items-center justify-center shadow-lg">
-              <BarChart3 className="w-7 h-7 text-white" />
-            </div>
-            Reports & Analytics
-          </h1>
-          <p className="text-slate-600 text-lg">
+        <div className="app-page-header">
+          <div>
+          <p className="app-page-eyebrow">Performance reporting</p>
+          <h1 className="app-page-heading">Reports & analytics</h1>
+          <p className="app-page-description">
             {user.user_type === 'admin'
               ? 'System-wide performance metrics and insights'
               : user.user_type === 'store_manager'
               ? `Performance metrics for ${(user.assigned_stores || []).join(', ') || 'your stores'}`
               : `Performance metrics for ${user.department_name}`}
-          </p>
+          </p></div>
         </div>
 
         {/* Filters */}

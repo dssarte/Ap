@@ -115,8 +115,8 @@ export default function Register() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#1fd655]/10 to-white flex items-center justify-center p-4">
-        <Card className="w-full max-w-md border-2 border-slate-200 shadow-2xl">
+      <div className="app-page min-h-[calc(100vh-5rem)] flex items-center justify-center">
+        <Card className="w-full max-w-md rounded-2xl border border-slate-200 shadow-sm">
           <CardContent className="p-8 text-center">
             <div className="w-20 h-20 rounded-full bg-[#1fd655] flex items-center justify-center mx-auto mb-6">
               <CheckCircle className="w-10 h-10 text-white" />
@@ -132,8 +132,8 @@ export default function Register() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#1fd655]/10 to-white flex items-center justify-center p-4">
-      <Card className="w-full max-w-md border-2 border-slate-200 shadow-2xl">
+    <div className="app-page min-h-[calc(100vh-5rem)] flex items-center justify-center">
+      <Card className="w-full max-w-md rounded-2xl border border-slate-200 shadow-sm">
         <CardHeader className="space-y-4 text-center border-b bg-gradient-to-r from-[#1fd655]/5 to-transparent">
           <div className="w-16 h-16 rounded-2xl bg-[#1fd655] flex items-center justify-center mx-auto shadow-lg">
             <Headphones className="w-8 h-8 text-white" />

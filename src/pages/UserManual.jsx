@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
-  BookOpen, Users, Building2, Tags, Clock, CheckCircle, XCircle,
+  Users, Building2, Tags, Clock, CheckCircle, XCircle,
   AlertCircle, BarChart3, FileText, MessageSquare, Star, ChevronRight,
   Shield, Eye, Plus, Search, Bell, Download, Loader2, ClipboardList
 } from "lucide-react";
@@ -399,17 +399,15 @@ export default function UserManual() {
   const defaultTab = isAdmin ? 'user' : isApprover ? 'approver' : isDeptHead ? 'department' : 'user';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#1fd655]/5 to-white">
-      <div className="max-w-5xl mx-auto px-4 py-10">
+    <div className="app-page-shell">
+      <div className="app-page app-page-narrow">
 
-        <div className="mb-10">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-16 h-16 rounded-2xl bg-[#1fd655] flex items-center justify-center shadow-lg">
-              <BookOpen className="w-8 h-8 text-white" />
-            </div>
+        <div className="app-page-header">
+          <div>
+            <p className="app-page-eyebrow">Product guidance</p>
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">User Manual</h1>
-              <p className="text-slate-600 text-lg mt-1">HelpDesk System — Complete Guide</p>
+              <h1 className="app-page-heading">Help & manual</h1>
+              <p className="app-page-description">Role-specific guidance for the support and audit workspace.</p>
             </div>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
@@ -442,7 +440,7 @@ export default function UserManual() {
         </div>
 
         <Tabs defaultValue={defaultTab}>
-          <TabsList className="bg-white shadow-md border-2 border-slate-200 p-1.5 rounded-xl h-auto mb-8 flex gap-1 flex-wrap">
+          <TabsList className="app-tabs-list">
             {(isRegularUser || isAdmin) && (
               <TabsTrigger value="user" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-6 h-11">
                 <Users className="w-4 h-4 mr-2" /> User Guide
