@@ -25,12 +25,12 @@ mkdirSync(deployDir, { recursive: true });
 cpSync(resolve(root, 'dist'), deployDir, { recursive: true });
 
 writeFileSync(resolve(deployDir, 'DEPLOYMENT-NOTE.txt'), [
-  'Upload the CONTENTS of this folder to the document root of audit.thefigarogroup.ph.',
+  'Upload the CONTENTS of this folder to the document root of fcg.thefigarogroup.ph.',
   'Do not upload the cpanel-deploy folder itself as an extra nested directory.',
-  'Supabase Site URL: https://audit.thefigarogroup.ph',
+  'Supabase Site URL: https://fcg.thefigarogroup.ph',
   'Supabase Redirect URLs:',
-  '  https://audit.thefigarogroup.ph/**',
-  '  https://audit.thefigarogroup.ph/reset-password',
+  '  https://fcg.thefigarogroup.ph/**',
+  '  https://fcg.thefigarogroup.ph/reset-password',
 ].join('\n'));
 
 console.log('\nProduction package created at: cpanel-deploy/');

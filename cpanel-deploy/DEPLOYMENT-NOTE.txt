@@ -1,0 +1,6 @@
+Upload the CONTENTS of this folder to the document root of fcg.thefigarogroup.ph.
+Do not upload the cpanel-deploy folder itself as an extra nested directory.
+Supabase Site URL: https://fcg.thefigarogroup.ph
+Supabase Redirect URLs:
+  https://fcg.thefigarogroup.ph/**
+  https://fcg.thefigarogroup.ph/reset-password

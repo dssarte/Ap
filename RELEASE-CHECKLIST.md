@@ -11,8 +11,8 @@
 1. Run `supabase/helpdesk_supabase_local.sql` on a new database.
 2. Run `supabase/complete_setup.sql` on both new and existing databases.
 3. Run `supabase/verify_installation.sql` and confirm all 17 tables and the `attachments` bucket are returned.
-4. Authentication Site URL: `http://localhost:5173`.
-5. Redirect URL: `http://localhost:5173/reset-password`.
+4. For local development, use Site URL `http://localhost:5173` and redirect URL `http://localhost:5173/reset-password`.
+5. For production, use Site URL `https://fcg.thefigarogroup.ph` and allow redirects to `https://fcg.thefigarogroup.ph/**`.
 6. For production, configure Custom SMTP. Supabase test email limits can block password reset and verification emails.
 
 ## Acceptance test
