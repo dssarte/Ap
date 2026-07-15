@@ -34,13 +34,22 @@ jobs:
           npm --version
           npm config get registry
 
-      - name: Use stable npm
-        run: npm install --global npm@10.9.2
+
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+        node-version: "22"
+        registry-url: "https://registry.npmjs.org"
+
+      - name: Show versions
+        run: |
+          node --version
+          npm --version
+          npm config get registry
 
       - name: Install dependencies
-        run: |
-          npm cache clean --force
-          npm ci --no-audit --no-fund --prefer-online
+        run: npm install --no-audit --no-fund --legacy-peer-deps
         timeout-minutes: 10
 
       - name: Build website
