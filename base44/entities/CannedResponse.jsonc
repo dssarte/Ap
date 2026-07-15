@@ -1,0 +1,31 @@
+{
+  "name": "CannedResponse",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short name/title for this canned response"
+    },
+    "content": {
+      "type": "string",
+      "description": "The response template text"
+    },
+    "department_id": {
+      "type": "string",
+      "description": "Department ID this response belongs to (empty = global/all departments)"
+    },
+    "department_name": {
+      "type": "string",
+      "description": "Department name for display"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this canned response is active"
+    }
+  },
+  "required": [
+    "title",
+    "content"
+  ]
+}

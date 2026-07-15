@@ -1,0 +1,48 @@
+{
+  "name": "Notification",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user to notify"
+    },
+    "ticket_id": {
+      "type": "string",
+      "description": "Related ticket ID"
+    },
+    "title": {
+      "type": "string",
+      "description": "Notification title"
+    },
+    "message": {
+      "type": "string",
+      "description": "Notification message"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "assigned",
+        "updated",
+        "commented",
+        "status_changed"
+      ],
+      "description": "Type of notification"
+    },
+    "is_read": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether notification has been read"
+    },
+    "link": {
+      "type": "string",
+      "description": "Link to the related resource"
+    }
+  },
+  "required": [
+    "user_email",
+    "ticket_id",
+    "title",
+    "message",
+    "type"
+  ]
+}

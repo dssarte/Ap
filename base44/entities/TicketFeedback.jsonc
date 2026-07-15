@@ -1,0 +1,43 @@
+{
+  "name": "TicketFeedback",
+  "type": "object",
+  "properties": {
+    "ticket_id": {
+      "type": "string",
+      "description": "ID of the resolved ticket"
+    },
+    "submitter_email": {
+      "type": "string",
+      "description": "Email of the user who submitted the ticket"
+    },
+    "rating": {
+      "type": "number",
+      "description": "Star rating from 1 to 5"
+    },
+    "comment": {
+      "type": "string",
+      "description": "Optional feedback comment"
+    },
+    "assigned_to": {
+      "type": "string",
+      "description": "Email of the staff member who handled the ticket"
+    },
+    "department_id": {
+      "type": "string",
+      "description": "Department ID for reporting"
+    },
+    "department_name": {
+      "type": "string",
+      "description": "Department name"
+    },
+    "ticket_title": {
+      "type": "string",
+      "description": "Title of the ticket for reference"
+    }
+  },
+  "required": [
+    "ticket_id",
+    "submitter_email",
+    "rating"
+  ]
+}

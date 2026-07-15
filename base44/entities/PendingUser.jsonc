@@ -1,0 +1,51 @@
+{
+  "name": "PendingUser",
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "description": "Email address for the account that will be created on first login"
+    },
+    "password": {
+      "type": "string",
+      "description": "Password set by the admin, used to register the real account on first login attempt"
+    },
+    "full_name": {
+      "type": "string",
+      "description": "Full name to apply once the account is created"
+    },
+    "user_type": {
+      "type": "string",
+      "enum": [
+        "user",
+        "approver",
+        "department_head",
+        "store_manager",
+        "admin"
+      ],
+      "default": "user"
+    },
+    "department_id": {
+      "type": "string"
+    },
+    "department_name": {
+      "type": "string"
+    },
+    "store_name": {
+      "type": "string"
+    },
+    "assigned_stores": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "phone": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "email",
+    "password"
+  ]
+}

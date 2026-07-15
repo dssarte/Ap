@@ -1,0 +1,112 @@
+{
+  "name": "AuditTemplate",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Audit form title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Short description of the audit"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this template is available"
+    },
+    "active_ticket": {
+      "type": "boolean",
+      "default": false,
+      "description": "If true, a submitted audit with at least one NO answer automatically creates a ticket routed to the handling department head. YES/N/A-only submissions create no ticket."
+    },
+    "has_time_restriction": {
+      "type": "boolean",
+      "default": false,
+      "description": "If true, this template can only be filled out during the available_from_time - available_to_time window each day"
+    },
+    "available_from_time": {
+      "type": "string",
+      "description": "Time of day (HH:MM, 24h) from which this audit can be started"
+    },
+    "available_to_time": {
+      "type": "string",
+      "description": "Time of day (HH:MM, 24h) until which this audit can be started. If earlier than available_from_time, the window crosses midnight into the next day"
+    },
+    "brand_id": {
+      "type": "string",
+      "description": "Legacy: single brand ID (kept for compatibility)"
+    },
+    "brand_name": {
+      "type": "string",
+      "description": "Legacy: single brand name (kept for compatibility)"
+    },
+    "store_id": {
+      "type": "string",
+      "description": "Legacy: single store ID (kept for compatibility)"
+    },
+    "store_name": {
+      "type": "string",
+      "description": "Legacy: single store name \u2014 if set, only that store's users can see this template"
+    },
+    "store_restrictions": {
+      "type": "array",
+      "description": "Multiple brand/store restrictions. If any entries exist, only users from those stores can see this template.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "brand_id": {
+            "type": "string"
+          },
+          "brand_name": {
+            "type": "string"
+          },
+          "store_id": {
+            "type": "string"
+          },
+          "store_name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "description": "Sections containing checklist items",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "photo_required": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Whether this item requires a photo upload when filling the audit"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "title",
+    "sections"
+  ]
+}

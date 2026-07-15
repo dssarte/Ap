@@ -1,0 +1,197 @@
+{
+  "name": "Ticket",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Ticket title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of the issue"
+    },
+    "department_id": {
+      "type": "string",
+      "description": "ID of the submitter's department (for approval routing)"
+    },
+    "department_name": {
+      "type": "string",
+      "description": "Name of the submitter's department"
+    },
+    "category_id": {
+      "type": "string",
+      "description": "ID of the category"
+    },
+    "category_name": {
+      "type": "string",
+      "description": "Name of the category"
+    },
+    "handling_department_id": {
+      "type": "string",
+      "description": "ID of the department responsible for handling this ticket (based on category)"
+    },
+    "handling_department_name": {
+      "type": "string",
+      "description": "Name of the handling department"
+    },
+    "handling_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "department_id": {
+            "type": "string"
+          },
+          "department_name": {
+            "type": "string"
+          },
+          "forwarded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "forwarded_by": {
+            "type": "string"
+          },
+          "returned_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "returned_by": {
+            "type": "string"
+          },
+          "return_reason": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "History of all departments that have handled this ticket"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending_approval",
+        "open",
+        "in_progress",
+        "pending",
+        "resolved",
+        "closed"
+      ],
+      "default": "pending_approval",
+      "description": "Current status of the ticket"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "urgent"
+      ],
+      "default": "medium",
+      "description": "Priority level"
+    },
+    "submitter_email": {
+      "type": "string",
+      "description": "Email of the user who submitted"
+    },
+    "submitter_name": {
+      "type": "string",
+      "description": "Name of the user who submitted"
+    },
+    "store_name": {
+      "type": "string",
+      "description": "Store the submitter belongs to, auto-filled from the submitter's profile (used for store-based approval and analytics)"
+    },
+    "assigned_to": {
+      "type": "string",
+      "description": "Email of assigned staff"
+    },
+    "attachment_url": {
+      "type": "string",
+      "description": "URL of attachment if any"
+    },
+    "image_urls": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Array of image URLs"
+    },
+    "sla_id": {
+      "type": "string",
+      "description": "Applied SLA policy ID"
+    },
+    "sla_response_due": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When first response is due"
+    },
+    "sla_resolution_due": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When resolution is due"
+    },
+    "sla_response_breached": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether response SLA was breached"
+    },
+    "sla_resolution_breached": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether resolution SLA was breached"
+    },
+    "first_response_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When first response was made"
+    },
+    "resolved_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When ticket was resolved"
+    },
+    "escalated": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether ticket has been escalated"
+    },
+    "escalated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When ticket was escalated"
+    },
+    "approval_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "default": "pending",
+      "description": "Approval status of the ticket"
+    },
+    "approver_email": {
+      "type": "string",
+      "description": "Email of the approver"
+    },
+    "approver_name": {
+      "type": "string",
+      "description": "Name of the approver"
+    },
+    "approved_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When ticket was approved/rejected"
+    },
+    "rejection_reason": {
+      "type": "string",
+      "description": "Reason for rejection if rejected"
+    }
+  },
+  "required": [
+    "title",
+    "description",
+    "department_id"
+  ]
+}

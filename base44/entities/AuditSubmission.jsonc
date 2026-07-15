@@ -1,0 +1,114 @@
+{
+  "name": "AuditSubmission",
+  "type": "object",
+  "properties": {
+    "template_id": {
+      "type": "string"
+    },
+    "template_title": {
+      "type": "string"
+    },
+    "submission_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Editable audit date (admin can override), defaults to created_date"
+    },
+    "submitted_by_email": {
+      "type": "string"
+    },
+    "submitted_by_name": {
+      "type": "string"
+    },
+    "brand": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string",
+      "description": "Reverse-geocoded address (or coordinates) where the audit was submitted"
+    },
+    "answers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "no_comments": {
+      "type": "object",
+      "description": "Per-item comments when answer is NO, keyed by item ID",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "item_photos": {
+      "type": "object",
+      "description": "Per-item uploaded photo URLs, keyed by item ID",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "score": {
+      "type": "number"
+    },
+    "total_items": {
+      "type": "number"
+    },
+    "yes_count": {
+      "type": "number"
+    },
+    "no_count": {
+      "type": "number"
+    },
+    "na_count": {
+      "type": "number"
+    },
+    "others": {
+      "type": "string"
+    },
+    "concerns_recommendations": {
+      "type": "string"
+    },
+    "deviations_photo_urls": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Multiple deviations photo URLs"
+    },
+    "updates": {
+      "type": "string"
+    },
+    "updates_attachment_urls": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Multiple updates attachment photo URLs"
+    },
+    "signature1_photo_url": {
+      "type": "string"
+    },
+    "signature1_name": {
+      "type": "string"
+    },
+    "signature1_position": {
+      "type": "string"
+    },
+    "signature2_photo_url": {
+      "type": "string"
+    },
+    "signature2_name": {
+      "type": "string"
+    },
+    "signature2_position": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "template_id",
+    "template_title",
+    "answers"
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "default": "user"
+    },
+    "user_type": {
+      "type": "string",
+      "enum": [
+        "user",
+        "approver",
+        "department_head",
+        "store_manager",
+        "admin"
+      ],
+      "default": "user"
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Admin-editable display name shown throughout the app"
+    },
+    "department_id": {
+      "type": "string"
+    },
+    "department_name": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "store_name": {
+      "type": "string"
+    },
+    "brand_id": {
+      "type": "string"
+    },
+    "assigned_stores": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Multiple store names assigned to a Store Manager, used to scope ticket approvals and analytics to only these stores"
+    }
+  },
+  "name": "User"
+}

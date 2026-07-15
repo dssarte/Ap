@@ -1,0 +1,17 @@
+{
+  "name": "Brand",
+  "type": "object",
+  "properties": {
+    "brand_name": {
+      "type": "string",
+      "description": "Brand name e.g. Angels Pizza"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "brand_name"
+  ]
+}

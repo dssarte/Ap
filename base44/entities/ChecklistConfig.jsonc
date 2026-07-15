@@ -1,0 +1,21 @@
+{
+  "name": "ChecklistConfig",
+  "type": "object",
+  "properties": {
+    "config_key": {
+      "type": "string",
+      "default": "default",
+      "description": "Singleton key to identify the global checklist completion config"
+    },
+    "selected_template_ids": {
+      "type": "array",
+      "description": "Template IDs counted toward the checklist completion rate. Set by admin; applies to all store users.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "config_key"
+  ]
+}

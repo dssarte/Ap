@@ -1,0 +1,35 @@
+{
+  "name": "Category",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Category name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Category description"
+    },
+    "department_id": {
+      "type": "string",
+      "description": "The department this category belongs to. When selected, the ticket will be routed to this department."
+    },
+    "department_name": {
+      "type": "string",
+      "description": "Denormalized department name for display"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether category is active"
+    },
+    "is_audit_only": {
+      "type": "boolean",
+      "default": false,
+      "description": "If true, this category is only used for audit forms, not ticket creation"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

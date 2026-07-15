@@ -1,0 +1,40 @@
+{
+  "name": "AuditAssignment",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user assigned to this audit template"
+    },
+    "user_name": {
+      "type": "string",
+      "description": "Full name of the user"
+    },
+    "template_id": {
+      "type": "string",
+      "description": "ID of the audit template assigned"
+    },
+    "template_title": {
+      "type": "string",
+      "description": "Title of the audit template"
+    },
+    "store_name": {
+      "type": "string",
+      "description": "Store name context for this assignment"
+    },
+    "assigned_by": {
+      "type": "string",
+      "description": "Email of admin who made this assignment"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this assignment is still active"
+    }
+  },
+  "required": [
+    "user_email",
+    "template_id",
+    "template_title"
+  ]
+}

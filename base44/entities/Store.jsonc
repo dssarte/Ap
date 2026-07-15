@@ -1,0 +1,31 @@
+{
+  "name": "Store",
+  "type": "object",
+  "properties": {
+    "brand_id": {
+      "type": "string",
+      "description": "Reference to Brand entity"
+    },
+    "brand_name": {
+      "type": "string",
+      "description": "Denormalized brand name for display"
+    },
+    "store_name": {
+      "type": "string",
+      "description": "Store/branch name e.g. Store Mayon"
+    },
+    "location": {
+      "type": "string",
+      "description": "Location e.g. Makati"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "brand_id",
+    "brand_name",
+    "store_name"
+  ]
+}

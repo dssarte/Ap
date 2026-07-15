@@ -1,0 +1,22 @@
+{
+  "name": "Department",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Department name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Department description"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether department is active"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "name": "SLA",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "SLA policy name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Policy description"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "urgent"
+      ],
+      "description": "Ticket priority this applies to"
+    },
+    "department_id": {
+      "type": "string",
+      "description": "Department ID (optional, for department-specific SLAs)"
+    },
+    "response_time_hours": {
+      "type": "number",
+      "description": "Time to first response in hours"
+    },
+    "resolution_time_hours": {
+      "type": "number",
+      "description": "Time to resolution in hours"
+    },
+    "escalate_after_hours": {
+      "type": "number",
+      "description": "Hours before auto-escalation"
+    },
+    "escalation_email": {
+      "type": "string",
+      "description": "Email to notify on escalation"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this SLA is active"
+    }
+  },
+  "required": [
+    "name",
+    "priority",
+    "response_time_hours",
+    "resolution_time_hours"
+  ]
+}
