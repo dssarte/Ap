@@ -19,8 +19,11 @@ const formatPHT = (value, pattern = "MMM d, yyyy h:mm a 'PHT'") => {
   catch { return 'Date unavailable'; }
 };
 import StatsCard from "@/components/dashboard/StatsCard";
+import { SectionLoadingSkeleton, FeedbackBanner } from '@/components/PageState';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function ApprovalQueue() {
+  const { toast } = useToast();
   const [user, setUser] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -181,18 +184,19 @@ export default function ApprovalQueue() {
       console.log('=== APPROVAL COMPLETE ===');
       await refetch();
       setSelectedTicket(null);
+      toast({ title: 'Ticket approved', description: 'The ticket has been routed to the responsible department.' });
     } catch (error) {
       console.error('=== APPROVAL FAILED ===');
       console.error('Error:', error);
       console.error('Stack:', error.stack);
-      alert('Error approving ticket:\n' + (error?.message || 'Unknown error'));
+      toast({ title: 'Approval failed', description: error?.message || 'The ticket could not be approved. Please try again.', variant: 'destructive' });
     }
     setProcessing(false);
   };
 
   const handleReject = async () => {
     if (!rejectionReason.trim()) {
-      alert('Please provide a rejection reason');
+      toast({ title: 'Rejection reason required', description: 'Enter a reason before rejecting this ticket.', variant: 'destructive' });
       return;
     }
 
@@ -220,8 +224,9 @@ export default function ApprovalQueue() {
       setSelectedTicket(null);
       setShowRejectDialog(false);
       setRejectionReason('');
+      toast({ title: 'Ticket rejected', description: 'The requester can now review the rejection reason.' });
     } catch (error) {
-      alert('Error rejecting ticket');
+      toast({ title: 'Rejection failed', description: error?.message || 'The ticket could not be rejected. Please try again.', variant: 'destructive' });
     }
     setProcessing(false);
   };
@@ -253,8 +258,9 @@ export default function ApprovalQueue() {
       
       setNewComment('');
       await loadComments(selectedTicket.id);
+      toast({ title: 'Comment added' });
     } catch (error) {
-      alert('Error adding comment');
+      toast({ title: 'Comment failed', description: error?.message || 'The comment could not be added.', variant: 'destructive' });
     } finally {
       setAddingComment(false);
     }
@@ -310,21 +316,18 @@ export default function ApprovalQueue() {
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-6 mb-10">
+        <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
           <StatsCard title="Pending Approval" value={stats.pending} icon={Clock} color="bg-amber-500" />
           <StatsCard title="Approved" value={stats.approved} icon={CheckCircle} color="bg-[#1fd655]" />
           <StatsCard title="Rejected" value={stats.rejected} icon={XCircle} color="bg-red-500" />
         </div>
 
         {ticketsError ? (
-          <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-5">
-            <p className="font-semibold">Unable to load the approval queue</p>
-            <p className="text-sm mt-1">{ticketsError.message || 'Please check Supabase permissions and the tickets table.'}</p>
-          </div>
+          <FeedbackBanner type="error" title="Unable to load the approval queue">
+            {ticketsError.message || 'Please check your connection and try again.'}
+          </FeedbackBanner>
         ) : isLoading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-          </div>
+          <SectionLoadingSkeleton rows={4} label="Loading approval requests" />
         ) : (
           <Tabs defaultValue="pending">
             <TabsList className="app-tabs-list">
@@ -359,11 +362,11 @@ export default function ApprovalQueue() {
                           </div>
                         </CardHeader>
                         <CardContent>
-                          <div className="flex items-center justify-between text-sm">
+                          <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                             <span className="text-slate-500">
                               By {ticket.submitter_name} • {formatPHT(ticket.created_date)}
                             </span>
-                            <Button onClick={(e) => { e.stopPropagation(); setSelectedTicket(ticket); }} className="bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900">
+                            <Button onClick={(e) => { e.stopPropagation(); setSelectedTicket(ticket); }} className="w-full bg-[#1fd655] text-slate-900 hover:bg-[#1bd64d] sm:w-auto">
                               {key === 'pending' ? 'Review' : 'View & Chat'}
                             </Button>
                           </div>

@@ -111,6 +111,10 @@
   .app-tabs-trigger {
     @apply h-10 rounded-lg px-4 text-sm font-medium text-slate-600 transition-colors data-[state=active]:bg-emerald-50 data-[state=active]:font-semibold data-[state=active]:text-emerald-900 data-[state=active]:shadow-none;
   }
+
+  .app-filter-bar {
+    @apply flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4;
+  }
 }
 
 /* Normalize legacy internal panels while keeping their behavior untouched. */
@@ -158,6 +162,83 @@
   background-color: rgb(248 250 252 / 0.8);
 }
 
+@media (max-width: 639px) {
+  .app-page {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+  }
+
+  .app-page-header {
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .app-page-header > :last-child:not(:first-child) {
+    width: 100%;
+  }
+
+  .app-page-header > :last-child:not(:first-child) > button,
+  .app-page-header > :last-child:not(:first-child) > a {
+    flex: 1 1 auto;
+  }
+
+  .app-tabs-list {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-tabs-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .app-tabs-list > * {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .app-filter-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-filter-bar > *,
+  .app-filter-bar [role="combobox"],
+  .app-page [class~="w-36"],
+  .app-page [class~="w-40"],
+  .app-page [class~="w-44"],
+  .app-page [class~="w-48"],
+  .app-page [class~="w-52"],
+  .app-page [class~="w-56"],
+  .app-page [class~="w-64"],
+  .app-page [class~="w-[200px]"] {
+    width: 100%;
+  }
+
+  .app-page button,
+  .app-page [role="button"] {
+    min-height: 2.75rem;
+  }
+
+  .app-page input,
+  .app-page textarea,
+  .app-page [role="combobox"] {
+    font-size: 16px;
+  }
+
+  .app-page [class~="flex-row"][class~="items-center"][class~="justify-between"] {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  [role="dialog"] [class~="grid-cols-2"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 
 
 @layer base {
@@ -177,5 +258,21 @@
 
   button, a, input, textarea, select {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(4 120 87);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -1,0 +1,1 @@
+import{d as t,g as a}from"./differenceInMilliseconds-CIV-M4uW.js";import{v as d,ab as f,av as i}from"./index-DW6T9k8_.js";function u(n,r){const e=d(n);return isNaN(r)?f(n,NaN):(r&&e.setDate(e.getDate()+r),e)}function g(n,r,e){const s=t(n,r)/i;return a(e==null?void 0:e.roundingMethod)(s)}function D(n,r){return u(n,-r)}export{u as a,g as d,D as s};

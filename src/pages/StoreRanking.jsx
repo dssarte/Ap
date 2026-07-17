@@ -409,7 +409,7 @@ export default function StoreRanking() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="app-filter-bar">
         <Select value={selectedBrandId} onValueChange={setSelectedBrandId}>
           <SelectTrigger className="w-52 h-9">
             <SelectValue placeholder="All Brands" />
@@ -422,14 +422,14 @@ export default function StoreRanking() {
           </SelectContent>
         </Select>
 
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:items-center">
           <input
             type="date"
             value={dateFrom}
             onChange={e => setDateFrom(e.target.value)}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-[#1fd655]"
           />
-          <span className="text-slate-400 text-sm">–</span>
+          <span className="hidden text-sm text-slate-400 sm:inline">–</span>
           <input
             type="date"
             value={dateTo}

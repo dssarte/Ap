@@ -146,6 +146,7 @@ export default function Layout({ children, currentPageName }) {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
+      <a href="#main-content" className="fixed left-4 top-3 z-[100] -translate-y-20 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-lg transition-transform focus:translate-y-0">Skip to main content</a>
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-slate-200 bg-white lg:flex lg:flex-col">
         <Link to={createPageUrl('Home')} className="flex h-20 items-center border-b border-slate-100 px-6">
           <img src={LOGO_URL} alt="Figaro Coffee Group" className="h-12 w-auto object-contain" />
@@ -221,7 +222,7 @@ export default function Layout({ children, currentPageName }) {
           </div>
         </header>
 
-        <main className="min-h-[calc(100vh-5rem)]">{children}</main>
+        <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-5rem)] focus:outline-none">{children}</main>
         <footer className="border-t border-slate-200 bg-white px-6 py-5 text-center text-xs text-slate-400">
           © {new Date().getFullYear()} Figaro Coffee Group. Internal support workspace.
         </footer>

@@ -10,6 +10,7 @@ import TicketForm from "@/components/tickets/TicketForm";
 import TicketDetails from "@/components/tickets/TicketDetails";
 import StatsCard from "@/components/dashboard/StatsCard";
 import FeedbackModal from "@/components/tickets/FeedbackModal";
+import { SectionLoadingSkeleton, FeedbackBanner } from '@/components/PageState';
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -229,15 +230,11 @@ export default function Home() {
 
         {/* Tickets List */}
         {isError ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-700">
-            <p className="font-semibold">Tickets could not be loaded.</p>
-            <p className="text-sm mt-1">{ticketsError?.message || 'Check Supabase permissions and database schema.'}</p>
-            <Button variant="outline" className="mt-3" onClick={() => refetch()}>Try again</Button>
-          </div>
+          <FeedbackBanner type="error" title="Tickets could not be loaded" actionLabel="Try again" onAction={() => refetch()}>
+            {ticketsError?.message || 'Check your connection and try again.'}
+          </FeedbackBanner>
         ) : isLoading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-          </div>
+          <SectionLoadingSkeleton rows={5} label="Loading tickets" />
         ) : filteredTickets.length > 0 ? (
           <>
             {/* Page size + count */}
@@ -326,7 +323,7 @@ export default function Home() {
 
       {/* Modals */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
           <div className="w-full max-w-lg">
             <TicketForm 
               user={user}

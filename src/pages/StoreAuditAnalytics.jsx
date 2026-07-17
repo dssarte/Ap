@@ -243,7 +243,7 @@ export default function StoreAuditAnalytics() {
             */}
         </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
           {isStoreManager && storeNames.length > 1 && (
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Store</span>

@@ -91,7 +91,7 @@ export default function CannedResponseManager() {
   return (
     <div className="space-y-6">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input placeholder="Search responses..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
@@ -106,7 +106,7 @@ export default function CannedResponseManager() {
             {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button onClick={openAdd} className="bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900 font-bold gap-2">
+        <Button onClick={openAdd} className="w-full gap-2 bg-[#1fd655] font-bold text-slate-900 hover:bg-[#1bd64d] sm:w-auto">
           <Plus className="w-4 h-4" /> Add Response
         </Button>
       </div>

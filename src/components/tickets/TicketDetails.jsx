@@ -351,9 +351,9 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden border-2 border-slate-200 shadow-2xl">
-        <CardHeader className="flex flex-row items-start justify-between bg-gradient-to-r from-[#1fd655]/10 to-transparent border-b">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <Card className="h-[100dvh] max-h-[100dvh] w-full max-w-2xl overflow-hidden rounded-none border-0 shadow-2xl sm:h-auto sm:max-h-[90vh] sm:rounded-xl sm:border-2 sm:border-slate-200">
+        <CardHeader className="flex flex-row items-start justify-between border-b bg-gradient-to-r from-[#1fd655]/10 to-transparent px-4 py-4 sm:px-6 sm:py-6">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-3">
               <Badge className={`${priorityColors[ticket.priority]} font-semibold uppercase tracking-wide text-xs`}>
@@ -373,13 +373,13 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
               {ticket.title}
             </CardTitle>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close ticket details">
             <X className="w-5 h-5" />
           </Button>
         </CardHeader>
         
-        <CardContent className="p-0 overflow-y-auto max-h-[calc(90vh-200px)]">
-          <div className="p-5 space-y-4">
+        <CardContent className="max-h-[calc(100dvh-8.5rem)] overflow-y-auto p-0 sm:max-h-[calc(90vh-200px)]">
+          <div className="space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5">
             <div className="flex flex-wrap gap-4 text-sm text-slate-600">
               <span className="flex items-center gap-1">
                 <Building2 className="w-4 h-4" />
@@ -492,11 +492,11 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
 
                 </div>
                 {(ticket.status !== 'closed' || user.user_type === 'admin') && (
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <Button 
                       onClick={() => setShowForwardDialog(true)} 
                       variant="outline"
-                      className="gap-2 border-blue-200 text-blue-600 hover:bg-blue-50"
+                      className="w-full gap-2 border-blue-200 text-blue-600 hover:bg-blue-50 sm:w-auto"
                     >
                       <ArrowRightLeft className="w-4 h-4" />
                       Forward to Another Department
@@ -505,7 +505,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                       <Button 
                         onClick={() => setShowReturnDialog(true)} 
                         variant="outline"
-                        className="gap-2 border-amber-200 text-amber-600 hover:bg-amber-50"
+                        className="w-full gap-2 border-amber-200 text-amber-600 hover:bg-amber-50 sm:w-auto"
                       >
                         <CornerUpLeft className="w-4 h-4" />
                         Return to {originalDepartment.name}

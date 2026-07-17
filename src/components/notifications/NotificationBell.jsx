@@ -76,7 +76,7 @@ const loadNotifications = async () => {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
+        <Button variant="ghost" size="icon" className="relative" aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}>
           <Bell className="w-5 h-5" />
           {unreadCount > 0 && (
             <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs bg-red-500 hover:bg-red-600">
@@ -85,7 +85,7 @@ const loadNotifications = async () => {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-96 p-0" align="end">
+      <PopoverContent className="w-[calc(100vw-1rem)] max-w-96 p-0" align="end" sideOffset={10}>
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="font-semibold text-slate-900">Notifications</h3>
           {unreadCount > 0 && (
@@ -128,8 +128,9 @@ const loadNotifications = async () => {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => markAsRead(notif.id)}
-                        className="h-7 w-7"
+                      onClick={() => markAsRead(notif.id)}
+                      className="h-7 w-7"
+                      aria-label={`Mark ${notif.title} as read`}
                       >
                         <Check className="w-3 h-3" />
                       </Button>
@@ -139,6 +140,7 @@ const loadNotifications = async () => {
                       size="icon"
                       onClick={() => deleteNotification(notif.id)}
                       className="h-7 w-7 text-red-500 hover:text-red-700"
+                      aria-label={`Delete notification: ${notif.title}`}
                     >
                       <Trash2 className="w-3 h-3" />
                     </Button>

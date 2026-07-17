@@ -203,11 +203,11 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
   };
 
   return (
-    <Card className="border-2 border-slate-200 shadow-2xl bg-white max-h-[90vh] flex flex-col">
-      <CardHeader className="pb-4 border-b border-slate-100 bg-gradient-to-r from-[#1fd655]/5 to-transparent flex-shrink-0">
-        <CardTitle className="text-2xl font-bold text-slate-900">Create New Ticket</CardTitle>
+    <Card className="flex h-[100dvh] max-h-[100dvh] flex-col rounded-none border-0 bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:rounded-xl sm:border-2 sm:border-slate-200">
+      <CardHeader className="flex-shrink-0 border-b border-slate-100 bg-gradient-to-r from-[#1fd655]/5 to-transparent px-4 pb-4 pt-5 sm:px-6">
+        <CardTitle className="text-xl font-bold text-slate-900 sm:text-2xl">Create new ticket</CardTitle>
       </CardHeader>
-      <CardContent className="overflow-y-auto">
+      <CardContent className="overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <Label className="text-slate-900 font-semibold text-sm">Title *</Label>
@@ -350,7 +350,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
               )}
               
               {formData.image_urls.length > 0 && (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {formData.image_urls.map((url, index) => (
                     <div key={index} className="relative group">
                       <img 
@@ -372,7 +372,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
             </div>
           </div>
           
-          <div className="flex gap-3 pt-2">
+          <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-slate-100 bg-white/95 px-4 pb-[max(.25rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
             {onCancel && (
               <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
                 Cancel

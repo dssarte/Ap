@@ -165,7 +165,7 @@ export default function DailySummary() {
             </p>
         </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
             <CalendarDays className="w-4 h-4 text-slate-400" />
             <input
@@ -173,7 +173,7 @@ export default function DailySummary() {
               value={selectedDate}
               max={today}
               onChange={e => setSelectedDate(e.target.value || today)}
-              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-[#1fd655]"
+              className="h-11 flex-1 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 focus:border-[#1fd655] focus:outline-none sm:h-auto sm:flex-none sm:px-2 sm:py-1.5"
             />
           </div>
           <ExcelExportButton onClick={handleExport} disabled={loading || rows.length === 0} />
@@ -229,7 +229,26 @@ export default function DailySummary() {
               <p className="text-xs text-slate-400">{requiredTemplates.length} required checklist{requiredTemplates.length !== 1 ? 's' : ''}</p>
             </CardHeader>
             <CardContent className="px-0 pb-4">
-              <div className="overflow-x-auto">
+              <div className="space-y-3 px-4 md:hidden">
+                {sortedRows.map((r) => {
+                  const complete = r.rate >= PASS_THRESHOLD;
+                  return (
+                    <article key={r.store.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div><h3 className="font-semibold text-slate-900">{r.store.store_name}</h3>{r.store.location && <p className="mt-0.5 text-xs text-slate-400">{r.store.location}</p>}</div>
+                        <Badge className={complete ? 'border-green-200 bg-green-100 text-green-700' : r.completed === 0 ? 'border-red-200 bg-red-100 text-red-700' : 'border-amber-200 bg-amber-100 text-amber-700'}>{complete ? 'Complete' : r.completed === 0 ? 'Not started' : 'In progress'}</Badge>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+                        <div><p className="text-xs text-slate-500">Completed</p><p className="mt-1 font-semibold text-slate-800">{r.completed} / {r.required}</p></div>
+                        <div><p className="text-xs text-slate-500">Completion rate</p><p className={`mt-1 font-bold ${complete ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{r.rate}%</p></div>
+                      </div>
+                      {r.missing.length > 0 && <div className="mt-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Missing</p><p className="mt-1 text-xs leading-5 text-slate-600">{r.missing.join(' · ')}</p></div>}
+                    </article>
+                  );
+                })}
+                {sortedRows.length === 0 && <p className="py-8 text-center text-sm text-slate-400">No stores with required checklists for this date.</p>}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50">

@@ -203,7 +203,7 @@ export default function DeptAnalytics() {
           <h1 className="app-page-heading">Department analytics</h1>
           <p className="app-page-description">{activeDeptName}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Badge className="bg-[#1fd655]/10 text-slate-700 border border-[#1fd655]/30 font-semibold self-start sm:self-center">
             {tickets.length} tickets in period
           </Badge>
@@ -213,7 +213,7 @@ export default function DeptAnalytics() {
 
       {/* Filters */}
       <Card className="border-2 border-slate-200 shadow-md">
-        <CardContent className="p-4 flex flex-wrap gap-3 items-end">
+        <CardContent className="app-filter-bar border-0 shadow-none">
           {/* Department filter — admin only */}
           {isAdmin && (
             <div className="flex flex-col gap-1">

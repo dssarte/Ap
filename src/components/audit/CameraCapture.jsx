@@ -141,8 +141,8 @@ export default function CameraCapture({ onCapture, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 sm:items-center sm:p-4">
+      <div className="flex h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:rounded-xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
           <p className="font-bold text-slate-800 flex items-center gap-2">
             <Camera className="w-4 h-4 text-[#1fd655]" /> Take Photo
@@ -152,7 +152,7 @@ export default function CameraCapture({ onCapture, onClose }) {
           </Button>
         </div>
 
-        <div className="relative bg-black aspect-video flex items-center justify-center">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black sm:aspect-video sm:flex-none">
           {!snapshot ? (
             <>
               <video
@@ -205,7 +205,7 @@ export default function CameraCapture({ onCapture, onClose }) {
         </div>
 
         {snapshot && (
-          <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-slate-200">
+          <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-4 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3">
             <Button variant="outline" onClick={handleRetake} disabled={uploading}>Retake</Button>
             <Button
               onClick={handleConfirm}

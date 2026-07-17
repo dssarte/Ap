@@ -5,18 +5,21 @@ import NavigationTracker from '@/lib/NavigationTracker'
 import { pagesConfig } from './pages.config'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
-import StoreRanking from './pages/StoreRanking';
-import VerifyAccount from './pages/VerifyAccount';
 import Login from './pages/Login';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-import AuditDashboard from './pages/AuditDashboard';
-import StoreAuditAnalytics from './pages/StoreAuditAnalytics';
-import DailySummary from './pages/DailySummary';
-import SqlExport from './pages/SqlExport';
+import React, { lazy, Suspense } from 'react';
 import { AuthProvider } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import AppErrorBoundary from '@/components/AppErrorBoundary';
+import { PageLoadingSkeleton } from '@/components/PageState';
+
+const StoreRanking = lazy(() => import('./pages/StoreRanking'));
+const VerifyAccount = lazy(() => import('./pages/VerifyAccount'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const AuditDashboard = lazy(() => import('./pages/AuditDashboard'));
+const StoreAuditAnalytics = lazy(() => import('./pages/StoreAuditAnalytics'));
+const DailySummary = lazy(() => import('./pages/DailySummary'));
+const SqlExport = lazy(() => import('./pages/SqlExport'));
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -33,6 +36,7 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <Router>
           <NavigationTracker />
+          <Suspense fallback={<PageLoadingSkeleton />}>
           <Routes>
             {/* Public auth routes */}
             <Route path="/login" element={<Login />} />
@@ -67,6 +71,7 @@ function App() {
 
             <Route path="*" element={<PageNotFound />} />
           </Routes>
+          </Suspense>
         </Router>
         <Toaster />
       </QueryClientProvider>

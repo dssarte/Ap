@@ -293,6 +293,25 @@ export default function DepartmentDashboard() {
               {isLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
               ) : (
+                <>
+                <div className="space-y-3 md:hidden">
+                  {recentTickets.map(ticket => (
+                    <button key={ticket.id} type="button" onClick={() => setSelectedTicket(ticket)} className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="line-clamp-2 font-semibold text-slate-900">{ticket.title}</p>
+                        <Badge className={statusColors[ticket.status] || 'border-0 bg-slate-100 text-slate-600'}>{ticket.status.replace(/_/g, ' ')}</Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <Badge variant="outline">{ticket.priority}</Badge>
+                        <span>{ticket.assigned_to || 'Unassigned'}</span>
+                        <span aria-hidden="true">•</span>
+                        <time dateTime={ticket.created_date}>{format(new Date(ticket.created_date), 'MMM d, yyyy')}</time>
+                      </div>
+                    </button>
+                  ))}
+                  {recentTickets.length === 0 && <p className="py-8 text-center text-sm text-slate-500">No tickets yet</p>}
+                </div>
+                <div className="hidden md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -326,6 +345,8 @@ export default function DepartmentDashboard() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
+                </>
               )}
             </CardContent>
           </Card>

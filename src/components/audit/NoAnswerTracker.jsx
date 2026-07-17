@@ -89,7 +89,7 @@ export default function NoAnswerTracker({ allowedStores = null }) {
         <p className="text-xs text-slate-500">Monitor checklist items marked NO per day, per store, to see if they get resolved to YES</p>
       </CardHeader>
       <CardContent className="px-5 pb-5 space-y-4">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <Select value={selectedStore} onValueChange={setSelectedStore}>
             <SelectTrigger className="w-64 h-9">
               <SelectValue placeholder="Select store..." />
@@ -98,10 +98,10 @@ export default function NoAnswerTracker({ allowedStores = null }) {
               {stores.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
               className="border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-[#1fd655]" />
-            <span className="text-slate-400 text-sm">–</span>
+            <span className="hidden text-sm text-slate-400 sm:inline">–</span>
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
               className="border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-[#1fd655]" />
           </div>

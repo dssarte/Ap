@@ -10,12 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ClipboardList, CheckCircle2, Eye, ChevronLeft, Trash2, Pencil, FileText, Camera, History } from "lucide-react";
+import { Loader2, ClipboardList, CheckCircle2, Eye, ChevronLeft, ChevronDown, Trash2, Pencil, FileText, Camera, History, ListChecks } from "lucide-react";
 import jsPDF from 'jspdf';
 import moment from 'moment';
 import { formatPHDateTime, formatPHDateShort } from '@/lib/dateUtils';
 import { getLocation } from '@/lib/getLocation';
 import { compressImage } from '@/lib/compressImage';
+import { SectionLoadingSkeleton } from '@/components/PageState';
 
 function formatTimeLabel(hhmm) {
   if (!hhmm) return '';
@@ -214,7 +215,10 @@ export default function Audit() {
       <div className="app-page-header">
         <div>
           {view !== 'list' && view !== 'history' && (
-            <Button variant="ghost" size="sm" className="mb-2 -ml-2 gap-1 text-slate-500" onClick={() => setView(view === 'fill' ? 'list' : 'history')}>
+            <Button variant="ghost" size="sm" className="mb-2 -ml-2 gap-1 text-slate-500" onClick={() => {
+              if (!window.confirm('Leave this audit? Your current progress is saved automatically as a draft.')) return;
+              setView(view === 'fill' ? 'list' : 'history');
+            }}>
               <ChevronLeft className="w-4 h-4" /> Back
             </Button>
           )}
@@ -237,7 +241,7 @@ export default function Audit() {
       {/* TEMPLATE LIST */}
       {view === 'list' && (
         loadingTemplates ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+          <SectionLoadingSkeleton rows={4} label="Loading audit checklists" />
         ) : templates.length === 0 ? (
           <Card className="border-2 border-dashed border-slate-200">
             <CardContent className="py-16 text-center">
@@ -334,7 +338,7 @@ export default function Audit() {
               </CardContent>
             </Card>
           ) : loadingSubmissions ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+          <SectionLoadingSkeleton rows={4} label="Loading audit history" />
         ) : (() => {
             const filtered = submissions.filter(sub => {
               const d = new Date(sub.submission_date || sub.created_date);
@@ -516,6 +520,16 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     return () => clearTimeout(t);
   });  
 
+  useEffect(() => {
+    if (!hasProgress || saving) return undefined;
+    const warnBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [hasProgress, saving]);
+
   const restoreDraft = () => {
     if (!pendingDraft) return;
     if (pendingDraft.selectedBrandId && !isStoreLocked) setSelectedBrandId(pendingDraft.selectedBrandId);
@@ -589,7 +603,17 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     }
   };;
 
-  const allItems = template.sections?.flatMap(s => s.items || []) || [];
+  const allItems = useMemo(() => template.sections?.flatMap(s => s.items || []) || [], [template.sections]);
+  const [collapsedSections, setCollapsedSections] = useState(() => new Set());
+
+  const toggleSection = (sectionId) => {
+    setCollapsedSections((current) => {
+      const next = new Set(current);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
+  };
 
   const setAnswer = (itemId, val) => {
     setAnswers(a => ({ ...a, [itemId]: a[itemId] === val ? undefined : val }));
@@ -600,9 +624,31 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
   const [photoError, setPhotoError] = useState('');
   const [errorItemId, setErrorItemId] = useState(null);
 
-  const scrollToError = () => {
-    if (!errorItemId) return;
-    document.getElementById(`audit-item-${errorItemId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const revealItem = (itemId) => {
+    if (!itemId) return;
+    const section = template.sections?.find((candidate) => (candidate.items || []).some((sectionItem) => sectionItem.id === itemId));
+    if (section) {
+      setCollapsedSections((current) => {
+        const next = new Set(current);
+        next.delete(section.id);
+        return next;
+      });
+    }
+    window.setTimeout(() => {
+      document.getElementById(`audit-item-${itemId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  };
+
+  const scrollToError = () => revealItem(errorItemId);
+
+  const jumpToFirstUnanswered = () => {
+    const item = allItems.find((candidate) => !answers[candidate.id]);
+    if (item) revealItem(item.id);
+  };
+
+  const handleCancel = () => {
+    if (hasProgress && !saving && !window.confirm('Leave this audit? Your current progress has been saved as a draft.')) return;
+    onCancel();
   };
 
   const handleSubmit = async () => {
@@ -739,7 +785,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     <div className="space-y-5">
       {/* Draft restore prompt */}
       {pendingDraft && (
-        <div className="border-2 border-amber-300 bg-amber-50 rounded-xl p-4 flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-3 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <History className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
             <div>
@@ -749,7 +795,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
             <Button size="sm" variant="outline" onClick={discardDraft} className="border-amber-300 text-amber-800 hover:bg-amber-100">Discard</Button>
             <Button size="sm" onClick={restoreDraft} className="bg-amber-500 hover:bg-amber-600 text-white">Restore</Button>
           </div>
@@ -758,7 +804,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
 
       {/* Brand / Store selector */}
       <Card className="border-2 border-slate-200">
-        <CardContent className="p-4 flex items-center gap-4 flex-wrap">
+        <CardContent className="flex flex-col items-stretch gap-4 p-4 sm:flex-row sm:flex-wrap sm:items-center">
           {isStoreLocked ? (
             // User has a fixed store — show it as read-only
             <div className="flex items-center gap-3">
@@ -774,7 +820,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
                 <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Brand:</label>
                 <Select value={selectedBrandId} onValueChange={(val) => { setSelectedBrandId(val); setSelectedStoreId(''); }}>
                   <SelectTrigger className="w-48 h-9">
@@ -787,7 +833,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
                 <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Store:</label>
                 <Select value={selectedStoreId} onValueChange={setSelectedStoreId} disabled={!selectedBrandId}>
                   <SelectTrigger className="w-56 h-9">
@@ -822,31 +868,70 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
         </Card>
       )}
 
-      {/* Progress */}
-      <div className="flex items-center gap-3">
-        <div className="flex-1 bg-slate-200 rounded-full h-2">
-          <div className="bg-[#1fd655] h-2 rounded-full transition-all" style={{ width: `${progress}%` }} />
+      {/* Sticky progress and navigation */}
+      <div className="sticky top-20 z-20 -mx-2 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-md backdrop-blur sm:mx-0 sm:p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-700">Checklist progress</span>
+              <span className="text-xs font-semibold tabular-nums text-emerald-700">{progress}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-2 rounded-full bg-emerald-600 transition-all duration-300" style={{ width: `${progress}%` }} />
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
+              <span>{answered}/{allItems.length} answered</span>
+              {hasProgress && <span className="hidden text-emerald-700 sm:inline">Draft autosaves securely</span>}
+            </div>
+          </div>
+          {answered < allItems.length && (
+            <Button type="button" variant="outline" size="sm" onClick={jumpToFirstUnanswered} className="shrink-0 gap-1.5 border-emerald-200 text-emerald-800 hover:bg-emerald-50">
+              <ListChecks className="h-4 w-4" />
+              <span className="hidden sm:inline">Next unanswered</span>
+              <span className="sm:hidden">Next</span>
+            </Button>
+          )}
         </div>
-        <span className="text-sm font-semibold text-slate-600">{answered}/{allItems.length} answered</span>
       </div>
 
       {/* Sections */}
-      {template.sections?.map(sec => (
-        <Card key={sec.id} className="border-2 border-slate-200 shadow-sm">
-          <CardHeader className="pb-2 pt-4 px-5">
-            <CardTitle className="text-sm font-bold uppercase tracking-wide text-[#1fd655]">{sec.title}</CardTitle>
+      {template.sections?.map(sec => {
+        const sectionItems = sec.items || [];
+        const sectionAnswered = sectionItems.filter((item) => answers[item.id]).length;
+        const collapsed = collapsedSections.has(sec.id);
+        const complete = sectionItems.length > 0 && sectionAnswered === sectionItems.length;
+        return (
+        <Card key={sec.id} className={`border-2 shadow-sm transition-colors ${complete ? 'border-emerald-200' : 'border-slate-200'}`}>
+          <CardHeader className="p-0">
+            <button type="button" onClick={() => toggleSection(sec.id)} className="flex w-full items-center justify-between gap-3 rounded-t-xl px-4 py-4 text-left hover:bg-slate-50 sm:px-5" aria-expanded={!collapsed}>
+              <div className="min-w-0">
+                <CardTitle className="truncate text-sm font-bold uppercase tracking-wide text-emerald-700">{sec.title}</CardTitle>
+                <p className="mt-1 text-xs font-medium text-slate-500">{sectionAnswered} of {sectionItems.length} answered</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {complete && <Badge className="border-0 bg-emerald-100 text-emerald-700">Complete</Badge>}
+                <ChevronDown className={`h-5 w-5 text-slate-400 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+              </div>
+            </button>
           </CardHeader>
-          <CardContent className="px-5 pb-4 space-y-2">
+          {!collapsed && <CardContent className="space-y-2 px-4 pb-4 sm:px-5">
             {(sec.items || []).map((item, idx) => (
-              <div key={item.id} id={`audit-item-${item.id}`} className="py-2 border-b border-slate-100 last:border-0">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-slate-800 flex-1">{idx + 1}. {item.label}</p>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+              <div key={item.id} id={`audit-item-${item.id}`} className={`rounded-lg border-b border-slate-100 py-2 transition-colors last:border-0 ${errorItemId === item.id ? 'bg-rose-50 px-2 ring-1 ring-rose-200' : ''}`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm leading-6 text-slate-800">{idx + 1}. {item.label}</p>
+                    {item.photo_required && (
+                      <span className={`mt-1 inline-flex items-center gap-1 text-[11px] font-semibold ${['YES', 'NO'].includes(answers[item.id]) && !(itemPhotos[item.id]?.length > 0) ? 'text-rose-600' : 'text-slate-400'}`}>
+                        <Camera className="h-3 w-3" /> Photo required for Yes or No
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid w-full flex-shrink-0 grid-cols-3 gap-2 sm:flex sm:w-auto sm:items-center">
                     {['YES', 'NO', 'NA'].map(opt => (
                       <button
                         key={opt}
                         onClick={() => setAnswer(item.id, opt)}
-                        className={`px-3 py-1 rounded-md text-xs font-bold border-2 transition-all ${
+                        className={`min-h-11 rounded-lg border-2 px-3 py-2 text-xs font-bold transition-all sm:min-h-0 sm:rounded-md sm:py-1 ${
                           answers[item.id] === opt
                             ? opt === 'YES' ? 'bg-green-500 border-green-500 text-white'
                               : opt === 'NO' ? 'bg-red-500 border-red-500 text-white'
@@ -870,7 +955,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
                 )}
                 {item.photo_required && (
                   <div className="mt-2 space-y-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <label className={`inline-flex items-center gap-2 ${uploadingItemPhoto === item.id ? 'pointer-events-none opacity-50' : 'cursor-pointer'} bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium px-2.5 py-1 rounded-md border border-slate-300 transition-colors`}>
                         {uploadingItemPhoto === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (itemPhotos[item.id]?.length ? '+ Replace Photo' : '+ Add Photo')}
                         <input type="file" accept="image/jpeg,image/png,image/jpg" className="hidden"
@@ -891,7 +976,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
                           <div key={i} className="relative group">
                             <img src={url} alt={`Item photo ${i+1}`} className="h-20 w-20 object-cover rounded-md border border-slate-200" />
                             <button onClick={() => removeItemPhoto(item.id, i)}
-                              className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                              className="absolute -right-1.5 -top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-xs text-white opacity-100 transition-opacity sm:h-5 sm:w-5 sm:opacity-0 sm:group-hover:opacity-100">✕</button>
                           </div>
                         ))}
                       </div>
@@ -900,9 +985,9 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
                 )}
               </div>
             ))}
-          </CardContent>
+          </CardContent>}
         </Card>
-      ))}
+      )})}
 
       {/* Extra fields */}
       <Card className="border-2 border-slate-200 shadow-sm">
@@ -1029,8 +1114,8 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
           {photoError}
         </p>
       )}
-      <div className="flex justify-end gap-3 pb-4">
-        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+      <div className="sticky bottom-0 z-20 -mx-4 flex justify-end gap-3 border-t border-slate-200 bg-white/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-4">
+        <Button variant="outline" onClick={handleCancel}>Cancel</Button>
         <Button
           onClick={handleSubmit}
           disabled={saving || answered === 0 || (!isStoreLocked && !brand)}

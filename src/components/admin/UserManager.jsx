@@ -407,6 +407,36 @@ HelpDesk Support Team`
             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
           </div>
         ) : (
+          <>
+          <div className="space-y-3 md:hidden">
+            {users.map(user => (
+              <article key={user.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0"><h3 className="truncate font-semibold text-slate-900">{user.display_name || user.full_name || '-'}</h3><p className="mt-0.5 break-all text-xs text-slate-500">{user.email}</p></div>
+                  {getRoleBadge(user)}
+                </div>
+                <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <div><dt className="text-xs text-slate-400">Department</dt><dd className="mt-0.5 text-slate-700">{user.department_name || '-'}</dd></div>
+                  <div><dt className="text-xs text-slate-400">Phone</dt><dd className="mt-0.5 text-slate-700">{user.phone || '-'}</dd></div>
+                  <div className="col-span-2"><dt className="text-xs text-slate-400">Store</dt><dd className="mt-0.5 text-slate-700">{user.user_type === 'store_manager' ? (user.assigned_stores?.length ? user.assigned_stores.join(', ') : '-') : (user.store_name || '-')}</dd></div>
+                </dl>
+                <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+                  {user._isPending
+                    ? <Badge className="border-0 bg-amber-100 text-xs font-semibold text-amber-700">Pending</Badge>
+                    : (user.is_verified || user.email_verified || user.verified || user.is_email_verified)
+                      ? <Badge className="border-0 bg-green-100 text-xs font-semibold text-green-700">Verified</Badge>
+                      : <Badge className="border-0 bg-red-100 text-xs font-semibold text-red-600">Unverified</Badge>}
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => openEdit(user)} aria-label={`Edit ${user.display_name || user.full_name || user.email}`}><Pencil className="h-4 w-4" /></Button>
+                    {!user._isPending && <Button variant="ghost" size="icon" className="text-blue-500 hover:bg-blue-50 hover:text-blue-700" onClick={() => handleResendVerification(user)} disabled={resendingEmail === user.id} aria-label={`Resend verification to ${user.email}`}>{resendingEmail === user.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailCheck className="h-4 w-4" />}</Button>}
+                    <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50 hover:text-red-700" onClick={() => setDeleteConfirm(user)} aria-label={`Delete ${user.display_name || user.full_name || user.email}`}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                </div>
+              </article>
+            ))}
+            {users.length === 0 && <p className="py-8 text-center text-sm text-slate-500">No users yet</p>}
+          </div>
+          <div className="hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -473,6 +503,8 @@ HelpDesk Support Team`
               )}
             </TableBody>
           </Table>
+          </div>
+          </>
         )}
       </CardContent>
       

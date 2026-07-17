@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import ExcelExportButton from "@/components/ExcelExportButton";
 import { exportSheetsToExcel } from "@/lib/exportExcel";
+import { SectionLoadingSkeleton } from '@/components/PageState';
 
 const STATUS_COLORS = {
   open: '#3b82f6',
@@ -201,7 +202,7 @@ export default function Analytics() {
             {user?.user_type === 'store_manager' ? `Metrics for ${(user.assigned_stores || []).join(', ') || 'your stores'}` : 'System-wide ticket performance metrics'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Select value={dateRange} onValueChange={setDateRange}>
             <SelectTrigger className="w-44">
               <SelectValue />
@@ -222,7 +223,7 @@ export default function Analytics() {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-slate-400" /></div>
+        <SectionLoadingSkeleton rows={4} label="Loading analytics" />
       ) : (
         <div className="space-y-6">
           {/* Row 1: Status Pie + Dept Bar side by side */}
