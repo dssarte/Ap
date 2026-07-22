@@ -74,18 +74,24 @@ AS $$
     private.is_admin()
     OR (
       nullif(trim(p_store_name), '') IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM public.stores AS active_store
+        WHERE lower(trim(active_store.store_name)) = lower(trim(p_store_name))
+          AND coalesce(active_store.is_active, true)
+      )
       AND (
-        lower(coalesce(private.current_profile() ->> 'store_name', '')) = lower(trim(p_store_name))
-        OR (
-          coalesce(private.current_profile() ->> 'user_type', '') = 'store_manager'
-          AND EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements_text(
-              coalesce(private.current_profile() -> 'assigned_stores', '[]'::jsonb)
-            ) AS assigned(store_name)
-            WHERE lower(trim(assigned.store_name)) = lower(trim(p_store_name))
-          )
-        )
+        CASE
+          WHEN coalesce(private.current_profile() ->> 'user_type', '') = 'store_manager' THEN
+            EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(
+                coalesce(private.current_profile() -> 'assigned_stores', '[]'::jsonb)
+              ) AS assigned(store_name)
+              WHERE lower(trim(assigned.store_name)) = lower(trim(p_store_name))
+            )
+          ELSE lower(coalesce(private.current_profile() ->> 'store_name', '')) = lower(trim(p_store_name))
+        END
       )
     )
 $$;
@@ -102,24 +108,31 @@ AS $$
     FROM public.tickets AS t
     WHERE t.id = p_ticket_id
       AND (
-        private.is_admin()
-        OR lower(coalesce(t.submitter_email, '')) = private.current_email()
-        OR lower(coalesce(t.approver_email, '')) = private.current_email()
-        OR lower(coalesce(t.assigned_to, '')) = private.current_email()
-        OR (
-          coalesce(private.current_profile() ->> 'user_type', '') = 'department_head'
-          AND (
-            coalesce(t.handling_department_id, t.department_id, '') =
-              coalesce(private.current_profile() ->> 'department_id', '')
-            OR EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(coalesce(t.handling_history, '[]'::jsonb)) AS history(entry)
-              WHERE coalesce(history.entry ->> 'department_id', '') =
-                coalesce(private.current_profile() ->> 'department_id', '')
+        CASE
+          -- A branch/store manager's assigned_stores list is authoritative.
+          -- Ownership or a stale approver email must never widen that scope.
+          WHEN coalesce(private.current_profile() ->> 'user_type', '') = 'store_manager'
+            THEN private.manages_store(t.store_name)
+          ELSE
+            private.is_admin()
+            OR lower(coalesce(t.submitter_email, '')) = private.current_email()
+            OR lower(coalesce(t.approver_email, '')) = private.current_email()
+            OR lower(coalesce(t.assigned_to, '')) = private.current_email()
+            OR (
+              coalesce(private.current_profile() ->> 'user_type', '') = 'department_head'
+              AND (
+                coalesce(t.handling_department_id, t.department_id, '') =
+                  coalesce(private.current_profile() ->> 'department_id', '')
+                OR EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements(coalesce(t.handling_history, '[]'::jsonb)) AS history(entry)
+                  WHERE coalesce(history.entry ->> 'department_id', '') =
+                    coalesce(private.current_profile() ->> 'department_id', '')
+                )
+              )
             )
-          )
-        )
-        OR private.manages_store(t.store_name)
+            OR private.manages_store(t.store_name)
+        END
       )
   )
 $$;
@@ -151,26 +164,32 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-  SELECT
-    private.is_qa_or_admin()
-    OR lower(coalesce(p_submitted_by_email, '')) = private.current_email()
-    OR (
-      nullif(coalesce(private.current_profile() ->> 'store_name', ''), '') IS NOT NULL
-      AND position(
-        lower(private.current_profile() ->> 'store_name')
-        IN lower(coalesce(p_brand, ''))
-      ) > 0
-    )
-    OR (
-      coalesce(private.current_profile() ->> 'user_type', '') = 'store_manager'
-      AND EXISTS (
+  SELECT CASE
+    WHEN coalesce(private.current_profile() ->> 'user_type', '') = 'store_manager' THEN
+      EXISTS (
         SELECT 1
         FROM jsonb_array_elements_text(
           coalesce(private.current_profile() -> 'assigned_stores', '[]'::jsonb)
         ) AS assigned(store_name)
-        WHERE position(lower(assigned.store_name) IN lower(coalesce(p_brand, ''))) > 0
+        WHERE position(lower(trim(assigned.store_name)) IN lower(coalesce(p_brand, ''))) > 0
+          AND EXISTS (
+            SELECT 1
+            FROM public.stores AS active_store
+            WHERE lower(trim(active_store.store_name)) = lower(trim(assigned.store_name))
+              AND coalesce(active_store.is_active, true)
+          )
       )
-    )
+    ELSE
+      private.is_qa_or_admin()
+      OR lower(coalesce(p_submitted_by_email, '')) = private.current_email()
+      OR (
+        nullif(coalesce(private.current_profile() ->> 'store_name', ''), '') IS NOT NULL
+        AND position(
+          lower(private.current_profile() ->> 'store_name')
+          IN lower(coalesce(p_brand, ''))
+        ) > 0
+      )
+  END
 $$;
 
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA private FROM PUBLIC, anon;
@@ -339,7 +358,13 @@ USING ((SELECT private.can_access_ticket(id)));
 CREATE POLICY tickets_owner_insert ON public.tickets
 FOR INSERT TO authenticated
 WITH CHECK (
-  lower(coalesce(submitter_email, '')) = (SELECT private.current_email())
+  (
+    lower(coalesce(submitter_email, '')) = (SELECT private.current_email())
+    AND (
+      coalesce((SELECT private.current_profile()) ->> 'user_type', '') <> 'store_manager'
+      OR (SELECT private.manages_store(store_name))
+    )
+  )
   OR (SELECT private.is_admin())
 );
 
@@ -442,7 +467,13 @@ USING ((SELECT private.can_access_audit(brand, submitted_by_email)));
 CREATE POLICY audit_submissions_owner_insert ON public.audit_submissions
 FOR INSERT TO authenticated
 WITH CHECK (
-  lower(coalesce(submitted_by_email, '')) = (SELECT private.current_email())
+  (
+    lower(coalesce(submitted_by_email, '')) = (SELECT private.current_email())
+    AND (
+      coalesce((SELECT private.current_profile()) ->> 'user_type', '') <> 'store_manager'
+      OR (SELECT private.can_access_audit(brand, submitted_by_email))
+    )
+  )
   OR (SELECT private.is_admin())
 );
 CREATE POLICY audit_submissions_admin_update ON public.audit_submissions

@@ -86,7 +86,10 @@ export default function UserManager() {
         phone: formData.phone,
         department_id: formData.department_id || null,
         department_name: dept?.name || null,
-        store_name: formData.store_name || null,
+        // Store managers use assigned_stores exclusively. Keeping the legacy
+        // single-store field would make an unassigned manager look assigned.
+        store_name: formData.user_type === 'store_manager' ? null : (formData.store_name || null),
+        brand_id: formData.user_type === 'store_manager' ? null : (formData.brand_id || null),
         assigned_stores: formData.user_type === 'store_manager' ? (formData.assigned_stores || []) : [],
         display_name: formData.display_name?.trim() || null
       };
@@ -187,10 +190,10 @@ HelpDesk Support Team`
         full_name: addData.full_name,
         user_type: addData.user_type,
         role: addData.role,
-        brand_id: addData.brand_id || null,
+        brand_id: addData.user_type === 'store_manager' ? null : (addData.brand_id || null),
         department_id: addData.department_id || null,
         department_name: dept?.name || null,
-        store_name: addData.store_name || null,
+        store_name: addData.user_type === 'store_manager' ? null : (addData.store_name || null),
         phone: addData.phone || null,
         assigned_stores: addData.user_type === 'store_manager' ? addData.assigned_stores : [],
         enabled: addData.is_enabled,
@@ -383,7 +386,7 @@ HelpDesk Support Team`
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              {addData.user_type !== 'store_manager' && <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>Brand</Label>
                   <Select value={addData.brand_id} onValueChange={(v) => setAddData({ ...addData, brand_id: v, store_name: '' })}>
@@ -404,14 +407,17 @@ HelpDesk Support Team`
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              </div>}
               {addData.user_type === 'store_manager' && (
-                <MultiStoreSelect
-                  stores={stores}
-                  brands={brands}
-                  selected={addData.assigned_stores}
-                  onChange={(vals) => setAddData({ ...addData, assigned_stores: vals })}
-                />
+                <div className="space-y-2">
+                  <MultiStoreSelect
+                    stores={stores.filter(store => store.is_active !== false)}
+                    brands={brands.filter(brand => brand.is_active !== false)}
+                    selected={addData.assigned_stores}
+                    onChange={(vals) => setAddData({ ...addData, assigned_stores: vals })}
+                  />
+                  <p className="text-xs text-slate-500">Only selected active stores are visible in approvals, audits, and analytics. No selection means no operational access.</p>
+                </div>
               )}
               <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
                 <div>
@@ -603,6 +609,7 @@ HelpDesk Support Team`
                 )}
               </div>
 
+              {formData.user_type !== 'store_manager' && <>
               <div className="space-y-2">
                 <Label className="text-slate-900 font-semibold">Brand</Label>
                 <Select
@@ -638,13 +645,17 @@ HelpDesk Support Team`
                 </Select>
                 <p className="text-xs text-slate-500">Select "No store assigned" to remove the store from this user (e.g. approvers/department heads).</p>
               </div>
+              </>}
               {formData.user_type === 'store_manager' && (
-                <MultiStoreSelect
-                  stores={stores}
-                  brands={brands}
-                  selected={formData.assigned_stores}
-                  onChange={(vals) => setFormData({ ...formData, assigned_stores: vals })}
-                />
+                <div className="space-y-2">
+                  <MultiStoreSelect
+                    stores={stores.filter(store => store.is_active !== false)}
+                    brands={brands.filter(brand => brand.is_active !== false)}
+                    selected={formData.assigned_stores}
+                    onChange={(vals) => setFormData({ ...formData, assigned_stores: vals })}
+                  />
+                  <p className="text-xs text-slate-500">Only selected active stores are visible in approvals, audits, and analytics. Leave all stores unselected to remove operational access.</p>
+                </div>
               )}
               <div className="space-y-2">
                 <Label className="text-slate-900 font-semibold">Phone</Label>

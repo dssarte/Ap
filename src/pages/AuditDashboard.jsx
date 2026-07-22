@@ -55,7 +55,7 @@ export default function AuditDashboard() {
   const allowedStores = useMemo(() => {
     if (!user) return null;
     if (user.user_type === 'store_manager') {
-      return user.assigned_stores?.length ? user.assigned_stores : (user.store_name ? [user.store_name] : []);
+      return Array.isArray(user.assigned_stores) ? user.assigned_stores : [];
     }
     return null; // null = no restriction
   }, [user]);

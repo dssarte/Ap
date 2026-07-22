@@ -40,13 +40,13 @@ export default function DailySummary() {
   const { data: allTemplates = [], isLoading: loadingTemplates } = useQuery({
     queryKey: ['audit-templates-active-daily'],
     queryFn: () => base44.entities.AuditTemplate.filter({ is_active: true }, '-created_date', 200),
-    enabled: !!user && canAccess,
+    enabled: !!user && canAccess && (!isStoreManager || assignedStores.length > 0),
   });
 
   const { data: stores = [], isLoading: loadingStores } = useQuery({
     queryKey: ['stores-active-daily'],
     queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 500),
-    enabled: !!user && canAccess,
+    enabled: !!user && canAccess && (!isStoreManager || assignedStores.length > 0),
   });
 
   const { data: submissions = [], isLoading: loadingSubs } = useQuery({
@@ -57,13 +57,13 @@ export default function DailySummary() {
       stores: isStoreManager ? assignedStores : null,
       maxRows: 5000,
     }),
-    enabled: !!user && canAccess,
+    enabled: !!user && canAccess && (!isStoreManager || assignedStores.length > 0),
   });
 
   const { data: configRecords = [] } = useQuery({
     queryKey: ['checklist-completion-config'],
     queryFn: () => base44.entities.ChecklistConfig.filter({ config_key: 'default' }, '-updated_date', 10),
-    enabled: !!user && canAccess,
+    enabled: !!user && canAccess && (!isStoreManager || assignedStores.length > 0),
   });
   const configRecord = configRecords[0];
 

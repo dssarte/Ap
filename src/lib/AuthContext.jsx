@@ -47,6 +47,45 @@ export const AuthProvider = ({ children }) => {
     return () => subscription.unsubscribe();
   }, [checkUserAuth]);
 
+  // Keep store assignments current while a branch manager is signed in.
+  // Database RLS changes immediately; this subscription keeps navigation and
+  // empty-state gating in sync without requiring a manual browser refresh.
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    const channel = supabase
+      .channel(`current-profile-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user.id}` },
+        ({ new: updatedProfile }) => {
+          if (!updatedProfile?.id) return;
+          setUser({
+            ...updatedProfile,
+            email: updatedProfile.email?.trim().toLowerCase(),
+            assigned_stores: Array.isArray(updatedProfile.assigned_stores)
+              ? updatedProfile.assigned_stores
+              : [],
+          });
+        },
+      )
+      .subscribe();
+
+    const refreshVisibleProfile = () => {
+      if (document.visibilityState === 'visible') {
+        base44.auth.me().then(setUser).catch(() => {});
+      }
+    };
+    window.addEventListener('focus', refreshVisibleProfile);
+    document.addEventListener('visibilitychange', refreshVisibleProfile);
+
+    return () => {
+      window.removeEventListener('focus', refreshVisibleProfile);
+      document.removeEventListener('visibilitychange', refreshVisibleProfile);
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
   const logout = async (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);

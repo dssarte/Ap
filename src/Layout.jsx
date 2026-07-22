@@ -78,12 +78,10 @@ export default function Layout({ children, currentPageName }) {
   let navItems = [{ name: 'Overview', icon: Home, page: 'Home' }];
 
   if (user?.user_type === 'store_manager') {
-    navItems.push(
-      { name: 'Approval queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null },
-      { name: 'Conduct audit', icon: ClipboardList, page: 'Audit' },
-    );
     if (user.assigned_stores?.length) {
       navItems.push(
+        { name: 'Approval queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null },
+        { name: 'Conduct audit', icon: ClipboardList, page: 'Audit' },
         { name: 'Store analytics', icon: BarChart3, page: 'StoreAuditAnalytics' },
         { name: 'Daily summary', icon: CalendarCheck, page: 'DailySummary' },
         { name: 'Audit dashboard', icon: ClipboardCheck, page: 'AuditDashboard' },

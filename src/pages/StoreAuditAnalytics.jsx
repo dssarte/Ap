@@ -48,8 +48,9 @@ export default function StoreAuditAnalytics() {
 
   const storeNames = useMemo(() => {
     if (!user) return [];
+    if (user.user_type === 'store_manager') return user.assigned_stores || [];
     if (user.store_name) return [user.store_name];
-    return user.assigned_stores || [];
+    return [];
   }, [user]);
 
   const isStoreManager = user?.user_type === 'store_manager';
