@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Send, Lock, AtSign, Loader2 } from "lucide-react";
 import { formatInTimeZone } from "date-fns-tz";
+import { safeDate } from "@/lib/dateUtils";
 
 // Parse @mentions in text and highlight them
 function MessageContent({ content }) {
@@ -66,13 +67,15 @@ function MentionDropdown({ query, users, onSelect, position }) {
 function CommentBubble({ comment, currentUserEmail }) {
   const isOwn = comment.author_email === currentUserEmail;
   const initials = (comment.author_name || comment.author_email || 'U')[0].toUpperCase();
-  const time = comment.created_date
-    ? formatInTimeZone(
-        new Date(comment.created_date + (comment.created_date?.endsWith('Z') ? '' : 'Z')),
-        'Asia/Manila',
-        "MMM d, h:mm a"
-      )
-    : '';
+  const commentDate = safeDate(comment.created_date);
+  let time = '';
+  if (commentDate) {
+    try {
+      time = formatInTimeZone(commentDate, 'Asia/Manila', "MMM d, h:mm a");
+    } catch {
+      time = 'Date unavailable';
+    }
+  }
 
   return (
     <div className={`flex gap-2 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>

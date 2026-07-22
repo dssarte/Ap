@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: fcg-production-deploy
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -17,11 +21,20 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Verify production build exists
-        run: |
-          ls -la
-          test -f dist/index.html
-          test -d dist/assets
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify and build production application
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run verify
 
       - name: Upload to cPanel
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6

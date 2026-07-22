@@ -9,20 +9,8 @@ import jsPDF from 'jspdf';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 
-// Entity timestamps lack a trailing "Z", so parse them as UTC explicitly
-// (otherwise the browser treats them as local time, shifting them by the
-// user's UTC offset and dropping submissions near midnight into the wrong day).
-function toUTCDate(date) {
-  if (typeof date === 'string' && !/Z$|[+-]\d{2}:?\d{2}$/.test(date)) {
-    return new Date(date + 'Z');
-  }
-  return new Date(date);
-}
-
-const PH_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Manila is UTC+8, no DST
-
 const PASS_THRESHOLD = 75;
-const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6979737791aaf996d5335e29/016378777_TheFigaroCoffeeGroup_logo.png";
+const LOGO_URL = '/assets/figaro-logo.png';
 
 function getRankColor(rank) {
   if (rank === 1) return 'bg-yellow-400 text-yellow-900';
@@ -75,28 +63,16 @@ export default function StoreRanking() {
     queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 200),
   });
 
-  const { data: submissions = [], isLoading } = useQuery({
-    queryKey: ['audit-submissions-all'],
-    queryFn: () => base44.entities.AuditSubmission.list('-created_date', 500),
+  const { data: summaryRows = [], isLoading } = useQuery({
+    queryKey: ['audit-store-template-summary', dateFrom, dateTo],
+    queryFn: () => base44.audit.storeTemplateSummary({ dateFrom, dateTo }),
+    enabled: Boolean(dateFrom && dateTo),
   });
 
   const { data: templates = [] } = useQuery({
     queryKey: ['audit-templates-all'],
     queryFn: () => base44.entities.AuditTemplate.list('title', 200),
   });
-
-  // Unique template titles (in order of appearance)
-  const allTemplateTitles = useMemo(() => {
-    const seen = new Set();
-    const titles = [];
-    submissions.forEach(s => {
-      if (s.template_title && !seen.has(s.template_id)) {
-        seen.add(s.template_id);
-        titles.push({ id: s.template_id, title: s.template_title });
-      }
-    });
-    return titles;
-  }, [submissions]);
 
   // Only include QA audit templates (no store restrictions) in rankings — store-only
   // checklists (Opening/Closing/OD/Mid, filled by store staff for themselves) are excluded.
@@ -110,60 +86,44 @@ export default function StoreRanking() {
 
   // Build ranking grouped by brand+store
   const rankings = useMemo(() => {
-    let filtered = submissions.filter(s => s.brand && s.score != null && qaTemplateIds.has(s.template_id));
+    let filtered = summaryRows.filter(s => s.brand && qaTemplateIds.has(s.template_id));
 
     if (selectedBrandId !== 'all') {
       const brand = brands.find(b => b.id === selectedBrandId);
       if (brand) filtered = filtered.filter(s => s.brand.startsWith(brand.brand_name));
     }
 
-    // Compare using the submission's PH-local calendar day, since dateFrom/dateTo
-    // are PH-local dates picked by the user.
-    if (dateFrom) {
-      const fromUTC = new Date(dateFrom).getTime() - PH_OFFSET_MS;
-      filtered = filtered.filter(s => toUTCDate(s.submission_date || s.created_date).getTime() >= fromUTC);
-    }
-    if (dateTo) {
-      const toUTC = new Date(dateTo).getTime() + (24 * 60 * 60 * 1000 - 1) - PH_OFFSET_MS;
-      filtered = filtered.filter(s => toUTCDate(s.submission_date || s.created_date).getTime() <= toUTC);
-    }
-
     const groups = {};
-    filtered.forEach(sub => {
-      const key = sub.brand;
-      if (!groups[key]) groups[key] = { brand: key, submissions: [] };
-      groups[key].submissions.push(sub);
+    filtered.forEach(row => {
+      const key = row.brand;
+      if (!groups[key]) groups[key] = { brand: key, rows: [] };
+      groups[key].rows.push(row);
     });
 
     return Object.values(groups)
       .map(g => {
-        const avgScore = g.submissions.reduce((sum, s) => sum + s.score, 0) / g.submissions.length;
-
-        const templateGroups = {};
-        g.submissions.forEach(s => {
-          if (!templateGroups[s.template_id]) {
-            templateGroups[s.template_id] = { title: s.template_title, scores: [] };
-          }
-          templateGroups[s.template_id].scores.push(s.score);
-        });
-
-        const templateScores = Object.values(templateGroups).map(tg => ({
-          title: tg.title,
-          avg: tg.scores.reduce((a, b) => a + b, 0) / tg.scores.length,
+        const count = g.rows.reduce((sum, row) => sum + Number(row.audit_count || 0), 0);
+        const weightedScore = g.rows.reduce(
+          (sum, row) => sum + Number(row.average_score || 0) * Number(row.audit_count || 0),
+          0
+        );
+        const avgScore = count ? weightedScore / count : 0;
+        const templateScores = g.rows.map(row => ({
+          title: row.template_title,
+          avg: Number(row.average_score || 0),
         }));
 
         return {
           brand: g.brand,
           avgScore,
           templateScores,
-          templateGroups,
-          count: g.submissions.length,
+          count,
           isPassing: avgScore >= PASS_THRESHOLD,
         };
       })
       .sort((a, b) => b.avgScore - a.avgScore)
       .map((item, idx) => ({ ...item, rank: idx + 1 }));
-  }, [submissions, brands, selectedBrandId, dateFrom, dateTo, qaTemplateIds]);
+  }, [summaryRows, brands, selectedBrandId, qaTemplateIds]);
 
   // Get selected brand name for display
   const selectedBrand = brands.find(b => b.id === selectedBrandId);

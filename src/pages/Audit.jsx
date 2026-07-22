@@ -62,7 +62,7 @@ function getCurrentCycleStart(t) {
   return nowMinutes >= fromMinutes ? todayFrom : todayFrom.clone().subtract(1, 'day');
 }
 
-const LOGO_URL = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6979737791aaf996d5335e29/016378777_TheFigaroCoffeeGroup_logo.png";
+const LOGO_URL = '/assets/figaro-logo.png';
 
 const isHeicUrl = (url = '') => /\.heic($|\?)/i.test(url);
 
@@ -85,6 +85,14 @@ async function fetchImageBase64(url) {
   } catch {
     return null;
   }
+}
+
+async function persistSignature(value, label) {
+  if (!value || !value.startsWith('data:')) return value || '';
+  const blob = await (await fetch(value)).blob();
+  const file = new File([blob], `${label}_${Date.now()}.png`, { type: 'image/png' });
+  const { file_url } = await base44.integrations.Core.UploadFile({ file });
+  return file_url;
 }
 
 export default function Audit() {
@@ -556,17 +564,28 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     setPendingDraft(null);
   };
 
-  const uploadMultiplePhotos = async (files, setter, setUploading) => {
+  const uploadMultiplePhotos = async (files, setter, setUploading, currentCount = 0) => {
+    const selected = Array.from(files);
+    if (currentCount + selected.length > 10) {
+      setPhotoError('Each audit photo section can contain up to 10 images.');
+      return;
+    }
     setUploading(true);
-    const urls = await Promise.all(
-      Array.from(files).map(async (file) => {
+    setPhotoError('');
+    try {
+      const urls = await Promise.all(
+        selected.map(async (file) => {
         const compressed = await compressImage(file);
         const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
         return file_url;
-      })
-    );
-    setter(prev => [...prev, ...urls]);
-    setUploading(false);
+        })
+      );
+      setter(prev => [...prev, ...urls]);
+    } catch (error) {
+      setPhotoError(error?.message || 'Photo upload failed.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const removePhoto = (setter, index) => {
@@ -597,9 +616,9 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     if (target?.type === 'item' && target.itemId) {
       await uploadItemPhotos(target.itemId, [file]);
     } else if (target?.type === 'deviations') {
-      await uploadMultiplePhotos([file], setDeviationsPhotos, setUploadingDeviations);
+      await uploadMultiplePhotos([file], setDeviationsPhotos, setUploadingDeviations, deviationsPhotos.length);
     } else if (target?.type === 'updates') {
-      await uploadMultiplePhotos([file], setUpdatesAttachments, setUploadingUpdates);
+      await uploadMultiplePhotos([file], setUpdatesAttachments, setUploadingUpdates, updatesAttachments.length);
     }
   };;
 
@@ -718,18 +737,28 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     }
 
     try {
-      let savedSubmission;
       if (existingSubmission?.id) {
-        savedSubmission = await base44.entities.AuditSubmission.update(existingSubmission.id, payload);
-      } else {
-        savedSubmission = await base44.entities.AuditSubmission.create({
+        const storedSig1 = await persistSignature(sig1Photo, 'audit_signature_1');
+        const storedSig2 = await persistSignature(sig2Photo, 'audit_signature_2');
+        await base44.entities.AuditSubmission.update(existingSubmission.id, {
           ...payload,
+          signature1_photo_url: storedSig1,
+          signature2_photo_url: storedSig2,
+        });
+      } else {
+        const storedSig1 = await persistSignature(sig1Photo, 'audit_signature_1');
+        const storedSig2 = await persistSignature(sig2Photo, 'audit_signature_2');
+        const submissionPayload = {
+          ...payload,
+          signature1_photo_url: storedSig1,
+          signature2_photo_url: storedSig2,
           submission_date: new Date().toISOString(),
           created_by: user.email,
-        });
+        };
+        const generatedTickets = [];
 
-        // Local Supabase replacement for the old Base44 audit automation.
-        // Create one approved/open ticket for every audit section containing NO answers.
+        // Prepare concern tickets, then save them with the audit in one database
+        // transaction so a weak connection cannot leave partial records.
         if (template.active_ticket && no > 0) {
           const departments = await base44.entities.Department.filter({ is_active: true });
           const categories = await base44.entities.Category.filter({ is_active: true });
@@ -740,7 +769,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
             const category = categories.find(c => c.department_id === dept?.id && !c.is_audit_only) || categories.find(c => !c.is_audit_only && (c.name || '').toLowerCase().includes((section.title || '').toLowerCase()));
             const approver = dept ? await base44.functions.invoke('findApproverForDepartment', { department_id: dept.id }) : { data: {} };
             const details = failedItems.map(item => `- ${item.label}: ${noComments[item.id] || 'No reason provided'}`).join('\n');
-            const ticket = await base44.entities.Ticket.create({
+            generatedTickets.push({
               title: `Audit NO - ${section.title} (${brand})`,
               description: `Auto-generated from audit ${template.title}.\n\n${details}`,
               department_id: dept?.id || user.department_id || '',
@@ -758,14 +787,25 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               status: 'open', approval_status: 'approved', approved_at: new Date().toISOString(),
               approver_email: approver.data?.approver_email || '',
               approver_name: approver.data?.approver_name || '',
-              audit_submission_id: savedSubmission.id,
-              audit_template_id: template.id,
               handling_history: [], escalated: false,
               sla_response_breached: false, sla_resolution_breached: false,
             });
-            await base44.functions.invoke('calculateSLA', { ticket_id: ticket.id });
-            await base44.functions.invoke('sendTicketNotification', { ticket_id: ticket.id, type: 'created', message: `Audit concern created: ${ticket.title}` });
           }
+        }
+
+        const bundle = await base44.audit.submitBundle(submissionPayload, generatedTickets);
+
+        // Notification delivery happens after the database transaction. It may
+        // be retried independently without duplicating the audit or tickets.
+        for (const ticket of (bundle.tickets || [])) {
+          if (!bundle.atomic) {
+            await base44.functions.invoke('calculateSLA', { ticket_id: ticket.id });
+          }
+          await base44.functions.invoke('sendTicketNotification', {
+            ticket_id: ticket.id,
+            type: 'created',
+            message: `Audit concern created: ${ticket.title}`,
+          }).catch(() => {});
         }
       }
       clearDraft();
@@ -1021,7 +1061,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               <label className={`inline-flex items-center gap-2 ${uploadingDeviations ? 'pointer-events-none opacity-50' : 'cursor-pointer'} bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-3 py-1.5 rounded-md border border-slate-300 transition-colors`}>
                 {uploadingDeviations ? <Loader2 className="w-4 h-4 animate-spin" /> : '+ Add Photos'}
                 <input type="file" accept="image/jpeg,image/png,image/jpg" multiple className="hidden"
-                  onChange={e => e.target.files.length && uploadMultiplePhotos(e.target.files, setDeviationsPhotos, setUploadingDeviations)} />
+                  onChange={e => e.target.files.length && uploadMultiplePhotos(e.target.files, setDeviationsPhotos, setUploadingDeviations, deviationsPhotos.length)} />
               </label>
               <button
                 type="button"
@@ -1063,7 +1103,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               <label className={`inline-flex items-center gap-2 ${uploadingUpdates ? 'pointer-events-none opacity-50' : 'cursor-pointer'} bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-3 py-1.5 rounded-md border border-slate-300 transition-colors`}>
                 {uploadingUpdates ? <Loader2 className="w-4 h-4 animate-spin" /> : '+ Add Photos'}
                 <input type="file" accept="image/jpeg,image/png,image/jpg" multiple className="hidden"
-                  onChange={e => e.target.files.length && uploadMultiplePhotos(e.target.files, setUpdatesAttachments, setUploadingUpdates)} />
+                  onChange={e => e.target.files.length && uploadMultiplePhotos(e.target.files, setUpdatesAttachments, setUploadingUpdates, updatesAttachments.length)} />
               </label>
               <button
                 type="button"

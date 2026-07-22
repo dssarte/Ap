@@ -7,7 +7,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Loader2, TrendingUp, Clock, CheckCircle2, AlertCircle, Users, BarChart3, FileText } from "lucide-react";
-import { format } from "date-fns";
 import { subDays, differenceInHours } from "date-fns";
 import StatsCard from "@/components/dashboard/StatsCard";
 import ReportFilters from "@/components/dashboard/ReportFilters";
@@ -21,6 +20,7 @@ import TicketsByPriority from "@/components/reports/TicketsByPriority";
 import TicketDetails from "@/components/tickets/TicketDetails";
 import ExcelExportButton from "@/components/ExcelExportButton";
 import { exportSheetsToExcel } from "@/lib/exportExcel";
+import { formatPHDate, formatPHDateTime } from "@/lib/dateUtils";
 
 const statusColors = {
   open: 'bg-blue-100 text-blue-700',
@@ -189,7 +189,7 @@ export default function DepartmentDashboard() {
         rows: filteredTickets.map(t => [
           t.id, t.title, t.category_name || '', t.status, t.priority,
           t.assigned_to || 'Unassigned', t.submitter_name || t.submitter_email,
-          format(new Date(t.created_date), 'yyyy-MM-dd HH:mm'),
+          formatPHDateTime(t.created_date),
           t.sla_response_breached ? 'Yes' : 'No',
           t.sla_resolution_breached ? 'Yes' : 'No',
         ]),
@@ -305,7 +305,7 @@ export default function DepartmentDashboard() {
                         <Badge variant="outline">{ticket.priority}</Badge>
                         <span>{ticket.assigned_to || 'Unassigned'}</span>
                         <span aria-hidden="true">•</span>
-                        <time dateTime={ticket.created_date}>{format(new Date(ticket.created_date), 'MMM d, yyyy')}</time>
+                        <time dateTime={ticket.created_date || undefined}>{formatPHDate(ticket.created_date)}</time>
                       </div>
                     </button>
                   ))}
@@ -337,7 +337,7 @@ export default function DepartmentDashboard() {
                         </TableCell>
                         <TableCell><Badge variant="outline">{ticket.priority}</Badge></TableCell>
                         <TableCell className="text-slate-600">{ticket.assigned_to || 'Unassigned'}</TableCell>
-                        <TableCell className="text-slate-600">{format(new Date(ticket.created_date), 'MMM d, yyyy')}</TableCell>
+                        <TableCell className="text-slate-600">{formatPHDate(ticket.created_date)}</TableCell>
                       </TableRow>
                     ))}
                     {recentTickets.length === 0 && (

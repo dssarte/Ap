@@ -23,7 +23,6 @@ ALTER TABLE public.ticket_rules
 
 ALTER TABLE public.pending_users
   ADD COLUMN IF NOT EXISTS email TEXT,
-  ADD COLUMN IF NOT EXISTS password TEXT,
   ADD COLUMN IF NOT EXISTS full_name TEXT,
   ADD COLUMN IF NOT EXISTS display_name TEXT,
   ADD COLUMN IF NOT EXISTS user_type TEXT,
@@ -78,9 +77,9 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('attachments', 'attachments', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
 
+-- A public bucket already permits access through getPublicUrl(). Do not add a
+-- SELECT policy: it would also let API clients enumerate every stored file.
 DROP POLICY IF EXISTS "attachments public read" ON storage.objects;
-CREATE POLICY "attachments public read" ON storage.objects
-FOR SELECT TO public USING (bucket_id = 'attachments');
 
 DROP POLICY IF EXISTS "attachments authenticated upload" ON storage.objects;
 CREATE POLICY "attachments authenticated upload" ON storage.objects
@@ -88,11 +87,23 @@ FOR INSERT TO authenticated WITH CHECK (bucket_id = 'attachments');
 
 DROP POLICY IF EXISTS "attachments authenticated update" ON storage.objects;
 CREATE POLICY "attachments authenticated update" ON storage.objects
-FOR UPDATE TO authenticated USING (bucket_id = 'attachments') WITH CHECK (bucket_id = 'attachments');
+FOR UPDATE TO authenticated
+USING (
+  bucket_id = 'attachments'
+  AND owner_id = (SELECT auth.uid()::text)
+)
+WITH CHECK (
+  bucket_id = 'attachments'
+  AND owner_id = (SELECT auth.uid()::text)
+);
 
 DROP POLICY IF EXISTS "attachments authenticated delete" ON storage.objects;
 CREATE POLICY "attachments authenticated delete" ON storage.objects
-FOR DELETE TO authenticated USING (bucket_id = 'attachments');
+FOR DELETE TO authenticated
+USING (
+  bucket_id = 'attachments'
+  AND owner_id = (SELECT auth.uid()::text)
+);
 
 -- Admin CRUD compatibility fixes (safe to run more than once)
 BEGIN;

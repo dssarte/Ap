@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import NotificationBell from '@/components/notifications/NotificationBell';
 
-const LOGO_URL = 'https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6979737791aaf996d5335e29/016378777_TheFigaroCoffeeGroup_logo.png';
+const LOGO_URL = '/assets/figaro-logo.png';
 
 export default function Layout({ children, currentPageName }) {
   const [user, setUser] = useState(null);

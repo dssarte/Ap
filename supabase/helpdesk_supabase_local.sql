@@ -495,7 +495,9 @@ INSERT INTO "notifications" ("id", "created_date", "updated_date", "created_by_i
 
 COMMIT;
 
--- Development policies for local testing
+-- Enable RLS without adding permissive testing policies. After running this
+-- export and complete_setup.sql, run harden_rls_policies.sql to install the
+-- production role/ownership policies.
 DO $$
 DECLARE t text;
 BEGIN
@@ -503,7 +505,6 @@ BEGIN
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS local_testing_all ON public.%I', t);
-    EXECUTE format('CREATE POLICY local_testing_all ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)', t);
   END LOOP;
 END $$;
 

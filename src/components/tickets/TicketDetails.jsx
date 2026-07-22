@@ -14,6 +14,17 @@ import SLAIndicator from "./SLAIndicator";
 import FeedbackDisplay from "./FeedbackDisplay";
 import InternalDiscussion from "./InternalDiscussion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { safeDate } from "@/lib/dateUtils";
+
+const formatTicketDate = (value, pattern) => {
+  const date = safeDate(value);
+  if (!date) return 'Date unavailable';
+  try {
+    return formatInTimeZone(date, 'Asia/Manila', pattern);
+  } catch {
+    return 'Date unavailable';
+  }
+};
 
 const statusColors = {
   open: "bg-blue-50 text-blue-700 border border-blue-200",
@@ -391,7 +402,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
               </span>
               <span className="flex items-center gap-1">
                 <Clock className="w-4 h-4" />
-                {formatInTimeZone(new Date(ticket.created_date + (ticket.created_date?.endsWith('Z') ? '' : 'Z')), 'Asia/Manila', "MMM d, yyyy h:mm a 'PHT'")}
+                {formatTicketDate(ticket.created_date, "MMM d, yyyy h:mm a 'PHT'")}
               </span>
             </div>
 
@@ -407,10 +418,10 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                     <div key={idx} className="text-xs text-amber-900">
                       <span className="font-medium">{entry.department_name}</span>
                       {entry.forwarded_at && (
-                        <span> — Forwarded on {formatInTimeZone(new Date(entry.forwarded_at), 'Asia/Manila', "MMM d, h:mm a")} by {entry.forwarded_by}</span>
+                        <span> — Forwarded on {formatTicketDate(entry.forwarded_at, "MMM d, h:mm a")} by {entry.forwarded_by}</span>
                       )}
                       {entry.returned_at && (
-                        <span> — Returned on {formatInTimeZone(new Date(entry.returned_at), 'Asia/Manila', "MMM d, h:mm a")} by {entry.returned_by}</span>
+                        <span> — Returned on {formatTicketDate(entry.returned_at, "MMM d, h:mm a")} by {entry.returned_by}</span>
                       )}
                       {entry.return_reason && (
                         <span className="italic"> ({entry.return_reason})</span>
@@ -542,7 +553,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                           {comment.author_name || comment.author_email}
                         </span>
                         <span className="text-xs text-slate-500">
-                          {formatInTimeZone(new Date(comment.created_date + (comment.created_date?.endsWith('Z') ? '' : 'Z')), 'Asia/Manila', "MMM d, h:mm a 'PHT'")}
+                          {formatTicketDate(comment.created_date, "MMM d, h:mm a 'PHT'")}
                         </span>
                       </div>
                       <p className="text-sm text-slate-700">{comment.content}</p>

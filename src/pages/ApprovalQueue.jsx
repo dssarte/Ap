@@ -52,16 +52,13 @@ export default function ApprovalQueue() {
     queryKey: ['approval-tickets', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const allTickets = await base44.entities.Ticket.list('-created_date');
       if (user.user_type === 'store_manager') {
-        // Store managers see tickets from any of their assigned stores
         const stores = user.assigned_stores || [];
-        return allTickets.filter(t => t.store_name && stores.includes(t.store_name));
+        return stores.length
+          ? base44.entities.Ticket.filter({ store_name: stores }, '-created_date', 1000)
+          : [];
       }
-      return allTickets.filter(t =>
-        // Show tickets where this approver is the assigned approver
-        t.approver_email === user.email
-      );
+      return base44.entities.Ticket.filter({ approver_email: user.email }, '-created_date', 1000);
     },
     enabled: !!user
   });
@@ -96,102 +93,15 @@ export default function ApprovalQueue() {
   const handleApprove = async (ticket) => {
     setProcessing(true);
     try {
-      console.log('=== STARTING APPROVAL ===');
-      console.log('Ticket ID:', ticket.id);
-      console.log('User:', user.email, 'Type:', user.user_type, 'Dept:', user.department_name);
-      console.log('Ticket status:', ticket.status, 'approval_status:', ticket.approval_status);
-      
-      // Step 1: Get fresh ticket data
-      const freshTicket = await base44.entities.Ticket.get(ticket.id);
-      console.log('Fresh ticket retrieved:', freshTicket.id, 'status:', freshTicket.status);
-      
-      // Step 2: Re-fetch category to ensure we have the correct handling department
-      let targetDeptId = freshTicket.handling_department_id || freshTicket.department_id;
-      if (freshTicket.category_id) {
-        try {
-          const category = await base44.entities.Category.get(freshTicket.category_id);
-          if (category?.department_id) {
-            targetDeptId = category.department_id;
-            console.log('Updated target department from category:', targetDeptId);
-          }
-        } catch (e) {
-          console.warn('Could not fetch category:', e);
-        }
-      }
-      console.log('Finding department head for handling department:', targetDeptId);
-      const deptHeadResult = await base44.functions.invoke('findDepartmentHead', { 
-        department_id: targetDeptId 
-      });
-      const deptHeadEmail = deptHeadResult?.data?.dept_head_email || null;
-      const deptHeadName = deptHeadResult?.data?.dept_head_name || null;
-      const targetDept = await base44.entities.Department.get(targetDeptId);
-      console.log('Department head found:', deptHeadEmail || 'none', 'for department:', targetDept?.name);
-      
-      // Step 4: Prepare update payload - ensure handling department is updated correctly
-      const updatePayload = {
-        approval_status: 'approved',
-        status: 'open',
-        approver_email: user.email,
-        approver_name: user.full_name || user.email,
-        approved_at: new Date().toISOString(),
-        assigned_to: deptHeadEmail,
-        handling_department_id: targetDeptId,
-        handling_department_name: targetDept?.name || ''
-      };
-      
-      // If category has a different department, also update the ticket's department fields
-      if (freshTicket.category_id && targetDeptId !== freshTicket.handling_department_id) {
-        console.log('Correcting handling department from', freshTicket.handling_department_id, 'to', targetDeptId);
-      }
-      
-      console.log('Update payload:', JSON.stringify(updatePayload, null, 2));
-      
-      // Step 5: Update the ticket
-      console.log('Calling Ticket.update...');
-      await base44.entities.Ticket.update(ticket.id, updatePayload);
-      console.log('✓ Ticket.update succeeded');
-      
-      // Step 6: Verify update
-      const verifyTicket = await base44.entities.Ticket.get(ticket.id);
-      console.log('Verification - status:', verifyTicket.status, 'approval_status:', verifyTicket.approval_status);
-      
-      // Step 7: Apply SLA (non-blocking)
-      try {
-        await base44.functions.invoke('calculateSLA', { 
-          ticket_id: ticket.id,
-          priority: freshTicket.priority,
-          department_id: targetDeptId
-        });
-        console.log('✓ SLA applied');
-      } catch (slaErr) {
-        console.warn('SLA warning:', slaErr.message);
-      }
-      
-      // Step 8: Send notification (non-blocking)
-      if (deptHeadEmail) {
-        try {
-          await base44.functions.invoke('sendTicketNotification', {
-            ticket_id: ticket.id,
-            user_email: deptHeadEmail,
-            notification_type: 'assigned'
-          });
-          console.log('✓ Notification sent');
-        } catch (e) {
-          console.warn('Notification warning:', e.message);
-        }
-      }
-      
-      console.log('=== APPROVAL COMPLETE ===');
+      await base44.tickets.processApproval(ticket.id, 'approve');
       await refetch();
       setSelectedTicket(null);
       toast({ title: 'Ticket approved', description: 'The ticket has been routed to the responsible department.' });
     } catch (error) {
-      console.error('=== APPROVAL FAILED ===');
-      console.error('Error:', error);
-      console.error('Stack:', error.stack);
       toast({ title: 'Approval failed', description: error?.message || 'The ticket could not be approved. Please try again.', variant: 'destructive' });
+    } finally {
+      setProcessing(false);
     }
-    setProcessing(false);
   };
 
   const handleReject = async () => {
@@ -202,23 +112,7 @@ export default function ApprovalQueue() {
 
     setProcessing(true);
     try {
-      await base44.entities.Ticket.update(selectedTicket.id, {
-        approval_status: 'rejected',
-        status: 'open',
-        approver_email: user.email,
-        approver_name: user.full_name,
-        approved_at: new Date().toISOString(),
-        rejection_reason: rejectionReason
-      });
-
-      // Add rejection comment
-      await base44.entities.TicketComment.create({
-        ticket_id: selectedTicket.id,
-        content: `Ticket rejected by approver: ${rejectionReason}`,
-        author_email: user.email,
-        author_name: user.full_name,
-        is_internal: false
-      });
+      await base44.tickets.processApproval(selectedTicket.id, 'reject', rejectionReason);
 
       await refetch();
       setSelectedTicket(null);
@@ -227,8 +121,9 @@ export default function ApprovalQueue() {
       toast({ title: 'Ticket rejected', description: 'The requester can now review the rejection reason.' });
     } catch (error) {
       toast({ title: 'Rejection failed', description: error?.message || 'The ticket could not be rejected. Please try again.', variant: 'destructive' });
+    } finally {
+      setProcessing(false);
     }
-    setProcessing(false);
   };
 
   const priorityColors = {

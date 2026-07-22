@@ -53,10 +53,16 @@ export default function StoreAuditAnalytics() {
   }, [user]);
 
   const isStoreManager = user?.user_type === 'store_manager';
+  const historyFrom = useMemo(() => moment().utcOffset(8).subtract(89, 'days').format('YYYY-MM-DD'), []);
 
   const { data: submissions = [], isLoading } = useQuery({
-    queryKey: ['store-audit-analytics', storeNames.join(',')],
-    queryFn: () => base44.entities.AuditSubmission.list('-created_date', 500),
+    queryKey: ['store-audit-analytics', storeNames.join(','), historyFrom],
+    queryFn: () => base44.audit.listSubmissions({
+      dateFrom: historyFrom,
+      dateTo: today,
+      stores: storeNames,
+      maxRows: 10000,
+    }),
     enabled: storeNames.length > 0,
   });
 

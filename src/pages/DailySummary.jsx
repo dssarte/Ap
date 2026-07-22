@@ -50,8 +50,13 @@ export default function DailySummary() {
   });
 
   const { data: submissions = [], isLoading: loadingSubs } = useQuery({
-    queryKey: ['audit-submissions-daily'],
-    queryFn: () => base44.entities.AuditSubmission.list('-created_date', 500),
+    queryKey: ['audit-submissions-daily', selectedDate, isStoreManager ? assignedStores.join('|') : 'all'],
+    queryFn: () => base44.audit.listSubmissions({
+      dateFrom: selectedDate,
+      dateTo: selectedDate,
+      stores: isStoreManager ? assignedStores : null,
+      maxRows: 5000,
+    }),
     enabled: !!user && canAccess,
   });
 

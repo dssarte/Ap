@@ -11,6 +11,7 @@
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
     "verify": "npm run lint && npm run typecheck && npm run build",
+    "capacity": "node scripts/capacity-model.mjs",
     "build:cpanel": "node scripts/build-cpanel.mjs"
   },
   "dependencies": {

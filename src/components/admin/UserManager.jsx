@@ -22,8 +22,8 @@ export default function UserManager() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [formData, setFormData] = useState({ user_type: 'user', department_id: '', phone: '', brand_id: '', store_name: '', assigned_stores: [] });
-  const [addData, setAddData] = useState({ email: '', full_name: '', password: '', role: 'user', user_type: 'user', department_id: '', brand_id: '', store_name: '', phone: '', assigned_stores: [] });
+  const [formData, setFormData] = useState({ user_type: 'user', department_id: '', phone: '', brand_id: '', store_name: '', assigned_stores: [], is_enabled: true });
+  const [addData, setAddData] = useState({ email: '', full_name: '', password: '', role: 'user', user_type: 'user', department_id: '', brand_id: '', store_name: '', phone: '', assigned_stores: [], is_enabled: true });
   const [addError, setAddError] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // user to delete
@@ -46,7 +46,7 @@ export default function UserManager() {
         base44.entities.Store.filter({ is_active: true })
       ]);
       const pendingAsRows = pendingData.map(p => ({ ...p, full_name: p.full_name, _isPending: true }));
-      setUsers([...pendingAsRows, ...usersData.filter(u => !(u.disabled === true || String(u.disabled).toLowerCase() === 'true'))]);
+      setUsers([...pendingAsRows, ...usersData]);
       setDepartments(deptsData);
       setBrands(brandsData);
       setStores(storesData);
@@ -97,6 +97,15 @@ export default function UserManager() {
       
       await base44.entities.User.update(editing.id, updateData);
 
+      const wasEnabled = !(editing.disabled === true || String(editing.disabled).toLowerCase() === 'true');
+      if (formData.is_enabled !== wasEnabled) {
+        await base44.functions.invoke('manageUser', {
+          action: 'set_enabled',
+          user_id: editing.id,
+          enabled: formData.is_enabled,
+        });
+      }
+
       // Update verification status via service-role backend function
       const wasVerified = !!(editing.is_verified || editing.email_verified || editing.verified || editing.is_email_verified);
       if (formData.is_verified !== wasVerified) {
@@ -130,6 +139,7 @@ export default function UserManager() {
       await loadData();
       setEditDialogOpen(false);
       setEditing(null);
+      toast({ title: "User updated", description: `${editing.email} was updated successfully.` });
     } catch (err) {
       console.error('Failed to update user:', err);
       alert('Failed to save: ' + (err?.message || 'Unknown error'));
@@ -183,13 +193,20 @@ HelpDesk Support Team`
         store_name: addData.store_name || null,
         phone: addData.phone || null,
         assigned_stores: addData.user_type === 'store_manager' ? addData.assigned_stores : [],
+        enabled: addData.is_enabled,
       });
       if (res.data?.error) throw new Error(res.data.error);
       const savedEmail = addData.email;
+      const savedEnabled = addData.is_enabled;
       setInviteDialogOpen(false);
-      setAddData({ email: '', full_name: '', password: '', role: 'user', user_type: 'user', department_id: '', brand_id: '', store_name: '', phone: '', assigned_stores: [] });
+      setAddData({ email: '', full_name: '', password: '', role: 'user', user_type: 'user', department_id: '', brand_id: '', store_name: '', phone: '', assigned_stores: [], is_enabled: true });
       await loadData();
-      toast({ title: "User saved", description: `${savedEmail} was added to the Users tab. If email confirmation is enabled in Supabase, the user must confirm their email before logging in.` });
+      toast({
+        title: "User created",
+        description: savedEnabled
+          ? `${savedEmail} can now sign in with the temporary password.`
+          : `${savedEmail} was created but remains disabled until an administrator enables it.`,
+      });
     } catch (err) {
       console.error('Failed to add user:', err);
       setAddError(err?.message || 'Failed to create user. Please try again.');
@@ -210,7 +227,8 @@ HelpDesk Support Team`
       brand_id: matchedStore?.brand_id || '',
       store_name: user.store_name || '',
       assigned_stores: user.assigned_stores || [],
-      is_verified: !!(user.is_verified || user.email_verified || user.verified || user.is_email_verified)
+      is_verified: !!(user.is_verified || user.email_verified || user.verified || user.is_email_verified),
+      is_enabled: !(user.disabled === true || String(user.disabled).toLowerCase() === 'true')
     });
     setEditDialogOpen(true);
   };
@@ -221,21 +239,23 @@ HelpDesk Support Team`
       if (deleteConfirm._isPending) {
         await base44.entities.PendingUser.delete(deleteConfirm.id);
       } else {
-        // Soft-delete: prevents login and avoids the auth account recreating its
-        // profile on the next sign-in. Re-adding the same email restores it.
-        await base44.entities.User.update(deleteConfirm.id, {
-          disabled: true,
-          disabled_reason: 'Disabled from Admin > Users',
+        await base44.functions.invoke('manageUser', {
+          action: 'delete',
+          user_id: deleteConfirm.id,
         });
       }
+      const removedEmail = deleteConfirm.email;
       setDeleteConfirm(null);
       await loadData();
+      toast({ title: "User removed", description: `${removedEmail} can no longer sign in.` });
     } catch (err) {
-      alert('Failed to delete: ' + (err?.message || 'Unknown error'));
+      toast({ title: "Failed to remove user", description: err?.message || 'Unknown error', variant: "destructive" });
     } finally {
       setDeleting(false);
     }
   };
+
+  const isDisabled = (user) => user.disabled === true || String(user.disabled).toLowerCase() === 'true';
 
   const handleResendVerification = async (user) => {
     setResendingEmail(user.id);
@@ -393,6 +413,17 @@ HelpDesk Support Team`
                   onChange={(vals) => setAddData({ ...addData, assigned_stores: vals })}
                 />
               )}
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Account Access</p>
+                  <p className="text-xs text-slate-500">Turn off to create the user without allowing sign-in yet.</p>
+                </div>
+                <Switch
+                  checked={addData.is_enabled}
+                  onCheckedChange={(val) => setAddData({ ...addData, is_enabled: val })}
+                  aria-label="Enable new account access"
+                />
+              </div>
               <Button type="submit" disabled={saving} className="w-full bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900 font-bold h-11 mt-2">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <UserPlus className="w-4 h-4 mr-2" />}
                 {saving ? 'Creating User...' : 'Add User'}
@@ -410,7 +441,7 @@ HelpDesk Support Team`
           <>
           <div className="space-y-3 md:hidden">
             {users.map(user => (
-              <article key={user.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <article key={user.id} className={`rounded-xl border border-slate-200 p-4 shadow-sm ${isDisabled(user) ? 'bg-slate-50 opacity-75' : 'bg-white'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0"><h3 className="truncate font-semibold text-slate-900">{user.display_name || user.full_name || '-'}</h3><p className="mt-0.5 break-all text-xs text-slate-500">{user.email}</p></div>
                   {getRoleBadge(user)}
@@ -423,13 +454,13 @@ HelpDesk Support Team`
                 <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
                   {user._isPending
                     ? <Badge className="border-0 bg-amber-100 text-xs font-semibold text-amber-700">Pending</Badge>
-                    : (user.is_verified || user.email_verified || user.verified || user.is_email_verified)
-                      ? <Badge className="border-0 bg-green-100 text-xs font-semibold text-green-700">Verified</Badge>
-                      : <Badge className="border-0 bg-red-100 text-xs font-semibold text-red-600">Unverified</Badge>}
+                    : isDisabled(user)
+                      ? <Badge className="border-0 bg-slate-200 text-xs font-semibold text-slate-700">Disabled</Badge>
+                      : <Badge className="border-0 bg-green-100 text-xs font-semibold text-green-700">Active</Badge>}
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(user)} aria-label={`Edit ${user.display_name || user.full_name || user.email}`}><Pencil className="h-4 w-4" /></Button>
                     {!user._isPending && <Button variant="ghost" size="icon" className="text-blue-500 hover:bg-blue-50 hover:text-blue-700" onClick={() => handleResendVerification(user)} disabled={resendingEmail === user.id} aria-label={`Resend verification to ${user.email}`}>{resendingEmail === user.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailCheck className="h-4 w-4" />}</Button>}
-                    <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50 hover:text-red-700" onClick={() => setDeleteConfirm(user)} aria-label={`Delete ${user.display_name || user.full_name || user.email}`}><Trash2 className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50 hover:text-red-700" onClick={() => setDeleteConfirm(user)} aria-label={`Permanently remove ${user.display_name || user.full_name || user.email}`} title="Permanently remove user"><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </div>
               </article>
@@ -446,13 +477,13 @@ HelpDesk Support Team`
                 <TableHead>Department</TableHead>
                 <TableHead>Store</TableHead>
                 <TableHead>Phone</TableHead>
-                <TableHead>Verified</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="w-32"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {users.map(user => (
-                <TableRow key={user.id}>
+                <TableRow key={user.id} className={isDisabled(user) ? 'bg-slate-50 opacity-75' : ''}>
                   <TableCell className="font-medium">{user.display_name || user.full_name || '-'}</TableCell>
                   <TableCell className="text-slate-600">{user.email}</TableCell>
                   <TableCell>{getRoleBadge(user)}</TableCell>
@@ -464,12 +495,18 @@ HelpDesk Support Team`
                   </TableCell>
                   <TableCell className="text-slate-600">{user.phone || '-'}</TableCell>
                   <TableCell>
-                    {user._isPending
-                      ? <Badge className="bg-amber-100 text-amber-700 border-0 text-xs font-semibold">Pending (never logged in)</Badge>
-                      : (user.is_verified || user.email_verified || user.verified || user.is_email_verified)
-                        ? <Badge className="bg-green-100 text-green-700 border-0 text-xs font-semibold">Verified</Badge>
-                        : <Badge className="bg-red-100 text-red-600 border-0 text-xs font-semibold">Unverified</Badge>
-                    }
+                    <div className="flex flex-col items-start gap-1">
+                      {user._isPending
+                        ? <Badge className="bg-amber-100 text-amber-700 border-0 text-xs font-semibold">Pending</Badge>
+                        : isDisabled(user)
+                          ? <Badge className="bg-slate-200 text-slate-700 border-0 text-xs font-semibold">Disabled</Badge>
+                          : <Badge className="bg-green-100 text-green-700 border-0 text-xs font-semibold">Active</Badge>}
+                      {!user._isPending && (
+                        <span className="text-xs text-slate-500">
+                          {(user.is_verified || user.email_verified || user.verified || user.is_email_verified) ? 'Verified' : 'Unverified'}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
@@ -487,7 +524,7 @@ HelpDesk Support Team`
                           {resendingEmail === user.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <MailCheck className="w-4 h-4" />}
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => setDeleteConfirm(user)}>
+                      <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => setDeleteConfirm(user)} title="Permanently remove user" aria-label={`Permanently remove ${user.display_name || user.full_name || user.email}`}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
@@ -496,7 +533,7 @@ HelpDesk Support Team`
               ))}
               {users.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-slate-500 py-8">
+                  <TableCell colSpan={8} className="text-center text-slate-500 py-8">
                     No users yet
                   </TableCell>
                 </TableRow>
@@ -623,15 +660,29 @@ HelpDesk Support Team`
                   This user hasn't logged in yet — no account exists until they do, and no verification email has been sent.
                 </div>
               ) : (
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Account Verified</p>
-                    <p className="text-xs text-slate-500">Allow this user to log in without email verification</p>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Account Access</p>
+                      <p className="text-xs text-slate-500">Disabled users cannot sign in. Their history is preserved.</p>
+                    </div>
+                    <Switch
+                      checked={formData.is_enabled}
+                      onCheckedChange={(val) => setFormData({ ...formData, is_enabled: val })}
+                      aria-label="Enable account access"
+                    />
                   </div>
-                  <Switch
-                    checked={formData.is_verified}
-                    onCheckedChange={(val) => setFormData({ ...formData, is_verified: val })}
-                  />
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Account Verified</p>
+                      <p className="text-xs text-slate-500">Allow this user to log in without email verification</p>
+                    </div>
+                    <Switch
+                      checked={formData.is_verified}
+                      onCheckedChange={(val) => setFormData({ ...formData, is_verified: val })}
+                      aria-label="Mark account as verified"
+                    />
+                  </div>
                 </div>
               )}
               <Button type="submit" disabled={saving} className="w-full bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900 font-bold h-11 shadow-md hover:shadow-lg">
@@ -642,19 +693,19 @@ HelpDesk Support Team`
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm Dialog */}
+      {/* Permanent removal confirmation */}
       <Dialog open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete Account</DialogTitle>
+            <DialogTitle>Permanently remove user</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-600">
-            Are you sure you want to delete <strong>{deleteConfirm?.full_name || deleteConfirm?.email}</strong>? This cannot be undone.
+            Remove <strong>{deleteConfirm?.display_name || deleteConfirm?.full_name || deleteConfirm?.email}</strong>? Their login and user profile will be permanently deleted. Historical tickets and audits will remain. This cannot be undone.
           </p>
           <DialogFooter className="flex gap-2 mt-4">
             <Button variant="outline" onClick={() => setDeleteConfirm(null)} disabled={deleting}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete'}
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Remove user'}
             </Button>
           </DialogFooter>
         </DialogContent>

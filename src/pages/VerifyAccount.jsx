@@ -72,7 +72,7 @@ export default function VerifyAccount() {
           {/* Logo */}
           <div className="flex justify-center mb-6">
             <img
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6979737791aaf996d5335e29/016378777_TheFigaroCoffeeGroup_logo.png"
+              src="/assets/figaro-logo.png"
               alt="Logo"
               className="h-16 object-contain"
             />

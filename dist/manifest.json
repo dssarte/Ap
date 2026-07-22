@@ -1,0 +1,18 @@
+{
+  "name": "FCG HelpDesk and Audit",
+  "short_name": "FCG APP",
+  "description": "Figaro Coffee Group support, approvals, and audit workspace.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#047857",
+  "icons": [
+    {
+      "src": "/assets/figaro-logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

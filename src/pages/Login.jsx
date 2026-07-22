@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Eye, EyeOff, Mail, CheckCircle2, ShieldCheck, BarChart3 } from "lucide-react";
 
-const LOGO_URL = 'https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6979737791aaf996d5335e29/016378777_TheFigaroCoffeeGroup_logo.png';
+const LOGO_URL = '/assets/figaro-logo.png';
 
 const NEEDS_VERIFICATION_HINTS = ['verify', 'verification', 'otp', 'confirm your'];
 

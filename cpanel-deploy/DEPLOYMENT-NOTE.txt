@@ -1,6 +1,15 @@
 Upload the CONTENTS of this folder to the document root of fcg.thefigarogroup.ph.
 Do not upload the cpanel-deploy folder itself as an extra nested directory.
+
+Before uploading this frontend:
+  1. Back up the production Supabase database.
+  2. Run supabase/harden_rls_policies.sql in the Supabase SQL Editor.
+  3. Run supabase/scale_for_200_stores.sql in the Supabase SQL Editor.
+The SQL files are kept outside the public web package for security.
+
 Supabase Site URL: https://fcg.thefigarogroup.ph
 Supabase Redirect URLs:
   https://fcg.thefigarogroup.ph/**
   https://fcg.thefigarogroup.ph/reset-password
+
+After upload, clear the CDN/browser cache and test every application role.

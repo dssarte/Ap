@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Send, Image, X } from "lucide-react";
+import { compressImage } from '@/lib/compressImage';
 
 export default function TicketForm({ user, onSuccess, onCancel }) {
   const [departments, setDepartments] = useState([]);
@@ -15,6 +16,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -91,11 +93,13 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
     if (!file) return;
     
     setUploading(true);
+    setUploadError('');
     try {
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
       setFormData({ ...formData, attachment_url: file_url });
     } catch (error) {
       console.error('Upload failed:', error);
+      setUploadError(error?.message || 'Upload failed.');
     }
     setUploading(false);
   };
@@ -103,17 +107,24 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
   const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
+    if (formData.image_urls.length + files.length > 5) {
+      setUploadError('A ticket can include up to 5 images.');
+      return;
+    }
     
     setUploadingImages(true);
+    setUploadError('');
     try {
-      const uploadPromises = files.map(file => 
-        base44.integrations.Core.UploadFile({ file })
-      );
+      const uploadPromises = files.map(async file => {
+        const compressed = await compressImage(file);
+        return base44.integrations.Core.UploadFile({ file: compressed });
+      });
       const results = await Promise.all(uploadPromises);
       const imageUrls = results.map(r => r.file_url);
       setFormData({ ...formData, image_urls: [...formData.image_urls, ...imageUrls] });
     } catch (error) {
       console.error('Image upload failed:', error);
+      setUploadError(error?.message || 'Image upload failed.');
     }
     setUploadingImages(false);
   };
@@ -153,7 +164,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
         console.warn('Could not find approver:', e);
       }
       
-      const newTicket = await base44.entities.Ticket.create({
+      const newTicket = await base44.tickets.createManual({
         title,
         description,
         department_id: effectiveDeptId,
@@ -184,6 +195,8 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
         ticket_id: newTicket.id,
         type: 'created',
         message: `New ticket created: ${title}`,
+      }).catch((notificationError) => {
+        console.warn('Ticket saved, but participant notification delivery failed:', notificationError);
       });
 
       // Apply automation rules
@@ -319,6 +332,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
             {formData.attachment_url && (
               <p className="text-xs text-green-600 font-medium">✓ File uploaded successfully</p>
             )}
+            {uploadError && <p className="text-xs font-medium text-red-600" role="alert">{uploadError}</p>}
           </div>
 
           <div className="space-y-2">
@@ -329,7 +343,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
                   <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center cursor-pointer hover:border-[#1fd655] transition-colors">
                     <Image className="w-8 h-8 text-slate-400 mx-auto mb-2" />
                     <p className="text-sm text-slate-600 font-medium">Click to upload images</p>
-                    <p className="text-xs text-slate-500 mt-1">PNG, JPG up to 10MB</p>
+                    <p className="text-xs text-slate-500 mt-1">Up to 5 PNG/JPG images, 10MB each</p>
                   </div>
                   <Input
                     type="file"

@@ -12,6 +12,7 @@ const entityTables = {
 
 const unwrap = ({ data, error }) => { if (error) throw error; return data; };
 const cleanPayload = (payload = {}) => Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== undefined));
+const isMissingRpc = (error) => error?.code === 'PGRST202' || /function .* does not exist|schema cache/i.test(error?.message || '');
 const applySort = (query, sort) => !sort ? query : query.order(sort.startsWith('-') ? sort.slice(1) : sort, { ascending: !sort.startsWith('-'), nullsFirst: false });
 const applyFilters = (query, filters = {}) => {
   for (const [key, value] of Object.entries(filters || {})) {
@@ -90,6 +91,110 @@ function entityApi(name) {
 
 const entities = new Proxy({}, { get: (_, name) => entityApi(name) });
 
+const auditData = {
+  async listSubmissions({ dateFrom = null, dateTo = null, stores = null, templateId = null, maxRows = 25000 } = {}) {
+    const pageSize = 1000;
+    const rows = [];
+
+    for (let offset = 0; offset < maxRows; offset += pageSize) {
+      const { data, error } = await supabase.rpc('list_audit_submissions', {
+        p_date_from: dateFrom || null,
+        p_date_to: dateTo || null,
+        p_store_names: stores?.length ? stores : null,
+        p_template_id: templateId || null,
+        p_limit: Math.min(pageSize, maxRows - offset),
+        p_offset: offset,
+      });
+
+      if (error) {
+        if (!isMissingRpc(error)) throw error;
+
+        // Backward-compatible fallback while the production migration is being
+        // deployed. It still filters and paginates at the database boundary.
+        let query = supabase.from('audit_submissions').select('*');
+        if (dateFrom) query = query.gte('submission_date', new Date(`${dateFrom}T00:00:00+08:00`).toISOString());
+        if (dateTo) {
+          const exclusiveEnd = new Date(`${dateTo}T00:00:00+08:00`);
+          exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
+          query = query.lt('submission_date', exclusiveEnd.toISOString());
+        }
+        if (templateId) query = query.eq('template_id', templateId);
+        if (stores?.length) {
+          query = query.or(stores.map(store => `brand.ilike.%${String(store).replace(/[,%()]/g, '')}%`).join(','));
+        }
+        const fallback = unwrap(await query
+          .order('submission_date', { ascending: false, nullsFirst: false })
+          .range(offset, offset + Math.min(pageSize, maxRows - offset) - 1)) || [];
+        rows.push(...fallback);
+        if (fallback.length < pageSize) break;
+        continue;
+      }
+
+      const page = data || [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+
+    return rows;
+  },
+
+  async storeTemplateSummary({ dateFrom = null, dateTo = null, stores = null } = {}) {
+    const { data, error } = await supabase.rpc('audit_store_template_summary', {
+      p_date_from: dateFrom || null,
+      p_date_to: dateTo || null,
+      p_store_names: stores?.length ? stores : null,
+    });
+    if (!error) return data || [];
+    if (!isMissingRpc(error)) throw error;
+
+    const submissions = await auditData.listSubmissions({ dateFrom, dateTo, stores, maxRows: 25000 });
+    const groups = new Map();
+    for (const row of submissions) {
+      if (!row.brand || !row.template_id || row.score == null) continue;
+      const key = `${row.brand}\u0000${row.template_id}`;
+      const group = groups.get(key) || {
+        brand: row.brand, template_id: row.template_id, template_title: row.template_title,
+        total: 0, audit_count: 0, passing_count: 0,
+        first_submission: null, latest_submission: null,
+      };
+      const timestamp = row.submission_date || row.created_date;
+      group.total += Number(row.score);
+      group.audit_count += 1;
+      if (Number(row.score) >= 75) group.passing_count += 1;
+      if (!group.first_submission || timestamp < group.first_submission) group.first_submission = timestamp;
+      if (!group.latest_submission || timestamp > group.latest_submission) group.latest_submission = timestamp;
+      groups.set(key, group);
+    }
+    return [...groups.values()].map(group => ({
+      ...group,
+      average_score: group.audit_count ? group.total / group.audit_count : 0,
+    }));
+  },
+
+  async submitBundle(submission, tickets = []) {
+    const { data, error } = await supabase.rpc('submit_audit_bundle', {
+      p_submission: cleanPayload(submission),
+      p_tickets: tickets.map(cleanPayload),
+    });
+    if (!error) return { ...data, atomic: true };
+    if (!isMissingRpc(error)) throw error;
+
+    // Deployment-order fallback: the site remains usable if the frontend is
+    // uploaded shortly before the database migration. Apply the migration as
+    // soon as possible so future submissions are transactional.
+    const savedSubmission = await entityApi('AuditSubmission').create(submission);
+    const savedTickets = [];
+    for (const ticket of tickets) {
+      savedTickets.push(await entityApi('Ticket').create({
+        ...ticket,
+        audit_submission_id: savedSubmission.id,
+        audit_template_id: savedSubmission.template_id,
+      }));
+    }
+    return { submission: savedSubmission, tickets: savedTickets, atomic: false };
+  },
+};
+
 async function currentProfile() {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) throw error || new Error('Authentication required');
@@ -141,77 +246,35 @@ const functions = {
     if (name === 'completeFirstLogin') return { data: { isPending: false } };
 
     if (name === 'initializeNewUser') {
-      const email = body.email?.trim().toLowerCase();
-      const password = body.password;
-      if (!email) throw new Error('Email is required.');
-      if (!password || password.length < 6) throw new Error('Password must contain at least 6 characters.');
-
-      // Use an isolated auth client so creating another user never replaces the
-      // currently logged-in administrator session.
-      const adminSignupClient = createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY,
-        { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
-      );
-
-      const { data: signupData, error: signupError } = await adminSignupClient.auth.signUp({
-        email,
-        password,
-        options: { data: { full_name: body.full_name || email } },
-      });
-
-      // Supabase returns an error when the auth account already exists. In that
-      // case we still save/update the application profile so it appears in Users.
-      const alreadyExists = signupError && /already|registered|exists/i.test(signupError.message || '');
-      if (signupError && !alreadyExists) throw signupError;
-
-      const now = new Date().toISOString();
-      const profilePayload = cleanPayload({
-        email,
-        full_name: body.full_name?.trim() || email,
-        display_name: body.full_name?.trim() || email,
-        user_type: body.user_type || 'user',
-        role: body.role || (body.user_type === 'admin' ? 'admin' : 'user'),
-        app_role: body.role || (body.user_type === 'admin' ? 'admin' : 'user'),
-        department_id: body.department_id || null,
-        department_name: body.department_name || null,
-        brand_id: body.brand_id || null,
-        store_name: body.store_name || null,
-        phone: body.phone || null,
-        assigned_stores: Array.isArray(body.assigned_stores) ? body.assigned_stores : [],
-        is_verified: Boolean(signupData?.user?.email_confirmed_at),
-        verified: Boolean(signupData?.user?.email_confirmed_at),
-        email_verified: Boolean(signupData?.user?.email_confirmed_at),
-        disabled: false,
-        updated_date: now,
-      });
-
-      const { data: existingProfiles, error: lookupError } = await supabase
-        .from('users')
-        .select('id')
-        .ilike('email', email)
-        .limit(1);
-      if (lookupError) throw lookupError;
-
-      let profile;
-      if (existingProfiles?.[0]?.id) {
-        profile = unwrap(await supabase
-          .from('users')
-          .update(profilePayload)
-          .eq('id', existingProfiles[0].id)
-          .select()
-          .single());
-      } else {
-        profile = unwrap(await supabase
-          .from('users')
-          .insert({ id: crypto.randomUUID(), created_date: now, ...profilePayload })
-          .select()
-          .single());
+      const { data, error } = await supabase.functions.invoke('initialize-new-user', { body });
+      if (error) {
+        let message = error.message || 'Unable to create the user.';
+        try {
+          const details = await error.context?.json();
+          message = details?.error || details?.message || message;
+        } catch {
+          // Keep the SDK error when the response is not JSON.
+        }
+        throw new Error(message);
       }
+      if (data?.error) throw new Error(data.error);
+      return { data };
+    }
 
-      // Remove any stale pending row for the same email.
-      await supabase.from('pending_users').delete().ilike('email', email);
-      return { data: { success: true, profile, auth_user_id: signupData?.user?.id || null, already_exists: Boolean(alreadyExists) } };
+    if (name === 'manageUser') {
+      const { data, error } = await supabase.functions.invoke('manage-user', { body });
+      if (error) {
+        let message = error.message || 'Unable to manage the user.';
+        try {
+          const details = await error.context?.json();
+          message = details?.error || details?.message || message;
+        } catch {
+          // Keep the SDK error when the response is not JSON.
+        }
+        throw new Error(message);
+      }
+      if (data?.error) throw new Error(data.error);
+      return { data };
     }
 
     if (name === 'setUserVerified') {
@@ -257,6 +320,15 @@ const functions = {
     if (name === 'sendTicketNotification') {
       const ticketId = body.ticket_id;
       if (!ticketId) throw new Error('ticket_id is required');
+      const { data: notified, error: notifyError } = await supabase.rpc('notify_ticket_participants', {
+        p_ticket_id: ticketId,
+        p_type: body.type || 'updated',
+        p_message: body.message || null,
+      });
+      if (!notifyError) return { data: { success: true, recipients: notified || 0 } };
+      if (!isMissingRpc(notifyError)) throw notifyError;
+
+      // Compatibility fallback until the production migration is applied.
       const ticket = unwrap(await supabase.from('tickets').select('*').eq('id', ticketId).single());
       const recipients = new Set([ticket.submitter_email, ticket.assigned_to, ticket.approver_email].filter(Boolean).map(x => x.trim().toLowerCase()));
       if (ticket.handling_department_id || ticket.department_id) {
@@ -314,16 +386,89 @@ const functions = {
   },
 };
 
+const ticketWorkflows = {
+  async createManual(ticket) {
+    const { data, error } = await supabase.rpc('create_manual_ticket', {
+      p_ticket: cleanPayload(ticket),
+    });
+    if (!error) return data;
+    if (!isMissingRpc(error)) throw error;
+    return entityApi('Ticket').create(ticket);
+  },
+
+  async processApproval(ticketId, action, rejectionReason = null) {
+    const { data, error } = await supabase.rpc('process_ticket_approval', {
+      p_ticket_id: ticketId,
+      p_action: action,
+      p_rejection_reason: rejectionReason || null,
+    });
+    if (!error) return { ticket: data, atomic: true };
+    if (!isMissingRpc(error)) throw error;
+
+    // Temporary compatibility for deployments where the frontend arrives just
+    // before scale_for_200_stores.sql.
+    const me = await currentProfile();
+    const ticket = await entityApi('Ticket').get(ticketId);
+    if (!ticket) throw new Error('Ticket not found.');
+
+    if (action === 'reject') {
+      if (!rejectionReason?.trim()) throw new Error('A rejection reason is required.');
+      const updated = await entityApi('Ticket').update(ticketId, {
+        approval_status: 'rejected', status: 'open', approver_email: me.email,
+        approver_name: me.full_name || me.email, approved_at: new Date().toISOString(),
+        rejection_reason: rejectionReason.trim(),
+      });
+      await entityApi('TicketComment').create({
+        ticket_id: ticketId, content: `Ticket rejected by approver: ${rejectionReason.trim()}`,
+        author_email: me.email, author_name: me.full_name || me.email, is_internal: false,
+      });
+      return { ticket: updated, atomic: false };
+    }
+
+    let targetDepartmentId = ticket.handling_department_id || ticket.department_id;
+    if (ticket.category_id) {
+      const category = await entityApi('Category').get(ticket.category_id);
+      targetDepartmentId = category?.department_id || targetDepartmentId;
+    }
+    const head = await findApprover(targetDepartmentId);
+    const department = await entityApi('Department').get(targetDepartmentId);
+    const updated = await entityApi('Ticket').update(ticketId, {
+      approval_status: 'approved', status: 'open', approver_email: me.email,
+      approver_name: me.full_name || me.email, approved_at: new Date().toISOString(),
+      assigned_to: head.approver_email || null,
+      handling_department_id: targetDepartmentId,
+      handling_department_name: department?.name || ticket.handling_department_name || '',
+    });
+    await functions.invoke('calculateSLA', { ticket_id: ticketId });
+    return { ticket: updated, atomic: false };
+  },
+};
+
 const integrations = { Core: {
   async UploadFile({ file }) {
     if (!file) throw new Error('No file selected');
+    const maxBytes = 10 * 1024 * 1024;
+    const allowedTypes = new Set([
+      'image/jpeg', 'image/png', 'image/webp',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]);
+    if (file.size > maxBytes) throw new Error('Files must be 10 MB or smaller.');
+    if (file.type && !allowedTypes.has(file.type)) throw new Error('This file type is not allowed.');
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const path = `${new Date().toISOString().slice(0,10)}/${crypto.randomUUID()}-${safeName}`;
-    unwrap(await supabase.storage.from('attachments').upload(path, file, { upsert: false }));
+    unwrap(await supabase.storage.from('attachments').upload(path, file, {
+      upsert: false,
+      cacheControl: '31536000',
+      contentType: file.type || undefined,
+    }));
     const { data } = supabase.storage.from('attachments').getPublicUrl(path);
     return { file_url: data.publicUrl };
   },
   async SendEmail(payload) { return functions.invoke('send-email', payload); },
 }};
 
-export const base44 = { entities, auth, functions, integrations, appLogs: { logUserInApp: async () => true } };
+export const base44 = { entities, auth, functions, integrations, audit: auditData, tickets: ticketWorkflows, appLogs: { logUserInApp: async () => true } };

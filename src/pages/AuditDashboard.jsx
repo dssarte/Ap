@@ -66,8 +66,14 @@ export default function AuditDashboard() {
   });
 
   const { data: submissions = [], isLoading } = useQuery({
-    queryKey: ['audit-submissions-dashboard'],
-    queryFn: () => base44.entities.AuditSubmission.list('-created_date', 1000),
+    queryKey: ['audit-submissions-dashboard', dateFrom, dateTo, selectedTemplateId],
+    queryFn: () => base44.audit.listSubmissions({
+      dateFrom,
+      dateTo,
+      templateId: selectedTemplateId === 'all' ? null : selectedTemplateId,
+      maxRows: 25000,
+    }),
+    enabled: !!user,
   });
 
   const { data: templates = [] } = useQuery({

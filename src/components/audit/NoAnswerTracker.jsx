@@ -18,8 +18,13 @@ export default function NoAnswerTracker({ allowedStores = null }) {
   const [dateTo, setDateTo] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
 
   const { data: submissions = [], isLoading } = useQuery({
-    queryKey: ['audit-submissions-no-tracker'],
-    queryFn: () => base44.entities.AuditSubmission.list('-created_date', 3000),
+    queryKey: ['audit-submissions-no-tracker', dateFrom, dateTo, allowedStores?.join('|') || 'all'],
+    queryFn: () => base44.audit.listSubmissions({
+      dateFrom,
+      dateTo,
+      stores: allowedStores,
+      maxRows: 10000,
+    }),
   });
 
   const { data: templates = [] } = useQuery({
