@@ -49,5 +49,7 @@ jobs:
           protocol: ftp
           port: 21
           local-dir: ./dist/
-          server-dir: ./
+          # The FTP account opens at /home/u278sptdh207. Deploy into the
+          # document root used by https://fcg.thefigarogroup.ph.
+          server-dir: ./public_html/fcg.thefigarogroup.ph/
           dangerous-clean-slate: false
