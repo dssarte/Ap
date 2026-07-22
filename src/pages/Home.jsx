@@ -21,6 +21,7 @@ export default function Home() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [categories, setCategories] = useState([]);
+  const [unreadByTicket, setUnreadByTicket] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -105,6 +106,58 @@ export default function Home() {
 
   const queryClient = useQueryClient();
 
+  // Ticket-scoped unread indicators replace the global notification bell.
+  // A user's own updates are excluded so sending a message never creates an
+  // unread badge for the sender.
+  useEffect(() => {
+    if (!user?.email) {
+      setUnreadByTicket({});
+      return undefined;
+    }
+
+    let active = true;
+    const normalizedEmail = user.email.trim().toLowerCase();
+
+    const loadUnreadNotifications = async () => {
+      try {
+        const notifications = await base44.entities.Notification.filter(
+          { user_email: user.email },
+          '-created_date',
+          2000
+        );
+        if (!active) return;
+
+        const counts = (Array.isArray(notifications) ? notifications : [])
+          .filter(notification => (
+            !notification.is_read
+            && notification.ticket_id
+            && String(notification.created_by || '').trim().toLowerCase() !== normalizedEmail
+          ))
+          .reduce((result, notification) => {
+            result[notification.ticket_id] = (result[notification.ticket_id] || 0) + 1;
+            return result;
+          }, {});
+        setUnreadByTicket(counts);
+      } catch (notificationError) {
+        console.error('Failed to load ticket updates:', notificationError);
+        if (active) setUnreadByTicket({});
+      }
+    };
+
+    loadUnreadNotifications();
+    const unsubscribe = base44.entities.Notification.subscribe((event) => {
+      const changedRow = event?.new || event?.old || event?.data;
+      if (String(changedRow?.user_email || '').trim().toLowerCase() === normalizedEmail) {
+        loadUnreadNotifications();
+      }
+    });
+
+    return () => {
+      active = false;
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [user?.email]);
+
   // Realtime: refetch the ticket list whenever any ticket is created/updated/deleted,
   // so new and changed tickets appear without a manual browser refresh.
   useEffect(() => {
@@ -160,6 +213,29 @@ export default function Home() {
 
   const handleTicketClick = async (ticket) => {
     setSelectedTicket(ticket);
+
+    if (unreadByTicket[ticket.id]) {
+      setUnreadByTicket(previous => {
+        const next = { ...previous };
+        delete next[ticket.id];
+        return next;
+      });
+
+      try {
+        const relatedNotifications = await base44.entities.Notification.filter({
+          user_email: user.email,
+          ticket_id: ticket.id,
+        });
+        await Promise.all(
+          (Array.isArray(relatedNotifications) ? relatedNotifications : [])
+            .filter(notification => !notification.is_read)
+            .map(notification => base44.entities.Notification.update(notification.id, { is_read: true }))
+        );
+      } catch (notificationError) {
+        console.error('Failed to mark ticket updates as read:', notificationError);
+      }
+    }
+
     // Prompt feedback for resolved/closed tickets submitted by this user that haven't been rated
     if (isRegularUser && (ticket.status === 'resolved' || ticket.status === 'closed') && ticket.submitter_email === user.email) {
       const existing = await base44.entities.TicketFeedback.filter({ ticket_id: ticket.id });
@@ -277,6 +353,7 @@ export default function Home() {
                   key={ticket.id} 
                   ticket={ticket} 
                   onClick={handleTicketClick}
+                  unreadCount={unreadByTicket[ticket.id] || 0}
                 />
               ))}
             </div>

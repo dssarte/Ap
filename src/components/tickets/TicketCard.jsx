@@ -21,10 +21,10 @@ const priorityColors = {
   urgent: "bg-red-50 text-red-600 border border-red-200"
 };
 
-export default function TicketCard({ ticket, onClick }) {
+export default function TicketCard({ ticket, onClick, unreadCount = 0 }) {
   return (
     <Card
-      className="group cursor-pointer rounded-2xl border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
+      className={`group cursor-pointer rounded-2xl bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md ${unreadCount > 0 ? 'border-emerald-300 ring-1 ring-emerald-100' : 'border-slate-200'}`}
       onClick={() => onClick(ticket)}
     >
       <CardContent className="p-4 sm:p-5">
@@ -77,6 +77,15 @@ export default function TicketCard({ ticket, onClick }) {
           </div>
           
           <div className="mt-1 flex shrink-0 items-center gap-2">
+            {unreadCount > 0 && (
+              <span
+                className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-xs font-bold text-white shadow-sm"
+                aria-label={`${unreadCount} unread update${unreadCount === 1 ? '' : 's'}`}
+                title={`${unreadCount} unread update${unreadCount === 1 ? '' : 's'}`}
+              >
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
             {ticket.priority === 'urgent' && <AlertCircle className="h-5 w-5 text-red-500" />}
             <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-700" />
           </div>

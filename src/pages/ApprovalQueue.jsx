@@ -161,6 +161,14 @@ export default function ApprovalQueue() {
         author_name: user.full_name,
         is_internal: false
       });
+
+      await base44.functions.invoke('sendTicketNotification', {
+        ticket_id: selectedTicket.id,
+        type: 'commented',
+        message: `${user.full_name || user.email} commented on ticket: ${selectedTicket.title}`,
+      }).catch((notificationError) => {
+        console.warn('Comment saved, but participant notification delivery failed:', notificationError);
+      });
       
       setNewComment('');
       await loadComments(selectedTicket.id);

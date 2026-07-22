@@ -29,7 +29,6 @@ import {
   Trophy,
   X,
 } from 'lucide-react';
-import NotificationBell from '@/components/notifications/NotificationBell';
 
 const LOGO_URL = '/assets/figaro-logo.png';
 
@@ -189,7 +188,6 @@ export default function Layout({ children, currentPageName }) {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3">
-            {user && <NotificationBell userEmail={user.email} />}
             {user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

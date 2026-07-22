@@ -110,12 +110,13 @@ function UserGuideTab() {
           <FeatureItem icon={ChevronRight} label="Resolved — the issue has been resolved" />
           <FeatureItem icon={ChevronRight} label="Closed — the ticket is fully closed" />
         </Section>
-        <Section icon={Bell} title="Notifications">
-          <p className="text-sm text-slate-600 mb-3">You will receive notifications (bell icon, top right) when:</p>
+        <Section icon={Bell} title="Ticket updates">
+          <p className="text-sm text-slate-600 mb-3">An unread number appears directly on a ticket when:</p>
           <FeatureItem icon={ChevronRight} label="Your ticket is approved or rejected" />
           <FeatureItem icon={ChevronRight} label="A staff member is assigned to your ticket" />
           <FeatureItem icon={ChevronRight} label="Your ticket status is updated" />
           <FeatureItem icon={ChevronRight} label="A comment is added to your ticket" />
+          <p className="mt-3 text-sm text-slate-600">Open the ticket to read the update and automatically clear its unread number.</p>
         </Section>
       </CardContent>
     </Card>
