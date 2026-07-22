@@ -34,6 +34,8 @@ export default function ApprovalQueue() {
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [addingComment, setAddingComment] = useState(false);
+  const canCommentOnClosed = user?.user_type === 'admin' || user?.user_type === 'approver';
+  const isClosedCommentLocked = selectedTicket?.status === 'closed' && !canCommentOnClosed;
 
   useEffect(() => {
     loadUser();
@@ -141,6 +143,14 @@ export default function ApprovalQueue() {
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
+    if (isClosedCommentLocked) {
+      toast({
+        title: 'Ticket chat is closed',
+        description: 'Store managers cannot add messages after a ticket is closed.',
+        variant: 'destructive'
+      });
+      return;
+    }
     
     setAddingComment(true);
     try {
@@ -355,15 +365,16 @@ export default function ApprovalQueue() {
 
                 <div className="flex gap-2">
                   <Textarea
-                    placeholder="Add a comment or note..."
+                    placeholder={isClosedCommentLocked ? 'Chat is disabled for this closed ticket.' : 'Add a comment or note...'}
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     className="flex-1"
                     rows={2}
+                    disabled={isClosedCommentLocked}
                   />
                   <Button 
                     onClick={handleAddComment} 
-                    disabled={addingComment || !newComment.trim()}
+                    disabled={addingComment || !newComment.trim() || isClosedCommentLocked}
                     className="self-end"
                   >
                     {addingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add'}

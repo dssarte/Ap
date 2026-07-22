@@ -65,7 +65,9 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
   const isBranchManager = user.user_type === 'store_manager';
   const canManage = user.user_type === 'admin' || (user.user_type === 'department_head' && user.department_id === ticket.department_id);
   const canReply = isStaff || isApprover || isBranchManager || ticket.submitter_email === user.email;
-  const canCommentOnClosed = user.user_type === 'admin' || isApprover || isBranchManager;
+  // Closed-ticket chat stays available to admins and explicit approvers only.
+  // Store managers follow the same closed-ticket lock as department heads and users.
+  const canCommentOnClosed = user.user_type === 'admin' || isApprover;
 
   useEffect(() => {
     loadComments();
@@ -214,8 +216,8 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
   const handleAddComment = async () => {
     if (!newComment.trim() && attachmentUrls.length === 0) return;
     
-    // Approvers and the currently assigned branch managers keep the public
-    // conversation open after closure; other ticket changes remain locked.
+    // Admins and explicit approvers keep the public conversation open after
+    // closure. Store managers, department heads, and users remain read-only.
     if (ticket.status === 'closed' && !canCommentOnClosed) {
       alert('You cannot comment on this closed ticket.');
       return;
