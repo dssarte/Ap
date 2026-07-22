@@ -19,16 +19,38 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
+
+      # npm 10.9.x can terminate with "Exit handler never called" on clean
+      # Linux runners. Pin the known-stable CLI and avoid a corrupted cache
+      # being restored into a production deployment.
+      - name: Set up stable npm
+        run: npm install --global npm@10.8.0 --no-audit --no-fund
 
       - name: Install dependencies
-        run: npm ci
+        timeout-minutes: 12
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_FETCH_RETRIES: "5"
+          NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: "20000"
+          NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: "120000"
+        run: |
+          npm --version
+          for attempt in 1 2 3; do
+            echo "Dependency installation attempt ${attempt} of 3"
+            if timeout 3m npm ci --prefer-online; then
+              exit 0
+            fi
+            npm cache clean --force
+          done
+          echo "Dependency installation failed after 3 attempts."
+          exit 1
 
       - name: Verify and build production application
         env:
