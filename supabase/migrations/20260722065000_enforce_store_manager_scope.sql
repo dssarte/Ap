@@ -111,13 +111,14 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF TG_TABLE_NAME = 'tickets' AND NOT private.manages_store(NEW.store_name) THEN
-    RAISE EXCEPTION 'This store is not assigned to your branch manager account.';
-  END IF;
-
-  IF TG_TABLE_NAME = 'audit_submissions'
-     AND NOT private.can_access_audit(NEW.brand, NEW.submitted_by_email) THEN
-    RAISE EXCEPTION 'This store is not assigned to your branch manager account.';
+  IF TG_TABLE_NAME = 'tickets' THEN
+    IF NOT private.manages_store(NEW.store_name) THEN
+      RAISE EXCEPTION 'This store is not assigned to your branch manager account.';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'audit_submissions' THEN
+    IF NOT private.can_access_audit(NEW.brand, NEW.submitted_by_email) THEN
+      RAISE EXCEPTION 'This store is not assigned to your branch manager account.';
+    END IF;
   END IF;
 
   IF TG_TABLE_NAME = 'audit_submissions' AND NOT EXISTS (

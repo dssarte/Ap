@@ -1,7 +1,9 @@
--- Store managers may submit an audit only when both conditions are true:
---   1. the store is in their assigned_stores list; and
---   2. the audit template applies to that store.
--- Other user types retain their existing behavior.
+-- Fix Store Manager ticket approvals failing with:
+--   record "new" has no field "brand"
+--
+-- The same trigger function protects tickets and audit submissions. PostgreSQL
+-- must not evaluate audit-only NEW fields while the trigger is running for a
+-- ticket. Store assignment and template restrictions remain unchanged.
 
 BEGIN;
 
@@ -16,9 +18,6 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Keep table-specific NEW fields in separate branches. Referencing NEW.brand
-  -- from a tickets trigger raises "record new has no field brand" even when it
-  -- appears inside a boolean condition intended only for audit submissions.
   IF TG_TABLE_NAME = 'tickets' THEN
     IF NOT private.manages_store(NEW.store_name) THEN
       RAISE EXCEPTION 'This store is not assigned to your branch manager account.';
