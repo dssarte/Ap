@@ -54,9 +54,10 @@ export default function ApprovalQueue() {
       if (!user) return [];
       if (user.user_type === 'store_manager') {
         const stores = user.assigned_stores || [];
-        return stores.length
-          ? base44.entities.Ticket.filter({ store_name: stores }, '-created_date', 1000)
-          : [];
+        if (stores.length === 0) return [];
+        const assigned = new Set(stores.map(name => String(name).trim().toLowerCase()));
+        const visibleTickets = await base44.entities.Ticket.list('-created_date', 2000);
+        return visibleTickets.filter(ticket => assigned.has(String(ticket.store_name || '').trim().toLowerCase()));
       }
       return base44.entities.Ticket.filter({ approver_email: user.email }, '-created_date', 1000);
     },

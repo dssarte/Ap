@@ -440,28 +440,62 @@ function ScoreBadge({ score }) {
 }
 
 function AuditFillForm({ template, user, brands, stores, existingSubmission, onDone, onCancel }) {
+  const isStoreManager = user?.user_type === 'store_manager';
+  const assignedStoreNames = new Set(
+    (isStoreManager && Array.isArray(user?.assigned_stores) ? user.assigned_stores : [])
+      .map(name => String(name).trim().toLowerCase())
+  );
+  const templateRestrictions = template?.store_restrictions?.length > 0
+    ? template.store_restrictions
+    : template?.store_name ? [{ store_name: template.store_name }] : [];
+  const restrictedStoreNames = new Set(
+    templateRestrictions.map(restriction => String(restriction.store_name || '').trim().toLowerCase())
+  );
+
+  // Store managers may only audit stores assigned to their account. When the
+  // template has store restrictions, use the intersection of both scopes.
+  // Other roles retain the existing unrestricted selector behavior.
+  const selectableStores = isStoreManager
+    ? stores.filter(store => {
+        const normalizedName = String(store.store_name || '').trim().toLowerCase();
+        return assignedStoreNames.has(normalizedName)
+          && (restrictedStoreNames.size === 0 || restrictedStoreNames.has(normalizedName));
+      })
+    : stores;
+  const selectableBrandIds = new Set(selectableStores.map(store => store.brand_id).filter(Boolean));
+  const selectableBrands = isStoreManager
+    ? brands.filter(brandRecord => selectableBrandIds.has(brandRecord.id))
+    : brands;
+  const soleSelectableStore = isStoreManager && selectableStores.length === 1
+    ? selectableStores[0]
+    : null;
+
   // If user has a store_name, auto-resolve their brand/store and lock it
-  const userStore = user?.store_name ? stores.find(s => s.store_name === user.store_name) : null;
+  const userStore = !isStoreManager && user?.store_name
+    ? stores.find(s => s.store_name === user.store_name)
+    : null;
   const userBrandId = userStore?.brand_id || '';
   const isStoreLocked = !!userStore;
 
   // Parse existing brand back into brandId + storeId if editing
   const [selectedBrandId, setSelectedBrandId] = useState(() => {
     if (userBrandId) return userBrandId;
+    if (soleSelectableStore) return soleSelectableStore.brand_id || '';
     if (!existingSubmission?.brand) return '';
-    const found = brands.find(b => existingSubmission.brand.startsWith(b.brand_name));
+    const found = selectableBrands.find(b => existingSubmission.brand.startsWith(b.brand_name));
     return found?.id || '';
   });
   const [selectedStoreId, setSelectedStoreId] = useState(() => {
     if (userStore) return userStore.id;
+    if (soleSelectableStore) return soleSelectableStore.id;
     if (!existingSubmission?.brand) return '';
-    const found = stores.find(s => existingSubmission.brand.includes(s.store_name));
+    const found = selectableStores.find(s => existingSubmission.brand.includes(s.store_name));
     return found?.id || '';
   });
 
-  const filteredStores = stores.filter(s => s.brand_id === selectedBrandId);
-  const selectedBrand = brands.find(b => b.id === selectedBrandId);
-  const selectedStore = stores.find(s => s.id === selectedStoreId);
+  const filteredStores = selectableStores.filter(s => s.brand_id === selectedBrandId);
+  const selectedBrand = selectableBrands.find(b => b.id === selectedBrandId);
+  const selectedStore = selectableStores.find(s => s.id === selectedStoreId);
   const brand = selectedBrand && selectedStore
     ? `${selectedBrand.brand_name} - ${selectedStore.store_name}${selectedStore.location ? `, ${selectedStore.location}` : ''}`
     : '';
@@ -540,8 +574,12 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
 
   const restoreDraft = () => {
     if (!pendingDraft) return;
-    if (pendingDraft.selectedBrandId && !isStoreLocked) setSelectedBrandId(pendingDraft.selectedBrandId);
-    if (pendingDraft.selectedStoreId && !isStoreLocked) setSelectedStoreId(pendingDraft.selectedStoreId);
+    if (pendingDraft.selectedBrandId && !isStoreLocked && selectableBrandIds.has(pendingDraft.selectedBrandId)) {
+      setSelectedBrandId(pendingDraft.selectedBrandId);
+    }
+    if (pendingDraft.selectedStoreId && !isStoreLocked && selectableStores.some(store => store.id === pendingDraft.selectedStoreId)) {
+      setSelectedStoreId(pendingDraft.selectedStoreId);
+    }
     if (pendingDraft.answers) setAnswers(pendingDraft.answers);
     if (pendingDraft.noComments) setNoComments(pendingDraft.noComments);
     if (pendingDraft.itemPhotos) setItemPhotos(pendingDraft.itemPhotos);
@@ -858,6 +896,11 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
                 <p className="font-semibold text-slate-900">{userStore.store_name}{userStore.location ? `, ${userStore.location}` : ''}</p>
               </div>
             </div>
+          ) : isStoreManager && selectableStores.length === 0 ? (
+            <div className="w-full rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="font-semibold text-amber-900">No eligible assigned store</p>
+              <p className="mt-1 text-sm text-amber-700">This audit template is not assigned to any store currently linked to your branch manager account. Contact an administrator to update the store assignment.</p>
+            </div>
           ) : (
             <>
               <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
@@ -867,7 +910,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
                     <SelectValue placeholder="Select brand..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {brands.map(b => (
+                    {selectableBrands.map(b => (
                       <SelectItem key={b.id} value={b.id}>{b.brand_name}</SelectItem>
                     ))}
                   </SelectContent>

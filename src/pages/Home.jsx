@@ -86,6 +86,16 @@ export default function Home() {
         const allTickets = await base44.entities.Ticket.list('-created_date');
         return allTickets.filter(t => t.approver_email === user.email);
       }
+
+      // Branch managers see every ticket for their currently assigned stores,
+      // including pending, approved, rejected, resolved, and closed tickets.
+      if (user.user_type === 'store_manager') {
+        const stores = Array.isArray(user.assigned_stores) ? user.assigned_stores : [];
+        if (stores.length === 0) return [];
+        const assigned = new Set(stores.map(name => String(name).trim().toLowerCase()));
+        const visibleTickets = await base44.entities.Ticket.list('-created_date', 2000);
+        return visibleTickets.filter(ticket => assigned.has(String(ticket.store_name || '').trim().toLowerCase()));
+      }
       
       // Regular user sees all their tickets (including pending approval)
       return base44.entities.Ticket.filter({ submitter_email: user.email }, '-created_date');
@@ -145,7 +155,8 @@ export default function Home() {
 
   const isStaff = user.user_type === 'admin' || user.user_type === 'department_head';
   const isApprover = user.user_type === 'approver';
-  const isRegularUser = !isStaff && !isApprover;
+  const isBranchManager = user.user_type === 'store_manager';
+  const isRegularUser = !isStaff && !isApprover && !isBranchManager;
 
   const handleTicketClick = async (ticket) => {
     setSelectedTicket(ticket);
@@ -166,14 +177,16 @@ export default function Home() {
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Ticket workspace</p>
             <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
-              {isStaff ? 'Support overview' : isApprover ? 'Ticket approvals' : 'My support tickets'}
+              {isStaff ? 'Support overview' : isApprover ? 'Ticket approvals' : isBranchManager ? 'Branch tickets' : 'My support tickets'}
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
               {isStaff
                 ? user.user_type === 'admin'
                   ? 'Monitor requests, priorities, and resolution progress across every department.'
                   : `Monitor and coordinate requests assigned to ${user.department_name}.`
-                : 'Submit requests, follow their progress, and keep every conversation in one place.'}
+                : isBranchManager
+                  ? `View and discuss tickets for ${(user.assigned_stores || []).join(', ')}.`
+                  : 'Submit requests, follow their progress, and keep every conversation in one place.'}
             </p>
           </div>
           <Button onClick={() => setShowForm(true)} className="h-11 shrink-0 rounded-xl bg-emerald-700 px-5 font-semibold text-white shadow-sm hover:bg-emerald-800">

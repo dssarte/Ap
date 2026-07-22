@@ -74,12 +74,6 @@ AS $$
     private.is_admin()
     OR (
       nullif(trim(p_store_name), '') IS NOT NULL
-      AND EXISTS (
-        SELECT 1
-        FROM public.stores AS active_store
-        WHERE lower(trim(active_store.store_name)) = lower(trim(p_store_name))
-          AND coalesce(active_store.is_active, true)
-      )
       AND (
         CASE
           WHEN coalesce(private.current_profile() ->> 'user_type', '') = 'store_manager' THEN
@@ -172,12 +166,6 @@ AS $$
           coalesce(private.current_profile() -> 'assigned_stores', '[]'::jsonb)
         ) AS assigned(store_name)
         WHERE position(lower(trim(assigned.store_name)) IN lower(coalesce(p_brand, ''))) > 0
-          AND EXISTS (
-            SELECT 1
-            FROM public.stores AS active_store
-            WHERE lower(trim(active_store.store_name)) = lower(trim(assigned.store_name))
-              AND coalesce(active_store.is_active, true)
-          )
       )
     ELSE
       private.is_qa_or_admin()

@@ -62,8 +62,10 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
   
   const isStaff = user.user_type === 'admin' || user.user_type === 'department_head';
   const isApprover = user.user_type === 'approver';
+  const isBranchManager = user.user_type === 'store_manager';
   const canManage = user.user_type === 'admin' || (user.user_type === 'department_head' && user.department_id === ticket.department_id);
-  const canReply = isStaff || isApprover || ticket.submitter_email === user.email;
+  const canReply = isStaff || isApprover || isBranchManager || ticket.submitter_email === user.email;
+  const canCommentOnClosed = user.user_type === 'admin' || isApprover || isBranchManager;
 
   useEffect(() => {
     loadComments();
@@ -212,9 +214,10 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
   const handleAddComment = async () => {
     if (!newComment.trim() && attachmentUrls.length === 0) return;
     
-    // Prevent comments on closed tickets unless admin
-    if (ticket.status === 'closed' && user.user_type !== 'admin') {
-      alert('Closed tickets cannot be updated. Please contact an admin.');
+    // Approvers and the currently assigned branch managers keep the public
+    // conversation open after closure; other ticket changes remain locked.
+    if (ticket.status === 'closed' && !canCommentOnClosed) {
+      alert('You cannot comment on this closed ticket.');
       return;
     }
     
@@ -615,7 +618,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                     onChange={(e) => setNewComment(e.target.value)}
                     rows={2}
                     className="resize-none"
-                    disabled={ticket.status === 'closed' && user.user_type !== 'admin'}
+                    disabled={ticket.status === 'closed' && !canCommentOnClosed}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -625,14 +628,14 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                     multiple
                     onChange={handleFileUpload}
                     className="hidden"
-                    disabled={ticket.status === 'closed' && user.user_type !== 'admin'}
+                    disabled={ticket.status === 'closed' && !canCommentOnClosed}
                   />
                   <label htmlFor="comment-attachment">
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      disabled={uploadingFiles || (ticket.status === 'closed' && user.user_type !== 'admin')}
+                      disabled={uploadingFiles || (ticket.status === 'closed' && !canCommentOnClosed)}
                       asChild
                     >
                       <span>
@@ -648,7 +651,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                   )}
                   <Button 
                     onClick={handleAddComment} 
-                    disabled={loading || uploadingFiles || (!newComment.trim() && attachmentUrls.length === 0) || (ticket.status === 'closed' && user.user_type !== 'admin')}
+                    disabled={loading || uploadingFiles || (!newComment.trim() && attachmentUrls.length === 0) || (ticket.status === 'closed' && !canCommentOnClosed)}
                     size="icon"
                     className="bg-[#1fd655] hover:bg-[#1bd64d] text-slate-900 shadow-md hover:shadow-lg"
                   >

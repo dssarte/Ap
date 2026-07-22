@@ -14,12 +14,6 @@ AS $$
     private.is_admin()
     OR (
       nullif(trim(p_store_name), '') IS NOT NULL
-      AND EXISTS (
-        SELECT 1
-        FROM public.stores AS active_store
-        WHERE lower(trim(active_store.store_name)) = lower(trim(p_store_name))
-          AND coalesce(active_store.is_active, true)
-      )
       AND CASE
         WHEN coalesce(private.current_profile() ->> 'user_type', '') = 'store_manager' THEN
           EXISTS (
@@ -90,12 +84,6 @@ AS $$
           coalesce(private.current_profile() -> 'assigned_stores', '[]'::jsonb)
         ) AS assigned(store_name)
         WHERE position(lower(trim(assigned.store_name)) IN lower(coalesce(p_brand, ''))) > 0
-          AND EXISTS (
-            SELECT 1
-            FROM public.stores AS active_store
-            WHERE lower(trim(active_store.store_name)) = lower(trim(assigned.store_name))
-              AND coalesce(active_store.is_active, true)
-          )
       )
     ELSE
       private.is_qa_or_admin()
@@ -130,6 +118,38 @@ BEGIN
   IF TG_TABLE_NAME = 'audit_submissions'
      AND NOT private.can_access_audit(NEW.brand, NEW.submitted_by_email) THEN
     RAISE EXCEPTION 'This store is not assigned to your branch manager account.';
+  END IF;
+
+  IF TG_TABLE_NAME = 'audit_submissions' AND NOT EXISTS (
+    SELECT 1
+    FROM public.audit_templates AS template_record
+    WHERE template_record.id = NEW.template_id
+      AND (
+        -- Unrestricted templates may be used for any assigned store.
+        (
+          jsonb_array_length(coalesce(template_record.store_restrictions, '[]'::jsonb)) = 0
+          AND nullif(trim(coalesce(template_record.store_name, '')), '') IS NULL
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(coalesce(template_record.store_restrictions, '[]'::jsonb)) AS restriction(item)
+          WHERE nullif(trim(coalesce(restriction.item ->> 'store_name', '')), '') IS NOT NULL
+            AND position(
+              lower(trim(restriction.item ->> 'store_name'))
+              IN lower(coalesce(NEW.brand, ''))
+            ) > 0
+        )
+        OR (
+          jsonb_array_length(coalesce(template_record.store_restrictions, '[]'::jsonb)) = 0
+          AND nullif(trim(coalesce(template_record.store_name, '')), '') IS NOT NULL
+          AND position(
+            lower(trim(template_record.store_name))
+            IN lower(coalesce(NEW.brand, ''))
+          ) > 0
+        )
+      )
+  ) THEN
+    RAISE EXCEPTION 'This audit template is not assigned to the selected store.';
   END IF;
 
   RETURN NEW;
@@ -179,4 +199,3 @@ WITH CHECK (
 );
 
 COMMIT;
-
