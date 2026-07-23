@@ -632,12 +632,21 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
 
   const uploadItemPhotos = async (itemId, files) => {
     setUploadingItemPhoto(itemId);
-    // Only one photo is allowed per line item — a new upload replaces any existing one.
-    const file = Array.from(files)[0];
-    const compressed = await compressImage(file);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
-    setItemPhotos(prev => ({ ...prev, [itemId]: [file_url] }));
-    setUploadingItemPhoto(null);
+    setPhotoError('');
+    try {
+      // Only one photo is allowed per line item — a new upload replaces any existing one.
+      const file = Array.from(files || [])[0];
+      if (!file) return;
+      const compressed = await compressImage(file);
+      const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
+      if (!file_url) throw new Error('The photo upload did not return a file URL.');
+      setItemPhotos(prev => ({ ...prev, [itemId]: [file_url] }));
+    } catch (error) {
+      setPhotoError(error?.message || 'Photo upload failed. Please try again.');
+      throw error;
+    } finally {
+      setUploadingItemPhoto(null);
+    }
   };
 
   const removeItemPhoto = (itemId, index) => {
@@ -649,16 +658,21 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
 
   const handleCameraCapture = async (file) => {
     const target = cameraTarget;
-    setCameraTarget(null);
     if (!file) return;
-    if (target?.type === 'item' && target.itemId) {
-      await uploadItemPhotos(target.itemId, [file]);
-    } else if (target?.type === 'deviations') {
-      await uploadMultiplePhotos([file], setDeviationsPhotos, setUploadingDeviations, deviationsPhotos.length);
-    } else if (target?.type === 'updates') {
-      await uploadMultiplePhotos([file], setUpdatesAttachments, setUploadingUpdates, updatesAttachments.length);
+    try {
+      if (target?.type === 'item' && target.itemId) {
+        await uploadItemPhotos(target.itemId, [file]);
+      } else if (target?.type === 'deviations') {
+        await uploadMultiplePhotos([file], setDeviationsPhotos, setUploadingDeviations, deviationsPhotos.length);
+      } else if (target?.type === 'updates') {
+        await uploadMultiplePhotos([file], setUpdatesAttachments, setUploadingUpdates, updatesAttachments.length);
+      }
+      setCameraTarget(null);
+    } catch (error) {
+      // Leave the camera open so the user can retry or select a device photo.
+      throw error;
     }
-  };;
+  };
 
   const allItems = useMemo(() => template.sections?.flatMap(s => s.items || []) || [], [template.sections]);
   const [collapsedSections, setCollapsedSections] = useState(() => new Set());

@@ -5,6 +5,7 @@ import { Loader2, Camera, RefreshCw, Check, X, MapPin } from "lucide-react";
 export default function CameraCapture({ onCapture, onClose }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const fallbackInputRef = useRef(null);
   const streamRef = useRef(null);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState('');
@@ -57,7 +58,9 @@ export default function CameraCapture({ onCapture, onClose }) {
           ? 'Camera access was denied. Please allow camera permissions in your browser.'
           : e?.name === 'NotFoundError'
             ? 'No camera was found on this device.'
-            : 'Unable to access the camera: ' + (e?.message || 'unknown error')
+            : ['SecurityError', 'TypeError'].includes(e?.name)
+              ? 'The browser blocked camera access. Allow camera permission for this site, or use the device photo option below.'
+              : 'Unable to access the camera: ' + (e?.message || 'unknown error')
       );
       setStreaming(false);
     }
@@ -129,6 +132,23 @@ export default function CameraCapture({ onCapture, onClose }) {
     }
   };
 
+  const handleFallbackPhoto = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setUploading(true);
+    setError('');
+    try {
+      stopStream();
+      await onCapture(file);
+    } catch (e) {
+      setError('Failed to upload photo: ' + (e?.message || 'unknown error'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleClose = () => {
     stopStream();
     onClose?.();
@@ -194,7 +214,18 @@ export default function CameraCapture({ onCapture, onClose }) {
           {error && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
               <p className="text-white text-sm">{error}</p>
-              <Button variant="outline" className="mt-4" onClick={() => startCamera()}>Retry</Button>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button variant="outline" onClick={() => startCamera()} disabled={uploading}>Retry camera</Button>
+                <Button
+                  type="button"
+                  className="bg-[#1fd655] text-slate-900 hover:bg-[#1bd64d]"
+                  onClick={() => fallbackInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}
+                  Use device photo
+                </Button>
+              </div>
             </div>
           )}
           {!streaming && !error && (
@@ -217,6 +248,14 @@ export default function CameraCapture({ onCapture, onClose }) {
             </Button>
           </div>
         )}
+        <input
+          ref={fallbackInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handleFallbackPhoto}
+        />
         <canvas ref={canvasRef} className="hidden" />
       </div>
     </div>
