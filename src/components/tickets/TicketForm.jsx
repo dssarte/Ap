@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Send, Image, X } from "lucide-react";
 import { compressImage } from '@/lib/compressImage';
+import { getUserDisplayName } from '@/lib/userDisplayName';
 
 export default function TicketForm({ user, onSuccess, onCancel }) {
   const [departments, setDepartments] = useState([]);
@@ -29,7 +30,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
   });
 
   const isStaff = user.user_type === 'admin' || user.user_type === 'department_head';
-  const isRegularUser = user.user_type === 'user' || user.user_type === 'approver';
+  const isRegularUser = user.user_type === 'user';
 
   useEffect(() => {
     loadDepartments();
@@ -177,8 +178,11 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
         attachment_url: formData.attachment_url,
         image_urls: formData.image_urls,
         submitter_email: user.email,
-        submitter_name: user.full_name,
+        submitter_name: getUserDisplayName(user),
         store_name: user.store_name || '',
+        // The database routes this to an enabled Department Head approver,
+        // preserves store-manager approval when applicable, or opens it
+        // immediately when no approval path exists.
         status: 'pending_approval',
         approval_status: 'pending',
         approver_email: approver?.approver_email || '',

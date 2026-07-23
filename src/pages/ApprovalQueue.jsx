@@ -21,6 +21,7 @@ const formatPHT = (value, pattern = "MMM d, yyyy h:mm a 'PHT'") => {
 import StatsCard from "@/components/dashboard/StatsCard";
 import { SectionLoadingSkeleton, FeedbackBanner } from '@/components/PageState';
 import { useToast } from '@/components/ui/use-toast';
+import { getUserDisplayName } from '@/lib/userDisplayName';
 
 export default function ApprovalQueue() {
   const { toast } = useToast();
@@ -36,6 +37,7 @@ export default function ApprovalQueue() {
   const [addingComment, setAddingComment] = useState(false);
   const canCommentOnClosed = user?.user_type === 'admin' || user?.user_type === 'approver';
   const isClosedCommentLocked = selectedTicket?.status === 'closed' && !canCommentOnClosed;
+  const currentUserDisplayName = getUserDisplayName(user);
 
   useEffect(() => {
     loadUser();
@@ -61,6 +63,7 @@ export default function ApprovalQueue() {
         const visibleTickets = await base44.entities.Ticket.list('-created_date', 2000);
         return visibleTickets.filter(ticket => assigned.has(String(ticket.store_name || '').trim().toLowerCase()));
       }
+      if (user.user_type === 'department_head' && !user.is_approver) return [];
       return base44.entities.Ticket.filter({ approver_email: user.email }, '-created_date', 1000);
     },
     enabled: !!user
@@ -158,14 +161,14 @@ export default function ApprovalQueue() {
         ticket_id: selectedTicket.id,
         content: newComment,
         author_email: user.email,
-        author_name: user.full_name,
+        author_name: currentUserDisplayName,
         is_internal: false
       });
 
       await base44.functions.invoke('sendTicketNotification', {
         ticket_id: selectedTicket.id,
         type: 'commented',
-        message: `${user.full_name || user.email} commented on ticket: ${selectedTicket.title}`,
+        message: `${currentUserDisplayName} commented on ticket: ${selectedTicket.title}`,
       }).catch((notificationError) => {
         console.warn('Comment saved, but participant notification delivery failed:', notificationError);
       });

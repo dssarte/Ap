@@ -15,6 +15,7 @@ import FeedbackDisplay from "./FeedbackDisplay";
 import InternalDiscussion from "./InternalDiscussion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { safeDate } from "@/lib/dateUtils";
+import { getUserDisplayName } from "@/lib/userDisplayName";
 
 const formatTicketDate = (value, pattern) => {
   const date = safeDate(value);
@@ -42,6 +43,7 @@ const priorityColors = {
 };
 
 export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
+  const currentUserDisplayName = getUserDisplayName(user);
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [isInternal, setIsInternal] = useState(false);
@@ -154,7 +156,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
         department_id: ticket.department_id,
         department_name: ticket.department_name,
         returned_at: new Date().toISOString(),
-        returned_by: user.full_name,
+        returned_by: currentUserDisplayName,
         return_reason: returnNote
       }
     ];
@@ -174,7 +176,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
       ticket_id: ticket.id,
       content: `↩️ **${ticket.department_name} Department** is returning this ticket to **${originalDept.name} Department**.${returnNote ? `\n\nReason: ${returnNote}` : ''}`,
       author_email: user.email,
-      author_name: `${user.full_name} (${ticket.department_name})`,
+      author_name: `${currentUserDisplayName} (${ticket.department_name})`,
       is_internal: false
     });
 
@@ -238,7 +240,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
       ticket_id: ticket.id,
       content: newComment || '(attachment)',
       author_email: user.email,
-      author_name: user.full_name,
+      author_name: currentUserDisplayName,
       is_internal: isStaff && isInternal,
       attachment_urls: attachmentUrls
     });
@@ -247,7 +249,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
     await base44.functions.invoke('sendTicketNotification', {
       ticket_id: ticket.id,
       type: 'commented',
-      message: `${user.full_name} commented on ticket: ${ticket.title}`,
+      message: `${currentUserDisplayName} commented on ticket: ${ticket.title}`,
       send_email: true
     });
     
@@ -327,7 +329,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
         department_id: ticket.department_id,
         department_name: ticket.department_name,
         forwarded_at: new Date().toISOString(),
-        forwarded_by: user.full_name
+        forwarded_by: currentUserDisplayName
       }
     ];
 
@@ -346,7 +348,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
       ticket_id: ticket.id,
       content: `📤 **${ticket.department_name} Department** has forwarded this ticket to **${targetDept.name} Department**.${forwardNote ? `\n\nMessage: ${forwardNote}` : ''}`,
       author_email: user.email,
-      author_name: `${user.full_name} (${ticket.department_name})`,
+      author_name: `${currentUserDisplayName} (${ticket.department_name})`,
       is_internal: false
     });
 

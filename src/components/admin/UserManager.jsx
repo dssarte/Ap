@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Users, Loader2, UserPlus, Trash2, MailCheck } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/use-toast";
 import MultiStoreSelect from "@/components/admin/MultiStoreSelect";
 
@@ -22,8 +23,8 @@ export default function UserManager() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [formData, setFormData] = useState({ user_type: 'user', department_id: '', phone: '', brand_id: '', store_name: '', assigned_stores: [], is_enabled: true });
-  const [addData, setAddData] = useState({ email: '', full_name: '', password: '', role: 'user', user_type: 'user', department_id: '', brand_id: '', store_name: '', phone: '', assigned_stores: [], is_enabled: true });
+  const [formData, setFormData] = useState({ user_type: 'user', department_id: '', phone: '', brand_id: '', store_name: '', assigned_stores: [], is_approver: false, is_enabled: true });
+  const [addData, setAddData] = useState({ email: '', full_name: '', password: '', role: 'user', user_type: 'user', department_id: '', brand_id: '', store_name: '', phone: '', assigned_stores: [], is_approver: false, is_enabled: true });
   const [addError, setAddError] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // user to delete
@@ -72,6 +73,7 @@ export default function UserManager() {
           department_name: dept?.name || null,
           store_name: formData.store_name || null,
           assigned_stores: formData.user_type === 'store_manager' ? (formData.assigned_stores || []) : [],
+          is_approver: formData.user_type === 'department_head' && formData.is_approver,
           phone: formData.phone
         });
         await loadData();
@@ -91,12 +93,9 @@ export default function UserManager() {
         store_name: formData.user_type === 'store_manager' ? null : (formData.store_name || null),
         brand_id: formData.user_type === 'store_manager' ? null : (formData.brand_id || null),
         assigned_stores: formData.user_type === 'store_manager' ? (formData.assigned_stores || []) : [],
+        is_approver: formData.user_type === 'department_head' && formData.is_approver,
         display_name: formData.display_name?.trim() || null
       };
-      
-      // Check if department changed
-      const departmentChanged = editing.department_id !== formData.department_id;
-      const oldDeptId = editing.department_id;
       
       await base44.entities.User.update(editing.id, updateData);
 
@@ -113,30 +112,6 @@ export default function UserManager() {
       const wasVerified = !!(editing.is_verified || editing.email_verified || editing.verified || editing.is_email_verified);
       if (formData.is_verified !== wasVerified) {
         await base44.functions.invoke('setUserVerified', { user_id: editing.id, verified: formData.is_verified });
-      }
-
-      // If department changed and user is an approver, update their pending tickets
-      if (departmentChanged && editing.user_type === 'approver') {
-        try {
-          const pendingTickets = await base44.entities.Ticket.filter({ 
-            approver_email: editing.email, 
-            approval_status: 'pending' 
-          });
-          
-          if (pendingTickets.length > 0) {
-            await base44.entities.Ticket.bulkUpdate(
-              pendingTickets.map(t => ({
-                id: t.id,
-                department_id: formData.department_id || null,
-                department_name: dept?.name || null
-              }))
-            );
-            console.log(`Updated ${pendingTickets.length} tickets for approver department change`);
-          }
-        } catch (ticketErr) {
-          console.warn('Failed to update tickets:', ticketErr);
-          // Don't fail the whole operation, just warn
-        }
       }
 
       await loadData();
@@ -196,13 +171,21 @@ HelpDesk Support Team`
         store_name: addData.user_type === 'store_manager' ? null : (addData.store_name || null),
         phone: addData.phone || null,
         assigned_stores: addData.user_type === 'store_manager' ? addData.assigned_stores : [],
+        is_approver: addData.user_type === 'department_head' && addData.is_approver,
         enabled: addData.is_enabled,
       });
       if (res.data?.error) throw new Error(res.data.error);
+      // Keep the checkbox functional even while the updated Edge Function is
+      // being deployed: the signed-in administrator may update the new profile.
+      if (res.data?.profile?.id) {
+        await base44.entities.User.update(res.data.profile.id, {
+          is_approver: addData.user_type === 'department_head' && addData.is_approver,
+        });
+      }
       const savedEmail = addData.email;
       const savedEnabled = addData.is_enabled;
       setInviteDialogOpen(false);
-      setAddData({ email: '', full_name: '', password: '', role: 'user', user_type: 'user', department_id: '', brand_id: '', store_name: '', phone: '', assigned_stores: [], is_enabled: true });
+      setAddData({ email: '', full_name: '', password: '', role: 'user', user_type: 'user', department_id: '', brand_id: '', store_name: '', phone: '', assigned_stores: [], is_approver: false, is_enabled: true });
       await loadData();
       toast({
         title: "User created",
@@ -224,12 +207,13 @@ HelpDesk Support Team`
     const matchedStore = stores.find(s => s.store_name === user.store_name);
     setFormData({
       display_name: user.display_name || user.full_name || '',
-      user_type: user.user_type || 'user',
+      user_type: user.user_type === 'approver' ? 'department_head' : (user.user_type || 'user'),
       department_id: user.department_id || '', 
       phone: user.phone || '',
       brand_id: matchedStore?.brand_id || '',
       store_name: user.store_name || '',
       assigned_stores: user.assigned_stores || [],
+      is_approver: user.user_type === 'approver' || user.is_approver === true,
       is_verified: !!(user.is_verified || user.email_verified || user.verified || user.is_email_verified),
       is_enabled: !(user.disabled === true || String(user.disabled).toLowerCase() === 'true')
     });
@@ -277,11 +261,9 @@ HelpDesk Support Team`
       return <Badge className="bg-purple-100 text-purple-700 border-0 font-semibold uppercase text-xs">Admin</Badge>;
     }
     if (user.user_type === 'department_head') {
-      return <Badge className="bg-blue-100 text-blue-700 border-0 font-semibold uppercase text-xs">Dept Head</Badge>;
+      return <Badge className="bg-blue-100 text-blue-700 border-0 font-semibold uppercase text-xs">{user.is_approver ? 'Dept Head • Approver' : 'Dept Head'}</Badge>;
     }
-    if (user.user_type === 'approver') {
-      return <Badge className="bg-amber-100 text-amber-700 border-0 font-semibold uppercase text-xs">Approver</Badge>;
-    }
+    if (user.user_type === 'approver') return <Badge className="bg-amber-100 text-amber-700 border-0 font-semibold uppercase text-xs">Dept Head • Approver</Badge>;
     if (user.user_type === 'store_manager') {
       return <Badge className="bg-teal-100 text-teal-700 border-0 font-semibold uppercase text-xs">Store Manager</Badge>;
     }
@@ -355,11 +337,10 @@ HelpDesk Support Team`
                 </div>
                 <div className="space-y-1">
                   <Label>User Category *</Label>
-                  <Select value={addData.user_type} onValueChange={(v) => setAddData({ ...addData, user_type: v })}>
+                  <Select value={addData.user_type} onValueChange={(v) => setAddData({ ...addData, user_type: v, is_approver: v === 'department_head' ? addData.is_approver : false })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="user">User</SelectItem>
-                      <SelectItem value="approver">Approver</SelectItem>
                       <SelectItem value="department_head">Department Head</SelectItem>
                       <SelectItem value="store_manager">Store Manager</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
@@ -367,6 +348,19 @@ HelpDesk Support Team`
                   </Select>
                 </div>
               </div>
+              {addData.user_type === 'department_head' && (
+                <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Can approve tickets</p>
+                    <p className="text-xs text-slate-600">Send new tickets from users in this department to this Department Head for approval.</p>
+                  </div>
+                  <Checkbox
+                    checked={addData.is_approver}
+                    onCheckedChange={(value) => setAddData({ ...addData, is_approver: value === true })}
+                    aria-label="Allow this department head to approve tickets"
+                  />
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>Department</Label>
@@ -574,20 +568,32 @@ HelpDesk Support Team`
                 <Label className="text-slate-900 font-semibold">User Category *</Label>
                 <Select
                   value={formData.user_type}
-                  onValueChange={(value) => setFormData({ ...formData, user_type: value })}
+                  onValueChange={(value) => setFormData({ ...formData, user_type: value, is_approver: value === 'department_head' ? formData.is_approver : false })}
                 >
                   <SelectTrigger className="border-slate-300 h-11">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="user">User - Can create tickets</SelectItem>
-                    <SelectItem value="approver">Approver - Approve tickets</SelectItem>
                     <SelectItem value="department_head">Department Head - Process tickets</SelectItem>
                     <SelectItem value="store_manager">Store Manager - Multi-store approvals & analytics</SelectItem>
                     <SelectItem value="admin">Admin - Full access</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              {formData.user_type === 'department_head' && (
+                <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Can approve tickets</p>
+                    <p className="text-xs text-slate-600">When enabled, new tickets from this department are sent to this Department Head’s Approval Queue.</p>
+                  </div>
+                  <Checkbox
+                    checked={formData.is_approver}
+                    onCheckedChange={(value) => setFormData({ ...formData, is_approver: value === true })}
+                    aria-label="Allow this department head to approve tickets"
+                  />
+                </div>
+              )}
               
               <div className="space-y-2">
                 <Label className="text-slate-900 font-semibold">Department</Label>

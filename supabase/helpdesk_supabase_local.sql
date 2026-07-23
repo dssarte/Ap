@@ -27,6 +27,7 @@ CREATE TABLE "users" (
   "force_password_reset" BOOLEAN,
   "full_name" TEXT,
   "is_email_verified" BOOLEAN,
+  "is_approver" BOOLEAN DEFAULT FALSE,
   "is_service" BOOLEAN,
   "is_verified" BOOLEAN,
   "phone" TEXT,

@@ -393,11 +393,11 @@ export default function UserManual() {
 
   const userType = user?.user_type;
   const isAdmin = userType === 'admin';
-  const isApprover = userType === 'approver';
+  const isApprover = userType === 'approver' || (userType === 'department_head' && user?.is_approver);
   const isDeptHead = userType === 'department_head';
   const isRegularUser = !isAdmin && !isApprover && !isDeptHead;
 
-  const defaultTab = isAdmin ? 'user' : isApprover ? 'approver' : isDeptHead ? 'department' : 'user';
+  const defaultTab = isAdmin ? 'user' : isDeptHead ? 'department' : isApprover ? 'approver' : 'user';
 
   return (
     <div className="app-page-shell">
@@ -457,7 +457,7 @@ export default function UserManual() {
                 <CheckCircle className="w-4 h-4 mr-2" /> Approval Queue
               </TabsTrigger>
             )}
-            {isApprover && (
+            {isApprover && !isAdmin && (
               <TabsTrigger value="approver" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-6 h-11">
                 <CheckCircle className="w-4 h-4 mr-2" /> Approval Queue
               </TabsTrigger>

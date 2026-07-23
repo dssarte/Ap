@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from './utils';
 import { base44 } from '@/api/base44Client';
+import { getUserDisplayName } from '@/lib/userDisplayName';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -43,7 +44,11 @@ export default function Layout({ children, currentPageName }) {
   }, []);
 
   useEffect(() => {
-    if (user?.user_type === 'approver' || user?.user_type === 'store_manager') {
+    if (
+      user?.user_type === 'approver'
+      || user?.user_type === 'store_manager'
+      || (user?.user_type === 'department_head' && user?.is_approver)
+    ) {
       loadPendingCount();
     }
     if (user && !['admin', 'department_head'].includes(user.user_type)) {
@@ -70,7 +75,7 @@ export default function Layout({ children, currentPageName }) {
     }
   };
 
-  const displayName = user?.display_name || user?.full_name || user?.email || 'Account';
+  const displayName = getUserDisplayName(user);
   const initials = displayName.split(' ').map((part) => part[0]).join('').toUpperCase().slice(0, 2);
   const isQA = user?.department_name === 'Quality Assurance' || user?.user_type === 'admin';
 
@@ -93,6 +98,9 @@ export default function Layout({ children, currentPageName }) {
         { name: 'My tickets', icon: Inbox, page: 'DepartmentDashboard' },
         { name: 'Department analytics', icon: BarChart3, page: 'DeptAnalytics' },
       );
+      if (user.is_approver) {
+        navItems.splice(1, 0, { name: 'Approval queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null });
+      }
     }
     if (['admin', 'department_head'].includes(user?.user_type)) navItems.push({ name: 'Reports', icon: FileBarChart, page: 'Reports' });
     if (user?.user_type === 'admin') {

@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Send, Lock, AtSign, Loader2 } from "lucide-react";
 import { formatInTimeZone } from "date-fns-tz";
 import { safeDate } from "@/lib/dateUtils";
+import { getUserDisplayName } from "@/lib/userDisplayName";
 
 // Parse @mentions in text and highlight them
 function MessageContent({ content }) {
@@ -27,7 +28,7 @@ function MessageContent({ content }) {
 // @mention dropdown popup
 function MentionDropdown({ query, users, onSelect, position }) {
   const filtered = users.filter(u =>
-    u.full_name?.toLowerCase().includes(query.toLowerCase()) ||
+    getUserDisplayName(u, '').toLowerCase().includes(query.toLowerCase()) ||
     u.email?.toLowerCase().includes(query.toLowerCase())
   ).slice(0, 6);
 
@@ -51,11 +52,11 @@ function MentionDropdown({ query, users, onSelect, position }) {
         >
           <Avatar className="w-6 h-6">
             <AvatarFallback className="bg-[#1fd655] text-slate-900 text-xs font-bold">
-              {(u.full_name || u.email || 'U')[0].toUpperCase()}
+              {getUserDisplayName(u, 'U')[0].toUpperCase()}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-slate-800 truncate">{u.full_name || u.email}</p>
+            <p className="text-sm font-medium text-slate-800 truncate">{getUserDisplayName(u)}</p>
             <p className="text-xs text-slate-400 truncate">{u.email}</p>
           </div>
         </button>
@@ -158,7 +159,7 @@ export default function InternalDiscussion({ ticket, user, staffUsers }) {
   };
 
   const handleMentionSelect = (selectedUser) => {
-    const mention = `@${selectedUser.full_name || selectedUser.email}`;
+    const mention = `@${getUserDisplayName(selectedUser)}`;
     const before = text.slice(0, mentionStart);
     const after = text.slice(textareaRef.current.selectionStart);
     const newText = before + mention + ' ' + after;
@@ -182,7 +183,7 @@ export default function InternalDiscussion({ ticket, user, staffUsers }) {
       ticket_id: ticket.id,
       content: text.trim(),
       author_email: user.email,
-      author_name: user.full_name,
+      author_name: getUserDisplayName(user),
       is_internal: true,
     });
     setText('');

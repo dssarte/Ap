@@ -13,6 +13,11 @@ const entityTables = {
 const unwrap = ({ data, error }) => { if (error) throw error; return data; };
 const cleanPayload = (payload = {}) => Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== undefined));
 const isMissingRpc = (error) => error?.code === 'PGRST202' || /function .* does not exist|schema cache/i.test(error?.message || '');
+const profileDisplayName = (profile, fallback = '') => (
+  String(profile?.display_name || '').trim()
+  || String(profile?.full_name || '').trim()
+  || String(profile?.email || fallback || '').trim()
+);
 const applySort = (query, sort) => !sort ? query : query.order(sort.startsWith('-') ? sort.slice(1) : sort, { ascending: !sort.startsWith('-'), nullsFirst: false });
 const applyFilters = (query, filters = {}) => {
   for (const [key, value] of Object.entries(filters || {})) {
@@ -236,9 +241,18 @@ const auth = {
 
 async function findApprover(departmentId) {
   if (!departmentId) return { approver_email: '', approver_name: '' };
-  const { data, error } = await supabase.from('users').select('email,full_name,display_name,user_type').eq('department_id', departmentId).in('user_type', ['approver','department_head','admin']).limit(1).maybeSingle();
+  const { data, error } = await supabase
+    .from('users')
+    .select('email,full_name,display_name,user_type,is_approver')
+    .eq('department_id', departmentId)
+    .eq('user_type', 'department_head')
+    .eq('is_approver', true)
+    .or('disabled.eq.false,disabled.is.null')
+    .order('created_date', { ascending: true })
+    .limit(1)
+    .maybeSingle();
   if (error) throw error;
-  return { approver_email: data?.email || '', approver_name: data?.full_name || data?.display_name || '' };
+  return { approver_email: data?.email || '', approver_name: profileDisplayName(data) };
 }
 
 const functions = {
@@ -415,12 +429,12 @@ const ticketWorkflows = {
       if (!rejectionReason?.trim()) throw new Error('A rejection reason is required.');
       const updated = await entityApi('Ticket').update(ticketId, {
         approval_status: 'rejected', status: 'open', approver_email: me.email,
-        approver_name: me.full_name || me.email, approved_at: new Date().toISOString(),
+        approver_name: profileDisplayName(me), approved_at: new Date().toISOString(),
         rejection_reason: rejectionReason.trim(),
       });
       await entityApi('TicketComment').create({
         ticket_id: ticketId, content: `Ticket rejected by approver: ${rejectionReason.trim()}`,
-        author_email: me.email, author_name: me.full_name || me.email, is_internal: false,
+        author_email: me.email, author_name: profileDisplayName(me), is_internal: false,
       });
       return { ticket: updated, atomic: false };
     }
@@ -434,7 +448,7 @@ const ticketWorkflows = {
     const department = await entityApi('Department').get(targetDepartmentId);
     const updated = await entityApi('Ticket').update(ticketId, {
       approval_status: 'approved', status: 'open', approver_email: me.email,
-      approver_name: me.full_name || me.email, approved_at: new Date().toISOString(),
+      approver_name: profileDisplayName(me), approved_at: new Date().toISOString(),
       assigned_to: head.approver_email || null,
       handling_department_id: targetDepartmentId,
       handling_department_name: department?.name || ticket.handling_department_name || '',
