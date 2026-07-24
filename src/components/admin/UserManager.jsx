@@ -42,7 +42,7 @@ export default function UserManager() {
       const [usersData, pendingData, deptsData, brandsData, storesData] = await Promise.all([
         base44.entities.User.list('-created_date'),
         base44.entities.PendingUser.list('-created_date'),
-        base44.entities.Department.list(),
+        base44.entities.Department.list('name'),
         base44.entities.Brand.filter({ is_active: true }),
         base44.entities.Store.filter({ is_active: true })
       ]);
