@@ -242,7 +242,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
             <Select
               value={formData.department_id}
               onValueChange={(value) => setFormData({ ...formData, department_id: value })}
-              required
+              required disabled
             >
               <SelectTrigger className="border-slate-300 h-11 focus:border-[#1fd655] focus:ring-[#1fd655]">
                 <SelectValue placeholder="Select department" />
