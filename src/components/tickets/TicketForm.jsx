@@ -52,17 +52,53 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
   };
 
   const loadCategories = async () => {
-    let cats = [];
-    try { cats = await base44.entities.Category.filter({ is_active: true }); }
-    catch (error) { console.error('Failed to load categories:', error); }
-    // Ensure we have all fields including department_id
-    const categoriesWithDept = cats.filter(c => !c.is_audit_only).map(c => ({
+  let cats = [];
+
+  try {
+    cats = await base44.entities.Category.filter({ is_active: true });
+  } catch (error) {
+    console.error('Failed to load categories:', error);
+  }
+
+  const userDeptId = user.department_id || '';
+  const userDeptName = (user.department_name || '').trim().toLowerCase();
+
+  const categoriesWithDept = cats
+    .filter(c => !c.is_audit_only)
+    .filter(c => {
+      const catName = (c.name || '').trim().toLowerCase();
+      const catDeptName = (c.department_name || '').trim().toLowerCase();
+
+      const isOwnConcernByName =
+        userDeptName &&
+        (catName === `${userDeptName} concern` ||
+         catName === `${userDeptName} concerns`);
+
+      const isOwnConcernByDeptId =
+        userDeptId &&
+        c.department_id === userDeptId &&
+        catName.includes('concern');
+
+      const isOwnConcernByDeptName =
+        userDeptName &&
+        catDeptName === userDeptName &&
+        catName.includes('concern');
+
+      return !(isOwnConcernByName || isOwnConcernByDeptId || isOwnConcernByDeptName);
+    })
+    .map(c => ({
       ...c,
       department_id: c.department_id || null,
       department_name: c.department_name || ''
-    }));
-    setCategories(categoriesWithDept);
-  };
+    }))
+    .sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, {
+        sensitivity: 'base'
+      })
+    );
+
+  setCategories(categoriesWithDept);
+};
 
   const loadUsers = async () => {
     let allUsers = [];
