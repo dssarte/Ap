@@ -62,6 +62,20 @@ export default function Layout({ children, currentPageName }) {
     }
   }, [user]);
 
+  useEffect(() => {
+  if (!user) return;
+  const unsubscribe = base44.entities.Ticket.subscribe(() => {
+    if (
+      user?.user_type === 'approver'
+      || user?.user_type === 'store_manager'
+      || (user?.user_type === 'department_head' && user?.is_approver)
+    ) {
+      loadPendingCount();
+    }
+  });
+  return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
+}, [user]);
+
   const loadPendingCount = async () => {
     if (!user?.email) return;
     try {
