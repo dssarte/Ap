@@ -10,9 +10,9 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState(null);
 
-  const checkUserAuth = useCallback(async () => {
-    setIsLoadingAuth(true);
-    setAuthError(null);
+  const checkUserAuth = useCallback(async (silent = false) => {
+    if (!silent) setIsLoadingAuth(true);
+  setAuthError(null);
     try {
       const authenticated = await base44.auth.isAuthenticated();
       if (!authenticated) {
@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(false);
       setAuthError({ type: 'auth_required', message: error?.message || 'Authentication required' });
     } finally {
-      setIsLoadingAuth(false);
+      if (!silent) setIsLoadingAuth(false);
     }
   }, []);
 
@@ -41,7 +41,7 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(false);
         setIsLoadingAuth(false);
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        setTimeout(checkUserAuth, 0);
+        setTimeout(() => checkUserAuth(true), 0);
       }
     });
     return () => subscription.unsubscribe();
