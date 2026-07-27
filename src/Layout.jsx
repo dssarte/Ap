@@ -153,10 +153,11 @@ export default function Layout({ children, currentPageName }) {
             <item.icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-emerald-700' : 'text-slate-400 group-hover:text-slate-700'}`} />
             <span className="flex-1">{item.name}</span>
             {item.badge && (
-              <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                {item.badge}
-              </span>
-            )}
+  <span
+    className="h-2 w-2 shrink-0 rounded-full bg-rose-500"
+    aria-label={`${item.badge} pending`}
+  />
+)}
           </Link>
         );
       })}
