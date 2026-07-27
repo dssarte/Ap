@@ -38,6 +38,7 @@ export default function Layout({ children, currentPageName }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [hasAuditAssignments, setHasAuditAssignments] = useState(false);
+  const [hasUnreadTicketUpdates, setHasUnreadTicketUpdates] = useState(false);
 
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
@@ -89,11 +90,57 @@ export default function Layout({ children, currentPageName }) {
     }
   };
 
+  // "Overview" nav dot: lights up when the user has any unread ticket
+  // comment, regardless of which page they're currently on.
+  useEffect(() => {
+    if (!user?.email) {
+      setHasUnreadTicketUpdates(false);
+      return undefined;
+    }
+
+    let active = true;
+    const normalizedEmail = user.email.trim().toLowerCase();
+
+    const loadUnreadFlag = async () => {
+      try {
+        const notifications = await base44.entities.Notification.filter(
+          { user_email: user.email },
+          '-created_date',
+          2000
+        );
+        if (!active) return;
+
+        const hasUnread = (Array.isArray(notifications) ? notifications : []).some((notification) => (
+          !notification.is_read
+          && notification.ticket_id
+          && String(notification.created_by || '').trim().toLowerCase() !== normalizedEmail
+        ));
+        setHasUnreadTicketUpdates(hasUnread);
+      } catch (error) {
+        console.error('Failed to load unread ticket updates:', error);
+        if (active) setHasUnreadTicketUpdates(false);
+      }
+    };
+
+    loadUnreadFlag();
+    const unsubscribe = base44.entities.Notification.subscribe((event) => {
+      const changedRow = event?.new || event?.old || event?.data;
+      if (String(changedRow?.user_email || '').trim().toLowerCase() === normalizedEmail) {
+        loadUnreadFlag();
+      }
+    });
+
+    return () => {
+      active = false;
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [user]);
+
   const displayName = getUserDisplayName(user);
   const initials = displayName.split(' ').map((part) => part[0]).join('').toUpperCase().slice(0, 2);
   const isQA = user?.department_name === 'Quality Assurance' || user?.user_type === 'admin';
 
-  let navItems = [{ name: 'Overview', icon: Home, page: 'Home' }];
+  let navItems = [{ name: 'Overview', icon: Home, page: 'Home', badge: hasUnreadTicketUpdates ? 1 : null }];
 
   if (user?.user_type === 'store_manager') {
     if (user.assigned_stores?.length) {
