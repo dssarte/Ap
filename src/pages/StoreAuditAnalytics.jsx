@@ -1,16 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { queryClientInstance } from '@/lib/query-client';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, TrendingUp, TrendingDown, Minus, ClipboardCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, ClipboardCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell
 } from 'recharts';
 import moment from 'moment';
+import SubmissionDetail from '@/components/audit/SubmissionDetail';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useEffect } from 'react';
 import { formatPHDateTime } from '@/lib/dateUtils';
 import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
@@ -41,6 +43,9 @@ export default function StoreAuditAnalytics() {
   const [dateTo, setDateTo] = useState(today);
   const [auditDateFrom, setAuditDateFrom] = useState('');
   const [auditDateTo, setAuditDateTo] = useState('');
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+const submissionDetailRef = useRef(null);
+const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
 
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
@@ -434,7 +439,11 @@ export default function StoreAuditAnalytics() {
                         <td colSpan={8} className="text-center px-5 py-10 text-slate-400 text-sm">No audits in the selected date range.</td>
                       </tr>
                     ) : pagedSubmissions.map((s, i) => (
-                      <tr key={s.id} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}>
+                      <tr
+     key={s.id}
+     onClick={() => setSelectedSubmission(s)}
+     className={`cursor-pointer transition-colors hover:bg-emerald-50/60 border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}
+   >
                         <td className="px-5 py-3 font-medium text-slate-800">{s.template_title}</td>
                         <td className="px-3 py-3 text-slate-600 text-xs">{s.brand || '—'}</td>
                         <td className="text-center px-3 py-3"><ScoreBadge score={s.score} /></td>
@@ -490,6 +499,33 @@ export default function StoreAuditAnalytics() {
           </Card>
         </>
       )}
+      <Dialog open={!!selectedSubmission} onOpenChange={(open) => { if (!open) setSelectedSubmission(null); }}>
+  <DialogContent className="max-w-3xl max-h-[90vh] p-0 gap-0 overflow-hidden flex flex-col">
+    <DialogHeader className="flex-row items-center justify-between gap-3 space-y-0 p-4 pb-3 pr-10 sm:p-6 sm:pb-4 sm:pr-12">
+      <DialogTitle className="text-2xl truncate min-w-0">{selectedSubmission?.template_title}</DialogTitle>
+      <Button
+        onClick={() => submissionDetailRef.current?.exportPdf()}
+        disabled={exportingSubmissionPdf}
+        className="bg-[#1fd655] hover:bg-[#1bc14c] text-slate-900 font-bold gap-2 shrink-0"
+      >
+        {exportingSubmissionPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+        Export PDF
+      </Button>
+    </DialogHeader>
+    <div className="flex-1 overflow-y-auto p-4 pt-0 pr-3 sm:p-6 sm:pt-0 sm:pr-5">
+      {selectedSubmission && (
+        <SubmissionDetail
+          ref={submissionDetailRef}
+          submission={selectedSubmission}
+          templates={allTemplates}
+          user={user}
+          hideExportButton
+          onExportingChange={setExportingSubmissionPdf}
+        />
+      )}
+    </div>
+  </DialogContent>
+</Dialog>
     </div>
   );
 }

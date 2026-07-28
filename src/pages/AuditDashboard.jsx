@@ -20,6 +20,10 @@ function dayKey(dateStr) {
   return moment(dateStr).utcOffset(8).format('YYYY-MM-DD');
 }
 
+function isOdChecklist(title) {
+  return (title || '').trim().toUpperCase().includes('OD CHECKLIST');
+}
+
 function ScoreBadge({ score }) {
   if (score == null) return <span className="text-slate-300 text-sm">—</span>;
   const cls = score >= 80
@@ -115,11 +119,14 @@ export default function AuditDashboard() {
   // Summary stats
   const stats = useMemo(() => {
     if (!filtered.length) return null;
-    const avg = filtered.reduce((s, x) => s + x.score, 0) / filtered.length;
-    const passing = filtered.filter(s => s.score >= PASS_THRESHOLD).length;
+    // Total Audits, Passing, Failing, and Overall Avg Score all exclude OD Checklist —
+    // it's a self-filled device/ops check, not a scored quality audit like Opening/Mid/Closing.
+    const avgEligible = filtered.filter(s => !isOdChecklist(s.template_title));
+    const avg = avgEligible.length ? avgEligible.reduce((s, x) => s + x.score, 0) / avgEligible.length : null;
+    const passing = avgEligible.filter(s => s.score >= PASS_THRESHOLD).length;
     const stores = new Set(filtered.map(s => s.brand)).size;
     const templatesUsed = new Set(filtered.map(s => s.template_id)).size;
-    return { avg, passing, failing: filtered.length - passing, total: filtered.length, stores, templatesUsed };
+    return { avg, passing, failing: avgEligible.length - passing, total: avgEligible.length, stores, templatesUsed };
   }, [filtered]);
 
   // Per-store summary table
@@ -127,8 +134,11 @@ export default function AuditDashboard() {
     const groups = {};
     filtered.forEach(s => {
       const key = s.brand;
-      if (!groups[key]) groups[key] = { store: key, scores: [], byTemplate: {} };
+      if (!groups[key]) groups[key] = { store: key, scores: [], avgScores: [], byTemplate: {} };
       groups[key].scores.push(s.score);
+      if (!isOdChecklist(s.template_title)) {
+        groups[key].avgScores.push(s.score);
+      }
       if (!groups[key].byTemplate[s.template_id]) {
         groups[key].byTemplate[s.template_id] = { title: s.template_title, scores: [] };
       }
@@ -136,22 +146,21 @@ export default function AuditDashboard() {
     });
     return Object.values(groups)
       .map(g => {
-        const avg = g.scores.reduce((a, b) => a + b, 0) / g.scores.length;
-        // trend: compare latest half vs earlier half
-        const sorted = [...g.scores];
+        const avg = g.avgScores.length ? g.avgScores.reduce((a, b) => a + b, 0) / g.avgScores.length : null;
+        const sorted = [...g.avgScores];
         const mid = Math.floor(sorted.length / 2);
         const early = sorted.slice(0, mid);
         const late = sorted.slice(mid);
         const earlyAvg = early.length ? early.reduce((a, b) => a + b, 0) / early.length : avg;
         const lateAvg = late.length ? late.reduce((a, b) => a + b, 0) / late.length : avg;
-        const trend = lateAvg - earlyAvg;
+        const trend = (earlyAvg != null && lateAvg != null) ? lateAvg - earlyAvg : 0;
         const templateScores = Object.values(g.byTemplate).map(t => ({
           title: t.title,
           avg: t.scores.reduce((a, b) => a + b, 0) / t.scores.length,
         }));
-        return { store: g.store, avg, trend, count: g.scores.length, templateScores, isPassing: avg >= PASS_THRESHOLD };
+        return { store: g.store, avg, trend, count: g.scores.length, templateScores, isPassing: avg == null ? null : avg >= PASS_THRESHOLD };
       })
-      .sort((a, b) => b.avg - a.avg);
+      .sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1));
   }, [filtered]);
 
   // All unique template titles visible in current filter
@@ -206,10 +215,10 @@ export default function AuditDashboard() {
             const ts = r.templateScores.find(t => t.title === title);
             return ts ? `${ts.avg.toFixed(1)}%` : '—';
           }),
-          `${r.avg.toFixed(1)}%`,
+          r.avg != null ? `${r.avg.toFixed(1)}%` : '—',
           r.trend > 1 ? `+${r.trend.toFixed(1)}` : r.trend < -1 ? r.trend.toFixed(1) : '—',
           r.count,
-          r.isPassing ? 'PASS' : 'FAIL',
+          r.isPassing == null ? '—' : (r.isPassing ? 'PASS' : 'FAIL'),
         ]),
       },
     ];
@@ -277,7 +286,7 @@ export default function AuditDashboard() {
           {/* KPI Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Overall Avg Score', value: `${stats.avg.toFixed(1)}%`, color: stats.avg >= PASS_THRESHOLD ? 'text-green-600' : 'text-red-600' },
+              { label: 'Overall Avg Score', value: stats.avg != null ? `${stats.avg.toFixed(1)}%` : '—', color: stats.avg != null && stats.avg >= PASS_THRESHOLD ? 'text-green-600' : 'text-red-600' },
               { label: 'Total Audits', value: stats.total, color: 'text-slate-900' },
               { label: 'Passing', value: stats.passing, color: 'text-green-600' },
               { label: 'Failing', value: stats.failing, color: 'text-red-600' },
@@ -324,7 +333,7 @@ export default function AuditDashboard() {
             </CardHeader>
             <CardContent className="px-2 pb-5">
               <ResponsiveContainer width="100%" height={Math.max(220, storeRows.length * 36)}>
-                <BarChart data={storeRows.map(r => ({ name: r.store, score: parseFloat(r.avg.toFixed(1)), isPassing: r.isPassing }))}
+                <BarChart data={storeRows.map(r => ({ name: r.store, score: r.avg != null ? parseFloat(r.avg.toFixed(1)) : 0, isPassing: r.isPassing }))}
                   layout="vertical" margin={{ left: 8, right: 30 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                   <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} />
@@ -332,7 +341,7 @@ export default function AuditDashboard() {
                   <Tooltip formatter={v => `${v}%`} />
                   <Bar dataKey="score" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, formatter: v => `${v}%` }}>
                     {storeRows.map((r, i) => (
-                      <Cell key={i} fill={r.isPassing ? '#1fd655' : '#ef4444'} />
+                      <Cell key={i} fill={r.isPassing == null ? '#cbd5e1' : (r.isPassing ? '#1fd655' : '#ef4444')} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -376,10 +385,14 @@ export default function AuditDashboard() {
                         <td className="text-center px-3 py-3 flex justify-center"><TrendIcon trend={r.trend} /></td>
                         <td className="text-center px-3 py-3 text-slate-500 text-xs">{r.count}</td>
                         <td className="text-center px-3 py-3">
-                          <Badge className={r.isPassing ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}>
-                            {r.isPassing ? 'PASS' : 'FAIL'}
-                          </Badge>
-                        </td>
+  {r.isPassing == null ? (
+    <span className="text-slate-300 text-sm">—</span>
+  ) : (
+    <Badge className={r.isPassing ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}>
+      {r.isPassing ? 'PASS' : 'FAIL'}
+    </Badge>
+  )}
+</td>
                       </tr>
                     ))}
                   </tbody>
