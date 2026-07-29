@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ClipboardList, CheckCircle2, ChevronLeft, ChevronDown, Trash2, Pencil, Camera, History, ListChecks } from "lucide-react";
+import { Loader2, ClipboardList, CheckCircle2, Eye, ChevronLeft, ChevronDown, Trash2, Pencil, Camera, History, ListChecks } from "lucide-react";
 import moment from 'moment';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { getLocation } from '@/lib/getLocation';
@@ -238,6 +238,11 @@ export default function Audit() {
           <h1 className="app-page-heading">{titleMap[view] || 'Audit'}</h1>
           {view === 'list' && <p className="app-page-description">Select a checklist to start an audit.</p>}
         </div>
+        {view === 'list' && (
+          <Button variant="outline" onClick={() => setView('history')} className="gap-2">
+            <Eye className="w-4 h-4" /> History
+          </Button>
+        )}
       </div>
 
       {/* TEMPLATE LIST */}
