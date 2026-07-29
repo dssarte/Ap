@@ -21,10 +21,6 @@ function isOdChecklist(title) {
   return (title || '').trim().toUpperCase().includes('OD CHECKLIST');
 }
 
-function isOdChecklist(title) {
-  return (title || '').trim().toUpperCase().includes('OD CHECKLIST');
-}
-
 function ScoreBadge({ score }) {
   if (score == null) return <span className="text-slate-300 text-sm">—</span>;
   const cls = score >= 80
