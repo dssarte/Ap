@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, AlertTriangle } from "lucide-react";
 import moment from 'moment';
+import { auditBusinessDayKey } from '@/lib/dateUtils';
 
 function AnswerBadge({ value }) {
   if (!value) return <span className="text-slate-300 text-xs">—</span>;
@@ -58,8 +59,8 @@ export default function NoAnswerTracker({ allowedStores = null }) {
 
   const filtered = useMemo(() => {
     let subs = scopedSubmissions.filter(s => s.brand === selectedStore);
-    if (dateFrom) subs = subs.filter(s => new Date(s.submission_date || s.created_date) >= new Date(`${dateFrom}T00:00:00+08:00`));
-    if (dateTo) subs = subs.filter(s => new Date(s.submission_date || s.created_date) <= new Date(`${dateTo}T23:59:59+08:00`));
+    if (dateFrom) subs = subs.filter(s => auditBusinessDayKey(s) >= dateFrom);
+    if (dateTo) subs = subs.filter(s => auditBusinessDayKey(s) <= dateTo);
     return subs;
   }, [scopedSubmissions, selectedStore, dateFrom, dateTo]);
 
@@ -78,7 +79,7 @@ export default function NoAnswerTracker({ allowedStores = null }) {
   const dayRows = useMemo(() => {
     const dayMap = new Map();
     filtered.forEach(sub => {
-      const day = moment(sub.submission_date || sub.created_date).utcOffset(8).format('YYYY-MM-DD');
+      const day = auditBusinessDayKey(sub);
       if (!dayMap.has(day)) dayMap.set(day, {});
       dayMap.get(day)[sub.template_id] = sub;
     });

@@ -13,12 +13,9 @@ import moment from 'moment';
 import NoAnswerTracker from '@/components/audit/NoAnswerTracker';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
+import { auditBusinessDayKey } from '@/lib/dateUtils';
 
 const PASS_THRESHOLD = 75;
-
-function dayKey(dateStr) {
-  return moment(dateStr).utcOffset(8).format('YYYY-MM-DD');
-}
 
 function isOdChecklist(title) {
   return (title || '').trim().toUpperCase().includes('OD CHECKLIST');
@@ -107,7 +104,7 @@ export default function AuditDashboard() {
     }
     if (dateFrom || dateTo) {
       subs = subs.filter(s => {
-        const k = dayKey(s.submission_date || s.created_date);
+        const k = auditBusinessDayKey(s);
         if (dateFrom && k < dateFrom) return false;
         if (dateTo && k > dateTo) return false;
         return true;
@@ -177,7 +174,7 @@ export default function AuditDashboard() {
   const trendData = useMemo(() => {
     const byMonth = {};
     filtered.forEach(s => {
-      const month = moment(s.submission_date || s.created_date).utcOffset(8).format('MMM YYYY');
+      const month = moment(auditBusinessDayKey(s), 'YYYY-MM-DD').format('MMM YYYY');
       if (!byMonth[month]) byMonth[month] = { month, scores: {}, totals: [] };
       byMonth[month].totals.push(s.score);
       if (!byMonth[month].scores[s.template_id]) {

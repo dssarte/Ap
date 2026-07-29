@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
+import { auditBusinessDayKey } from '@/lib/dateUtils';
 
 const entityTables = {
   User: 'users', Brand: 'brands', Store: 'stores', Department: 'departments',
@@ -27,6 +28,13 @@ const applyFilters = (query, filters = {}) => {
     else query = query.eq(key, value);
   }
   return query;
+};
+const addIsoDateDays = (isoDate, days) => {
+  if (!isoDate) return null;
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 };
 
 function entityApi(name) {
@@ -100,11 +108,15 @@ const auditData = {
   async listSubmissions({ dateFrom = null, dateTo = null, stores = null, templateId = null, maxRows = 25000 } = {}) {
     const pageSize = 1000;
     const rows = [];
+    // Request one extra calendar day so this source remains compatible with
+    // databases that still have the older midnight-based RPC. The final
+    // business-date filter below removes unrelated next-day records.
+    const databaseDateTo = dateTo ? addIsoDateDays(dateTo, 1) : null;
 
     for (let offset = 0; offset < maxRows; offset += pageSize) {
       const { data, error } = await supabase.rpc('list_audit_submissions', {
         p_date_from: dateFrom || null,
-        p_date_to: dateTo || null,
+        p_date_to: databaseDateTo,
         p_store_names: stores?.length ? stores : null,
         p_template_id: templateId || null,
         p_limit: Math.min(pageSize, maxRows - offset),
@@ -118,8 +130,8 @@ const auditData = {
         // deployed. It still filters and paginates at the database boundary.
         let query = supabase.from('audit_submissions').select('*');
         if (dateFrom) query = query.gte('submission_date', new Date(`${dateFrom}T00:00:00+08:00`).toISOString());
-        if (dateTo) {
-          const exclusiveEnd = new Date(`${dateTo}T00:00:00+08:00`);
+        if (databaseDateTo) {
+          const exclusiveEnd = new Date(`${databaseDateTo}T00:00:00+08:00`);
           exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
           query = query.lt('submission_date', exclusiveEnd.toISOString());
         }
@@ -140,7 +152,12 @@ const auditData = {
       if (page.length < pageSize) break;
     }
 
-    return rows;
+    return rows.filter(row => {
+      const businessDay = auditBusinessDayKey(row);
+      if (dateFrom && businessDay < dateFrom) return false;
+      if (dateTo && businessDay > dateTo) return false;
+      return true;
+    });
   },
 
   async storeTemplateSummary({ dateFrom = null, dateTo = null, stores = null } = {}) {

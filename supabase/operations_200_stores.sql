@@ -4,7 +4,15 @@
 
 -- 1. Daily audit volume and average score for the last 30 days.
 SELECT
-  (coalesce(submission_date, created_date) AT TIME ZONE 'Asia/Manila')::date AS audit_day,
+  (
+    (coalesce(submission_date, created_date) AT TIME ZONE 'Asia/Manila')
+    - CASE
+        WHEN position('CLOSING' IN upper(coalesce(template_title, ''))) > 0
+         AND (coalesce(submission_date, created_date) AT TIME ZONE 'Asia/Manila')::time < time '05:00:00'
+        THEN interval '1 day'
+        ELSE interval '0 days'
+      END
+  )::date AS audit_day,
   count(*) AS audits,
   round(avg(score), 2) AS average_score
 FROM public.audit_submissions

@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, ClipboardList, CheckCircle2, ChevronLeft, ChevronDown, Trash2, Pencil, Camera, History, ListChecks } from "lucide-react";
 import moment from 'moment';
-import { formatPHDateTime } from '@/lib/dateUtils';
+import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { getLocation } from '@/lib/getLocation';
 import { compressImage } from '@/lib/compressImage';
 import { SectionLoadingSkeleton } from '@/components/PageState';
@@ -343,11 +343,8 @@ export default function Audit() {
           <SectionLoadingSkeleton rows={4} label="Loading audit history" />
         ) : (() => {
             const filtered = submissions.filter(sub => {
-              const d = new Date(sub.submission_date || sub.created_date);
-              // Parse date strings as PHT (UTC+8) by appending the local offset
-              const from = new Date(`${historyDateFrom}T00:00:00+08:00`);
-              const to = new Date(`${historyDateTo}T23:59:59+08:00`);
-              const inRange = d >= from && d <= to;
+              const businessDay = auditBusinessDayKey(sub);
+              const inRange = businessDay >= historyDateFrom && businessDay <= historyDateTo;
               const matchesStore = !historyStoreFilter || (sub.brand || '').includes(historyStoreFilter);
               return inRange && matchesStore;
             });
@@ -1217,5 +1214,4 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     </div>
   );
 }
-
 

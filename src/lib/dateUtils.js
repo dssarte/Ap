@@ -31,3 +31,53 @@ export function formatPHDateShort(value) {
 export function formatPHMonthYear(value) {
   return formatWith(value, { month: 'short', year: '2-digit' });
 }
+
+export function isClosingAudit(templateTitle) {
+  return /\bclosing\b/i.test(String(templateTitle || ''));
+}
+
+/**
+ * Operational reporting date for an audit in Asia/Manila.
+ * Closing audits submitted from midnight through 4:59:59 AM belong to the
+ * previous day. Exactly 5:00 AM begins the new reporting day.
+ */
+export function auditBusinessDayKey(submissionOrDate, templateTitle = '') {
+  const submission = submissionOrDate
+    && typeof submissionOrDate === 'object'
+    && !(submissionOrDate instanceof Date)
+    ? submissionOrDate
+    : null;
+  const value = submission
+    ? submission.submission_date || submission.created_date
+    : submissionOrDate;
+  const title = submission?.template_title || templateTitle;
+  const date = safeDate(value);
+  if (!date) return '';
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PH_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const getPart = (type) => parts.find(part => part.type === type)?.value;
+  const year = Number(getPart('year'));
+  const month = Number(getPart('month'));
+  const day = Number(getPart('day'));
+  const hour = Number(getPart('hour'));
+
+  if (![year, month, day, hour].every(Number.isFinite)) return '';
+
+  const businessDate = new Date(Date.UTC(year, month - 1, day));
+  if (isClosingAudit(title) && hour < 5) {
+    businessDate.setUTCDate(businessDate.getUTCDate() - 1);
+  }
+
+  return [
+    businessDate.getUTCFullYear(),
+    String(businessDate.getUTCMonth() + 1).padStart(2, '0'),
+    String(businessDate.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+}
