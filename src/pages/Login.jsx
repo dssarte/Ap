@@ -86,26 +86,26 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-white lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(480px,0.95fr)]">
-      <section className="relative hidden overflow-hidden bg-slate-950 p-12 text-white lg:flex lg:flex-col lg:justify-between xl:p-16">
-        <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_20%_20%,#10b981_0,transparent_34%),radial-gradient(circle_at_85%_75%,#166534_0,transparent_32%)]" />
-        <div className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(rgba(255,255,255,.8)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.8)_1px,transparent_1px)] [background-size:48px_48px]" />
-        <div className="relative">
-          <div className="inline-flex rounded-2xl bg-white px-5 py-3 shadow-xl shadow-black/10">
-            <img src={LOGO_URL} alt="Figaro Coffee Group" className="h-12 w-auto object-contain" />
-          </div>
-        </div>
-        <div className="relative max-w-xl">
-          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-emerald-400">Internal operations workspace</p>
-          <h1 className="text-4xl font-semibold leading-tight tracking-tight xl:text-5xl">Support that keeps every store moving.</h1>
-          <p className="mt-5 max-w-lg text-base leading-7 text-slate-300">Manage requests, approvals, and quality audits in one secure, reliable place built for the Figaro team.</p>
-          <div className="mt-10 grid grid-cols-3 gap-4">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm"><CheckCircle2 className="mb-3 h-5 w-5 text-emerald-400" /><p className="text-sm font-medium">Faster resolution</p></div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm"><ShieldCheck className="mb-3 h-5 w-5 text-emerald-400" /><p className="text-sm font-medium">Secure access</p></div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm"><BarChart3 className="mb-3 h-5 w-5 text-emerald-400" /><p className="text-sm font-medium">Clear insights</p></div>
-          </div>
-        </div>
-        <p className="relative text-xs text-slate-500">© {new Date().getFullYear()} Figaro Coffee Group</p>
-      </section>
+      <section className="relative hidden overflow-hidden bg-[#19ab5f] p-12 text-white lg:flex lg:flex-col lg:justify-between xl:p-16">
+  <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_20%_20%,#ffffff_0,transparent_34%),radial-gradient(circle_at_85%_75%,#0d8a4a_0,transparent_32%)]" />
+  <div className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(rgba(255,255,255,.8)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.8)_1px,transparent_1px)] [background-size:48px_48px]" />
+  <div className="relative">
+    <div className="inline-flex rounded-2xl bg-white px-5 py-3 shadow-xl shadow-black/10">
+      <img src={LOGO_URL} alt="Figaro Coffee Group" className="h-12 w-auto object-contain" />
+    </div>
+  </div>
+  <div className="relative max-w-xl">
+    <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-white/90">Internal operations workspace</p>
+    <h1 className="text-4xl font-semibold leading-tight tracking-tight xl:text-5xl">Support that keeps every store moving.</h1>
+    <p className="mt-5 max-w-lg text-base leading-7 text-white/80">Manage requests, approvals, and quality audits in one secure, reliable place built for the Figaro team.</p>
+    <div className="mt-10 grid grid-cols-3 gap-4">
+      <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm"><CheckCircle2 className="mb-3 h-5 w-5 text-white" /><p className="text-sm font-medium">Faster resolution</p></div>
+      <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm"><ShieldCheck className="mb-3 h-5 w-5 text-white" /><p className="text-sm font-medium">Secure access</p></div>
+      <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm"><BarChart3 className="mb-3 h-5 w-5 text-white" /><p className="text-sm font-medium">Clear insights</p></div>
+    </div>
+  </div>
+  <p className="relative text-xs text-white/70">© {new Date().getFullYear()} Figaro Coffee Group</p>
+</section>
 
       <section className="flex min-h-screen items-center justify-center bg-slate-50 px-5 py-10 sm:px-10 lg:bg-white">
       <div className="w-full max-w-md">
