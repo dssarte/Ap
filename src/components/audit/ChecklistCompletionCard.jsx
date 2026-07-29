@@ -5,10 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import moment from 'moment';
-
-function dayKey(dateStr) {
-  return moment(dateStr).utcOffset(8).format('YYYY-MM-DD');
-}
+import { auditBusinessDayKey } from '@/lib/dateUtils';
 
 export default function ChecklistCompletionCard({
   templates,
@@ -49,7 +46,7 @@ export default function ChecklistCompletionCard({
 
   const dailyStats = useMemo(() => {
     return days.map(day => {
-      const daySubs = submissions.filter(s => dayKey(s.submission_date || s.created_date) === day);
+      const daySubs = submissions.filter(s => auditBusinessDayKey(s) === day);
       const completedIds = new Set(daySubs.map(s => s.template_id));
       const completed = activeTemplates.filter(t => completedIds.has(t.id)).length;
       const rate = totalTemplates > 0 ? Math.round((completed / totalTemplates) * 100) : 0;

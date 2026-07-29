@@ -14,7 +14,7 @@ import moment from 'moment';
 import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useEffect } from 'react';
-import { formatPHDateTime } from '@/lib/dateUtils';
+import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ExcelExportButton from '@/components/ExcelExportButton';
@@ -27,10 +27,6 @@ function ScoreBadge({ score }) {
   if (score == null) return null;
   const cls = score >= 80 ? 'bg-green-100 text-green-700' : score >= PASS_THRESHOLD ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${cls}`}>{score.toFixed(1)}%</span>;
-}
-
-function dayKey(dateStr) {
-  return moment(dateStr).utcOffset(8).format('YYYY-MM-DD');
 }
 
 export default function StoreAuditAnalytics() {
@@ -133,7 +129,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
   // Recent Audits filtered by the audit date range (empty = no restriction)
   const recentAudits = useMemo(() => {
     return storeSubmissions.filter(s => {
-      const k = dayKey(s.submission_date || s.created_date);
+      const k = auditBusinessDayKey(s);
       if (auditDateFrom && k < auditDateFrom) return false;
       if (auditDateTo && k > auditDateTo) return false;
       return true;
@@ -193,7 +189,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
   const rangeSubmissions = useMemo(() => {
     if (!dateFrom || !dateTo) return [];
     return storeSubmissions.filter(s => {
-      const k = dayKey(s.submission_date || s.created_date);
+      const k = auditBusinessDayKey(s);
       return k >= dateFrom && k <= dateTo;
     });
   }, [storeSubmissions, dateFrom, dateTo]);
@@ -218,8 +214,9 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
     const byMonth = {};
     storeSubmissions.forEach(s => {
       const sd = s.submission_date || s.created_date;
-      const month = moment(sd).utcOffset(8).format('MMM YY');
-      if (!byMonth[month]) byMonth[month] = { month, scores: [], order: moment(sd).valueOf() };
+      const businessDay = auditBusinessDayKey(s);
+      const month = moment(businessDay, 'YYYY-MM-DD').format('MMM YY');
+      if (!byMonth[month]) byMonth[month] = { month, scores: [], order: moment(businessDay, 'YYYY-MM-DD').valueOf() };
       byMonth[month].scores.push(s.score);
     });
     return Object.values(byMonth)
