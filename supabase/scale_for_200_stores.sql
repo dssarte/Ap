@@ -80,17 +80,20 @@ SET search_path = ''
 AS $$
   SELECT s.*
   FROM public.audit_submissions AS s
+  CROSS JOIN LATERAL (
+    SELECT (
+      (coalesce(s.submission_date, s.created_date) AT TIME ZONE 'Asia/Manila')
+      - CASE
+          WHEN position('CLOSING' IN upper(coalesce(s.template_title, ''))) > 0
+           AND (coalesce(s.submission_date, s.created_date) AT TIME ZONE 'Asia/Manila')::time < time '05:00:00'
+          THEN interval '1 day'
+          ELSE interval '0 days'
+        END
+    )::date AS business_date
+  ) AS audit_day
   WHERE s.archived_at IS NULL
-    AND (
-      p_date_from IS NULL
-      OR coalesce(s.submission_date, s.created_date) >=
-         (p_date_from::timestamp AT TIME ZONE 'Asia/Manila')
-    )
-    AND (
-      p_date_to IS NULL
-      OR coalesce(s.submission_date, s.created_date) <
-         ((p_date_to + 1)::timestamp AT TIME ZONE 'Asia/Manila')
-    )
+    AND (p_date_from IS NULL OR audit_day.business_date >= p_date_from)
+    AND (p_date_to IS NULL OR audit_day.business_date <= p_date_to)
     AND (p_template_id IS NULL OR s.template_id = p_template_id)
     AND (
       p_store_names IS NULL
@@ -142,18 +145,21 @@ AS $$
     min(coalesce(s.submission_date, s.created_date)) AS first_submission,
     max(coalesce(s.submission_date, s.created_date)) AS latest_submission
   FROM public.audit_submissions AS s
+  CROSS JOIN LATERAL (
+    SELECT (
+      (coalesce(s.submission_date, s.created_date) AT TIME ZONE 'Asia/Manila')
+      - CASE
+          WHEN position('CLOSING' IN upper(coalesce(s.template_title, ''))) > 0
+           AND (coalesce(s.submission_date, s.created_date) AT TIME ZONE 'Asia/Manila')::time < time '05:00:00'
+          THEN interval '1 day'
+          ELSE interval '0 days'
+        END
+    )::date AS business_date
+  ) AS audit_day
   WHERE s.archived_at IS NULL
     AND s.score IS NOT NULL
-    AND (
-      p_date_from IS NULL
-      OR coalesce(s.submission_date, s.created_date) >=
-         (p_date_from::timestamp AT TIME ZONE 'Asia/Manila')
-    )
-    AND (
-      p_date_to IS NULL
-      OR coalesce(s.submission_date, s.created_date) <
-         ((p_date_to + 1)::timestamp AT TIME ZONE 'Asia/Manila')
-    )
+    AND (p_date_from IS NULL OR audit_day.business_date >= p_date_from)
+    AND (p_date_to IS NULL OR audit_day.business_date <= p_date_to)
     AND (
       p_store_names IS NULL
       OR EXISTS (

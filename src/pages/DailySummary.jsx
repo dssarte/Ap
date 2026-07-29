@@ -5,15 +5,11 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, ClipboardCheck, CheckCircle2, XCircle, Store, CalendarDays } from 'lucide-react';
 import moment from 'moment';
-import { formatPHDate } from '@/lib/dateUtils';
+import { auditBusinessDayKey, formatPHDate } from '@/lib/dateUtils';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 
 const PASS_THRESHOLD = 100; // a store "finished" when 100% of its required checklists are done
-
-function dayKey(dateStr) {
-  return moment(dateStr).utcOffset(8).format('YYYY-MM-DD');
-}
 
 // Does this template apply to a given store name?
 function templateAppliesToStore(t, storeName) {
@@ -85,7 +81,7 @@ export default function DailySummary() {
 
   // Submissions for the selected date only
   const daySubs = useMemo(
-    () => submissions.filter(s => dayKey(s.submission_date || s.created_date) === selectedDate),
+    () => submissions.filter(s => auditBusinessDayKey(s) === selectedDate),
     [submissions, selectedDate]
   );
 
