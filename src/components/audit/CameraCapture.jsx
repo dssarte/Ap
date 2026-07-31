@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Loader2, Camera, RefreshCw, Check, X, MapPin } from "lucide-react";
+import { getLocation } from '@/lib/getLocation';
 
 export default function CameraCapture({ onCapture, onClose }) {
   const videoRef = useRef(null);
@@ -13,29 +14,15 @@ export default function CameraCapture({ onCapture, onClose }) {
   const [uploading, setUploading] = useState(false);
   const [facingMode, setFacingMode] = useState('environment');
   const [location, setLocation] = useState(null);
+  const [locatingGps, setLocatingGps] = useState(true);
 
-  const fetchLocation = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=14&addressdetails=1`,
-            { headers: { 'Accept-Language': 'en' } }
-          );
-          const data = await res.json();
-          const a = data?.address || {};
-          const place = [a.suburb, a.city || a.town || a.municipality, a.state, a.country]
-            .filter(Boolean).slice(0, 3).join(', ');
-          setLocation(place || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
-        } catch {
-          setLocation(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
-        }
-      },
-      () => setLocation(null),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-    );
+  const fetchLocation = async () => {
+    try {
+      const place = await getLocation();
+      setLocation(place);
+    } finally {
+      setLocatingGps(false);
+    }
   };
 
   const startCamera = async (mode = facingMode) => {
@@ -74,10 +61,14 @@ export default function CameraCapture({ onCapture, onClose }) {
   };
 
   useEffect(() => {
-    startCamera();
-    fetchLocation();
+    (async () => {
+      // Request permissions sequentially — most browsers/OSes only show one
+      // permission dialog at a time, so firing both at once causes the
+      // second prompt (location) to silently fail instead of queueing.
+      await startCamera();
+      fetchLocation();
+    })();
     return stopStream;
-     
   }, []);
 
   const handleSnap = () => {
@@ -184,10 +175,15 @@ export default function CameraCapture({ onCapture, onClose }) {
               {streaming && !error && (
                 <button
                   onClick={handleSnap}
-                  className="absolute bottom-4 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-white border-4 border-slate-300 hover:border-[#1fd655] transition-colors flex items-center justify-center shadow-lg"
+                  disabled={locatingGps}
+                  className="absolute bottom-4 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-white border-4 border-slate-300 hover:border-[#1fd655] transition-colors flex items-center justify-center shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-300"
                   aria-label="Capture photo"
                 >
-                  <Camera className="w-7 h-7 text-slate-700" />
+                  {locatingGps ? (
+                    <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
+                  ) : (
+                    <Camera className="w-7 h-7 text-slate-700" />
+                  )}
                 </button>
               )}
               {streaming && !error && (
