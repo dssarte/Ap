@@ -45,6 +45,12 @@ export default function DailySummary() {
     enabled: !!user && canAccess && (!isStoreManager || assignedStores.length > 0),
   });
 
+  const { data: brands = [] } = useQuery({
+    queryKey: ['brands-active-daily'],
+    queryFn: () => base44.entities.Brand.filter({ is_active: true }, 'brand_name', 200),
+    enabled: !!user && canAccess && (!isStoreManager || assignedStores.length > 0),
+  });
+
   const { data: submissions = [], isLoading: loadingSubs } = useQuery({
     queryKey: ['audit-submissions-daily', selectedDate, isStoreManager ? assignedStores.join('|') : 'all'],
     queryFn: () => base44.audit.listSubmissions({
@@ -113,10 +119,26 @@ export default function DailySummary() {
   }, [scopedStores, requiredTemplates, daySubs]);
 
   // Sort: incomplete first, then by rate ascending — worst performers on top
+  // Sort: incomplete first, then by rate ascending — worst performers on top
   const sortedRows = useMemo(
     () => [...rows].sort((a, b) => a.rate - b.rate),
     [rows]
   );
+
+  // Group by brand for display — each brand shows as its own section,
+  // with stores inside still ordered worst-performer-first.
+  const groupedRows = useMemo(() => {
+    const groups = {};
+    for (const r of sortedRows) {
+      const brandId = r.store.brand_id || '__none__';
+      if (!groups[brandId]) {
+        const brandName = brands.find(b => b.id === brandId)?.brand_name || 'Other';
+        groups[brandId] = { brandId, brandName, rows: [] };
+      }
+      groups[brandId].rows.push(r);
+    }
+    return Object.values(groups).sort((a, b) => a.brandName.localeCompare(b.brandName));
+  }, [sortedRows, brands]);
 
   const summary = useMemo(() => {
     if (rows.length === 0) return null;
@@ -230,23 +252,28 @@ export default function DailySummary() {
               <p className="text-xs text-slate-400">{requiredTemplates.length} required checklist{requiredTemplates.length !== 1 ? 's' : ''}</p>
             </CardHeader>
             <CardContent className="px-0 pb-4">
-              <div className="space-y-3 px-4 md:hidden">
-                {sortedRows.map((r) => {
-                  const complete = r.rate >= PASS_THRESHOLD;
-                  return (
-                    <article key={r.store.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div><h3 className="font-semibold text-slate-900">{r.store.store_name}</h3>{r.store.location && <p className="mt-0.5 text-xs text-slate-400">{r.store.location}</p>}</div>
-                        <Badge className={complete ? 'border-green-200 bg-green-100 text-green-700' : r.completed === 0 ? 'border-red-200 bg-red-100 text-red-700' : 'border-amber-200 bg-amber-100 text-amber-700'}>{complete ? 'Complete' : r.completed === 0 ? 'Not started' : 'In progress'}</Badge>
-                      </div>
-                      <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
-                        <div><p className="text-xs text-slate-500">Completed</p><p className="mt-1 font-semibold text-slate-800">{r.completed} / {r.required}</p></div>
-                        <div><p className="text-xs text-slate-500">Completion rate</p><p className={`mt-1 font-bold ${complete ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{r.rate}%</p></div>
-                      </div>
-                      {r.missing.length > 0 && <div className="mt-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Missing</p><p className="mt-1 text-xs leading-5 text-slate-600">{r.missing.join(' · ')}</p></div>}
-                    </article>
-                  );
-                })}
+              <div className="space-y-5 px-4 md:hidden">
+                {groupedRows.map((group) => (
+                  <div key={group.brandId} className="space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{group.brandName}</p>
+                    {group.rows.map((r) => {
+                      const complete = r.rate >= PASS_THRESHOLD;
+                      return (
+                        <article key={r.store.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <div><h3 className="font-semibold text-slate-900">{r.store.store_name}</h3>{r.store.location && <p className="mt-0.5 text-xs text-slate-400">{r.store.location}</p>}</div>
+                            <Badge className={complete ? 'border-green-200 bg-green-100 text-green-700' : r.completed === 0 ? 'border-red-200 bg-red-100 text-red-700' : 'border-amber-200 bg-amber-100 text-amber-700'}>{complete ? 'Complete' : r.completed === 0 ? 'Not started' : 'In progress'}</Badge>
+                          </div>
+                          <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+                            <div><p className="text-xs text-slate-500">Completed</p><p className="mt-1 font-semibold text-slate-800">{r.completed} / {r.required}</p></div>
+                            <div><p className="text-xs text-slate-500">Completion rate</p><p className={`mt-1 font-bold ${complete ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{r.rate}%</p></div>
+                          </div>
+                          {r.missing.length > 0 && <div className="mt-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Missing</p><p className="mt-1 text-xs leading-5 text-slate-600">{r.missing.join(' · ')}</p></div>}
+                        </article>
+                      );
+                    })}
+                  </div>
+                ))}
                 {sortedRows.length === 0 && <p className="py-8 text-center text-sm text-slate-400">No stores with required checklists for this date.</p>}
               </div>
               <div className="hidden overflow-x-auto md:block">
@@ -260,45 +287,52 @@ export default function DailySummary() {
                       <th className="text-left px-5 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Missing</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {sortedRows.map((r, i) => {
-                      const complete = r.rate >= PASS_THRESHOLD;
-                      return (
-                        <tr key={r.store.id} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}>
-                          <td className="px-5 py-3 font-medium text-slate-800">
-                            {r.store.store_name}
-                            {r.store.location && <span className="block text-xs text-slate-400">{r.store.location}</span>}
-                          </td>
-                          <td className="text-center px-3 py-3 text-slate-700">
-                            <span className="inline-flex items-center gap-1.5">
-                              {complete
-                                ? <CheckCircle2 className="w-4 h-4 text-green-500" />
-                                : r.completed === 0 ? <XCircle className="w-4 h-4 text-red-400" /> : null}
-                              {r.completed} / {r.required}
-                            </span>
-                          </td>
-                          <td className="text-center px-3 py-3">
-                            <span className={`font-bold ${r.rate >= PASS_THRESHOLD ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
-                              {r.rate}%
-                            </span>
-                          </td>
-                          <td className="text-center px-3 py-3">
-                            <Badge className={complete ? 'bg-green-100 text-green-700 border-green-200' : r.completed === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}>
-                              {complete ? 'COMPLETE' : r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'}
-                            </Badge>
-                          </td>
-                          <td className="px-5 py-3 text-xs text-slate-500">
-                            {r.missing.length > 0
-                              ? <span className="line-clamp-2">{r.missing.join(' · ')}</span>
-                              : <span className="text-green-500 font-medium">All done ✅</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {sortedRows.length === 0 && (
+                  {groupedRows.map((group) => (
+                    <tbody key={group.brandId}>
+                      <tr className="bg-slate-100/80">
+                        <td colSpan={5} className="px-5 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">{group.brandName}</td>
+                      </tr>
+                      {group.rows.map((r, i) => {
+                        const complete = r.rate >= PASS_THRESHOLD;
+                        return (
+                          <tr key={r.store.id} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}>
+                            <td className="px-5 py-3 font-medium text-slate-800">
+                              {r.store.store_name}
+                              {r.store.location && <span className="block text-xs text-slate-400">{r.store.location}</span>}
+                            </td>
+                            <td className="text-center px-3 py-3 text-slate-700">
+                              <span className="inline-flex items-center gap-1.5">
+                                {complete
+                                  ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                  : r.completed === 0 ? <XCircle className="w-4 h-4 text-red-400" /> : null}
+                                {r.completed} / {r.required}
+                              </span>
+                            </td>
+                            <td className="text-center px-3 py-3">
+                              <span className={`font-bold ${r.rate >= PASS_THRESHOLD ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                                {r.rate}%
+                              </span>
+                            </td>
+                            <td className="text-center px-3 py-3">
+                              <Badge className={complete ? 'bg-green-100 text-green-700 border-green-200' : r.completed === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}>
+                                {complete ? 'COMPLETE' : r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'}
+                              </Badge>
+                            </td>
+                            <td className="px-5 py-3 text-xs text-slate-500">
+                              {r.missing.length > 0
+                                ? <span className="line-clamp-2">{r.missing.join(' · ')}</span>
+                                : <span className="text-green-500 font-medium">All done ✅</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  ))}
+                  {sortedRows.length === 0 && (
+                    <tbody>
                       <tr><td colSpan={5} className="text-center px-5 py-10 text-slate-400 text-sm">No stores with required checklists for this date.</td></tr>
-                    )}
-                  </tbody>
+                    </tbody>
+                  )}
                 </table>
               </div>
             </CardContent>
