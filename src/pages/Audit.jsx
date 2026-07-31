@@ -511,6 +511,11 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
   );
   const [saving, setSaving] = useState(false);
   const isAdmin = user?.user_type === 'admin';
+  // Only blocks brand-new submissions — an admin correcting an already-submitted
+  // audit isn't creating a new late entry, so edits stay exempt from this check.
+  const submissionWindowClosed = !existingSubmission && !isTemplateAvailableNow(template);
+
+  // Draft autosave/restore — survives accidental close/navigation
 
   // Draft autosave/restore — survives accidental close/navigation
   const draftKey = `audit_draft_${template.id}_${user.email}${existingSubmission?.id ? `_edit_${existingSubmission.id}` : ''}`;
@@ -713,6 +718,11 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
   };
 
   const handleSubmit = async () => {
+    if (submissionWindowClosed) {
+      setErrorItemId(null);
+      setPhotoError('The submission window for this checklist has closed. Your progress is saved as a draft — please contact an admin if this needs to be submitted late.');
+      return;
+    }
     if (!isStoreLocked && !brand) {
       setErrorItemId(null);
       setPhotoError('Please select a brand and store before submitting.');
@@ -779,6 +789,10 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     }
 
     try {
+      if (!existingSubmission && !isTemplateAvailableNow(template)) {
+        setSaving(false);
+        return;
+      }
       if (existingSubmission?.id) {
         const storedSig1 = await persistSignature(sig1Photo, 'audit_signature_1');
         const storedSig2 = await persistSignature(sig2Photo, 'audit_signature_2');
@@ -1201,11 +1215,16 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
           {photoError}
         </p>
       )}
+      {submissionWindowClosed && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          The submission window for this checklist has closed. Contact an admin if this needs to be submitted late.
+        </p>
+      )}
       <div className="sticky bottom-0 z-20 -mx-4 flex justify-end gap-3 border-t border-slate-200 bg-white/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-4">
         <Button variant="outline" onClick={handleCancel}>Cancel</Button>
         <Button
           onClick={handleSubmit}
-          disabled={saving || answered === 0 || (!isStoreLocked && !brand)}
+          disabled={saving || answered === 0 || (!isStoreLocked && !brand) || submissionWindowClosed}
           className="bg-[#1fd655] hover:bg-[#1bc14c] text-slate-900 font-semibold gap-2"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
