@@ -823,29 +823,33 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
             if (!failedItems.length) continue;
             const dept = departments.find(d => (d.name || '').trim().toLowerCase() === (section.title || '').trim().toLowerCase());
             const category = categories.find(c => c.department_id === dept?.id && !c.is_audit_only) || categories.find(c => !c.is_audit_only && (c.name || '').toLowerCase().includes((section.title || '').toLowerCase()));
+            // Looked up once per department (not per item) — same approver applies to every ticket in this section.
             const approver = dept ? await base44.functions.invoke('findApproverForDepartment', { department_id: dept.id }) : { data: {} };
-            const details = failedItems.map(item => `- ${item.label}: ${noComments[item.id] || 'No reason provided'}`).join('\n');
-            generatedTickets.push({
-              title: `Audit NO - ${section.title} (${brand})`,
-              description: `Auto-generated from audit ${template.title}.\n\n${details}`,
-              department_id: dept?.id || user.department_id || '',
-              department_name: dept?.name || section.title || user.department_name || '',
-              handling_department_id: dept?.id || user.department_id || '',
-              handling_department_name: dept?.name || section.title || user.department_name || '',
-              category_id: category?.id || '',
-              category_name: category?.name || 'Audit Concern',
-              priority: 'high',
-              image_urls: failedItems.flatMap(item => itemPhotos[item.id] || []),
-              attachment_url: '',
-              submitter_email: user.email,
-              submitter_name: user.display_name || user.full_name,
-              store_name: selectedStore?.store_name || user.store_name || '',
-              status: 'open', approval_status: 'approved', approved_at: new Date().toISOString(),
-              approver_email: approver.data?.approver_email || '',
-              approver_name: approver.data?.approver_name || '',
-              handling_history: [], escalated: false,
-              sla_response_breached: false, sla_resolution_breached: false,
-            });
+            // One ticket per failed item, instead of merging every NO in a
+            // section into a single combined ticket.
+            for (const item of failedItems) {
+              generatedTickets.push({
+                title: `Audit NO - ${section.title}: ${item.label} (${brand})`,
+                description: `Auto-generated from audit ${template.title}.\n\n- ${item.label}: ${noComments[item.id] || 'No reason provided'}`,
+                department_id: dept?.id || user.department_id || '',
+                department_name: dept?.name || section.title || user.department_name || '',
+                handling_department_id: dept?.id || user.department_id || '',
+                handling_department_name: dept?.name || section.title || user.department_name || '',
+                category_id: category?.id || '',
+                category_name: category?.name || 'Audit Concern',
+                priority: 'high',
+                image_urls: itemPhotos[item.id] || [],
+                attachment_url: '',
+                submitter_email: user.email,
+                submitter_name: user.display_name || user.full_name,
+                store_name: selectedStore?.store_name || user.store_name || '',
+                status: 'open', approval_status: 'approved', approved_at: new Date().toISOString(),
+                approver_email: approver.data?.approver_email || '',
+                approver_name: approver.data?.approver_name || '',
+                handling_history: [], escalated: false,
+                sla_response_breached: false, sla_resolution_breached: false,
+              });
+            }
           }
         }
 
