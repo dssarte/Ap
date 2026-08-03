@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, User, Building2, AlertCircle, Tag, ChevronRight } from "lucide-react";
+import { Clock, User, Building2, AlertCircle, Tag, ChevronRight} from "lucide-react";
 import { formatPHDateTime } from "@/lib/dateUtils";
 import SLAIndicator from "./SLAIndicator";
 
@@ -22,13 +22,15 @@ const priorityColors = {
 };
 
 export default function TicketCard({ ticket, onClick, unreadCount = 0 }) {
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+
   return (
     <Card
-      className={`group cursor-pointer rounded-2xl bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md ${unreadCount > 0 ? 'border-emerald-300 ring-1 ring-emerald-100' : 'border-slate-200'}`}
+      className={`group cursor-pointer rounded-2xl bg-white shadow-sm transition-all hover:border-emerald-300 hover:shadow-md ${duplicatesOpen ? '' : 'hover:-translate-y-0.5'} ${unreadCount > 0 ? 'border-emerald-300 ring-1 ring-emerald-100' : 'border-slate-200'}`}
       onClick={() => onClick(ticket)}
     >
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-3 sm:gap-5">
+     <CardContent className="p-4 sm:p-5">
+        <div className="flex items-stretch justify-between gap-3 sm:gap-5">
           <div className="flex-1 min-w-0">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <Badge className={`${priorityColors[ticket.priority] || priorityColors.medium} text-xs font-semibold uppercase tracking-wide`}>
@@ -76,19 +78,55 @@ export default function TicketCard({ ticket, onClick, unreadCount = 0 }) {
             </div>
           </div>
           
-          <div className="mt-1 flex shrink-0 items-center gap-2">
-            {unreadCount > 0 && (
+          <div className="mt-1 flex shrink-0 flex-col items-end justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {unreadCount > 0 && (
   <span
     className="h-2.5 w-2.5 shrink-0 rounded-full bg-rose-500 shadow-sm"
     aria-label={`${unreadCount} unread update${unreadCount === 1 ? '' : 's'}`}
     title={`${unreadCount} unread update${unreadCount === 1 ? '' : 's'}`}
   />
 )}
-            {ticket.priority === 'urgent' && <AlertCircle className="h-5 w-5 text-red-500" />}
-            <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-700" />
+              {ticket.priority === 'urgent' && <AlertCircle className="h-5 w-5 text-red-500" />}
+              <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-700" />
+            </div>
+            {ticket._duplicates && (
+              <DuplicatesBadge duplicates={ticket._duplicates} open={duplicatesOpen} setOpen={setDuplicatesOpen} />
+            )}
           </div>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+export function DuplicatesBadge({ duplicates, open, setOpen }) {
+  const entries = Object.entries(duplicates);
+  const total = entries.reduce((sum, [, dates]) => sum + dates.length, 0);
+
+  return (
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+      >
+        Duplicates ({total})
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-48 rounded-lg border border-slate-200 bg-white shadow-lg">
+          {entries.map(([templateTitle, dates]) => (
+            <div key={templateTitle}>
+              <div className="px-3 pt-2 text-[11px] font-semibold text-slate-500">{templateTitle}</div>
+              <div className={`px-3 pb-2 pt-1 text-[11px] text-slate-500 ${dates.length > 5 ? 'max-h-32 overflow-y-auto' : ''}`}>
+                {dates.map((d, i) => (
+                  <div key={i} className="py-0.5">{formatPHDateTime(d)}</div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

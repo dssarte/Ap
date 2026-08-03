@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import TicketDetails from "@/components/tickets/TicketDetails";
 import StatsCard from "@/components/dashboard/StatsCard";
 import FeedbackModal from "@/components/tickets/FeedbackModal";
 import { SectionLoadingSkeleton, FeedbackBanner } from '@/components/PageState';
+import { groupDuplicateTickets } from '@/lib/duplicateTickets';
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -104,6 +105,12 @@ export default function Home() {
     enabled: !!user
   });
 
+  const { data: auditTemplates = [] } = useQuery({
+    queryKey: ['audit-templates-for-duplicates'],
+    queryFn: () => base44.entities.AuditTemplate.list('-created_date', 200),
+    enabled: !!user,
+  });
+
   const queryClient = useQueryClient();
 
   // Ticket-scoped unread indicators replace the global notification bell.
@@ -170,7 +177,17 @@ export default function Home() {
 
   const closedStatuses = ['closed', 'resolved'];
 
-  const sortedTickets = [...tickets].sort((a, b) => {
+  const templatesById = useMemo(
+    () => Object.fromEntries(auditTemplates.map(t => [t.id, t])),
+    [auditTemplates]
+  );
+
+  const displayTickets = useMemo(
+    () => groupDuplicateTickets(tickets, templatesById),
+    [tickets, templatesById]
+  );
+
+  const sortedTickets = [...displayTickets].sort((a, b) => {
     const aIsClosed = closedStatuses.includes(a.status);
     const bIsClosed = closedStatuses.includes(b.status);
     if (aIsClosed && !bIsClosed) return 1;
