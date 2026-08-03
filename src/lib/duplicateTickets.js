@@ -49,13 +49,17 @@ export function groupDuplicateTickets(tickets, templatesById = {}) {
     );
 
     let head = sorted[0];
-    let dupDates = [];
+    let dupEntries = [];
 
     const flush = () => {
       const templateTitle = templatesById[head.audit_template_id]?.title || 'Resubmissions';
       result.push(
-        dupDates.length > 0
-          ? { ...head, _duplicates: { [templateTitle]: dupDates } }
+        dupEntries.length > 0
+          ? {
+              ...head,
+              _duplicates: { [templateTitle]: dupEntries },
+              _duplicateTicketIds: dupEntries.map(e => e.id),
+            }
           : head
       );
     };
@@ -63,13 +67,11 @@ export function groupDuplicateTickets(tickets, templatesById = {}) {
     for (let i = 1; i < sorted.length; i++) {
       const ticket = sorted[i];
       if (head.status === 'closed') {
-        // Previous issue was resolved — this submission starts a new thread.
         flush();
         head = ticket;
-        dupDates = [];
+        dupEntries = [];
       } else {
-        // Still open — this is a resubmission of the same unresolved issue.
-        dupDates.push(ticket.created_date);
+        dupEntries.push({ id: ticket.id, created_date: ticket.created_date });
       }
     }
     flush();

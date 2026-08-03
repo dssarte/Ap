@@ -118,11 +118,11 @@ export function DuplicatesBadge({ duplicates, open, setOpen }) {
           {entries.map(([templateTitle, dates]) => (
             <div key={templateTitle}>
               <div className="px-3 pt-2 text-[11px] font-semibold text-slate-500">{templateTitle}</div>
-              <div className={`px-3 pb-2 pt-1 text-[11px] text-slate-500 ${dates.length > 5 ? 'max-h-32 overflow-y-auto' : ''}`}>
-                {dates.map((d, i) => (
-                  <div key={i} className="py-0.5">{formatPHDateTime(d)}</div>
-                ))}
-              </div>
+              <div className={`bg-slate-50 px-4 pb-2 pt-1 text-[11px] text-slate-500 ${dates.length > 5 ? 'max-h-32 overflow-y-auto' : ''}`}>
+                  {dates.map((entry, i) => (
+                    <div key={entry.id || i} className="py-0.5">{formatPHDateTime(entry.created_date)}</div>
+                  ))}
+                </div>
             </div>
           ))}
         </div>

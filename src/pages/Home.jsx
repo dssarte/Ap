@@ -231,21 +231,27 @@ export default function Home() {
   const handleTicketClick = async (ticket) => {
     setSelectedTicket(ticket);
 
-    if (unreadByTicket[ticket.id]) {
+    // A collapsed head ticket may represent several real ticket rows folded
+    // in as duplicates — clear unread state for all of them, not just the
+    // one that's actually visible.
+    const relevantTicketIds = [ticket.id, ...(ticket._duplicateTicketIds || [])];
+    const hasUnread = relevantTicketIds.some(id => unreadByTicket[id]);
+
+    if (hasUnread) {
       setUnreadByTicket(previous => {
         const next = { ...previous };
-        delete next[ticket.id];
+        relevantTicketIds.forEach(id => delete next[id]);
         return next;
       });
 
       try {
         const relatedNotifications = await base44.entities.Notification.filter({
           user_email: user.email,
-          ticket_id: ticket.id,
         });
+        const relevantIdSet = new Set(relevantTicketIds);
         await Promise.all(
           (Array.isArray(relatedNotifications) ? relatedNotifications : [])
-            .filter(notification => !notification.is_read)
+            .filter(notification => !notification.is_read && relevantIdSet.has(notification.ticket_id))
             .map(notification => base44.entities.Notification.update(notification.id, { is_read: true }))
         );
       } catch (notificationError) {
@@ -370,7 +376,10 @@ export default function Home() {
                   key={ticket.id} 
                   ticket={ticket} 
                   onClick={handleTicketClick}
-                  unreadCount={unreadByTicket[ticket.id] || 0}
+                  unreadCount={
+                    (unreadByTicket[ticket.id] || 0) +
+                    (ticket._duplicateTicketIds || []).reduce((sum, id) => sum + (unreadByTicket[id] || 0), 0)
+                  }
                 />
               ))}
             </div>
