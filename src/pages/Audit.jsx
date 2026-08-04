@@ -16,6 +16,7 @@ import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { getLocation } from '@/lib/getLocation';
 import { compressImage } from '@/lib/compressImage';
 import { SectionLoadingSkeleton } from '@/components/PageState';
+import { useToast } from '@/components/ui/use-toast';
 
 function formatTimeLabel(hhmm) {
   if (!hhmm) return '';
@@ -430,6 +431,7 @@ export default function Audit() {
 }
 
 function AuditFillForm({ template, user, brands, stores, existingSubmission, onDone, onCancel }) {
+  const { toast } = useToast();
   const isStoreManager = user?.user_type === 'store_manager';
   const assignedStoreNames = new Set(
     (isStoreManager && Array.isArray(user?.assigned_stores) ? user.assigned_stores : [])
@@ -868,6 +870,9 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
           }).catch(() => {});
         }
       }
+      toast({
+        title: existingSubmission ? 'Audit updated successfully' : 'Audit submitted successfully',
+      });
       clearDraft();
       onDone();
     } catch (err) {

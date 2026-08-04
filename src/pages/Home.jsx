@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import TicketDetails from "@/components/tickets/TicketDetails";
 import StatsCard from "@/components/dashboard/StatsCard";
 import FeedbackModal from "@/components/tickets/FeedbackModal";
 import { SectionLoadingSkeleton, FeedbackBanner } from '@/components/PageState';
+import { groupDuplicateTickets } from '@/lib/duplicateTickets';
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -104,6 +105,12 @@ export default function Home() {
     enabled: !!user
   });
 
+  const { data: auditTemplates = [] } = useQuery({
+    queryKey: ['audit-templates-for-duplicates'],
+    queryFn: () => base44.entities.AuditTemplate.list('-created_date', 200),
+    enabled: !!user,
+  });
+
   const queryClient = useQueryClient();
 
   // Ticket-scoped unread indicators replace the global notification bell.
@@ -170,7 +177,17 @@ export default function Home() {
 
   const closedStatuses = ['closed', 'resolved'];
 
-  const sortedTickets = [...tickets].sort((a, b) => {
+  const templatesById = useMemo(
+    () => Object.fromEntries(auditTemplates.map(t => [t.id, t])),
+    [auditTemplates]
+  );
+
+  const displayTickets = useMemo(
+    () => groupDuplicateTickets(tickets, templatesById),
+    [tickets, templatesById]
+  );
+
+  const sortedTickets = [...displayTickets].sort((a, b) => {
     const aIsClosed = closedStatuses.includes(a.status);
     const bIsClosed = closedStatuses.includes(b.status);
     if (aIsClosed && !bIsClosed) return 1;
@@ -214,21 +231,27 @@ export default function Home() {
   const handleTicketClick = async (ticket) => {
     setSelectedTicket(ticket);
 
-    if (unreadByTicket[ticket.id]) {
+    // A collapsed head ticket may represent several real ticket rows folded
+    // in as duplicates — clear unread state for all of them, not just the
+    // one that's actually visible.
+    const relevantTicketIds = [ticket.id, ...(ticket._duplicateTicketIds || [])];
+    const hasUnread = relevantTicketIds.some(id => unreadByTicket[id]);
+
+    if (hasUnread) {
       setUnreadByTicket(previous => {
         const next = { ...previous };
-        delete next[ticket.id];
+        relevantTicketIds.forEach(id => delete next[id]);
         return next;
       });
 
       try {
         const relatedNotifications = await base44.entities.Notification.filter({
           user_email: user.email,
-          ticket_id: ticket.id,
         });
+        const relevantIdSet = new Set(relevantTicketIds);
         await Promise.all(
           (Array.isArray(relatedNotifications) ? relatedNotifications : [])
-            .filter(notification => !notification.is_read)
+            .filter(notification => !notification.is_read && relevantIdSet.has(notification.ticket_id))
             .map(notification => base44.entities.Notification.update(notification.id, { is_read: true }))
         );
       } catch (notificationError) {
@@ -353,7 +376,10 @@ export default function Home() {
                   key={ticket.id} 
                   ticket={ticket} 
                   onClick={handleTicketClick}
-                  unreadCount={unreadByTicket[ticket.id] || 0}
+                  unreadCount={
+                    (unreadByTicket[ticket.id] || 0) +
+                    (ticket._duplicateTicketIds || []).reduce((sum, id) => sum + (unreadByTicket[id] || 0), 0)
+                  }
                 />
               ))}
             </div>
