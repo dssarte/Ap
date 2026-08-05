@@ -212,7 +212,7 @@ export default function CameraCapture({ onCapture, onClose }) {
                   <MapPin className="w-3.5 h-3.5" />
                   {locationFailed ? (
                     <>
-                      <span>Location unavailable</span>
+                      <span>Activate Location / Check Internet</span>
                       <button
                         type="button"
                         onClick={() => fetchLocation()}
