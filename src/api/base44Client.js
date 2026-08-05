@@ -105,6 +105,33 @@ function entityApi(name) {
 const entities = new Proxy({}, { get: (_, name) => entityApi(name) });
 
 const auditData = {
+  async listGeneratedTickets({ dateFrom = null, dateTo = null, maxRows = 25000 } = {}) {
+    const pageSize = 1000;
+    const rows = [];
+    const databaseDateTo = dateTo ? addIsoDateDays(dateTo, 1) : null;
+
+    for (let offset = 0; offset < maxRows; offset += pageSize) {
+      let query = supabase
+        .from('tickets')
+        .select('id,audit_submission_id,audit_template_id,status,created_date')
+        .not('audit_submission_id', 'is', null)
+        .order('created_date', { ascending: false, nullsFirst: false })
+        .range(offset, offset + Math.min(pageSize, maxRows - offset) - 1);
+      if (dateFrom) {
+        query = query.gte('created_date', new Date(`${dateFrom}T00:00:00+08:00`).toISOString());
+      }
+      if (databaseDateTo) {
+        query = query.lt('created_date', new Date(`${databaseDateTo}T05:00:00+08:00`).toISOString());
+      }
+
+      const page = unwrap(await query) || [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+
+    return rows;
+  },
+
   async listSubmissions({ dateFrom = null, dateTo = null, stores = null, templateId = null, maxRows = 25000 } = {}) {
     const pageSize = 1000;
     const rows = [];
