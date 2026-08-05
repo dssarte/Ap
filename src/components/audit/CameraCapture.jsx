@@ -15,14 +15,25 @@ export default function CameraCapture({ onCapture, onClose }) {
   const [facingMode, setFacingMode] = useState('environment');
   const [location, setLocation] = useState(null);
   const [locatingGps, setLocatingGps] = useState(true);
+  const [locationFailed, setLocationFailed] = useState(false);
 
-  const fetchLocation = async () => {
-    try {
-      const place = await getLocation();
+  const fetchLocation = async (attempt = 1) => {
+    setLocatingGps(true);
+    setLocationFailed(false);
+    const place = await getLocation();
+    if (place) {
       setLocation(place);
-    } finally {
       setLocatingGps(false);
+      return;
     }
+    if (attempt < 3) {
+      // GPS can take a moment to get its first fix — retry a couple of
+      // times before treating it as a real failure.
+      fetchLocation(attempt + 1);
+      return;
+    }
+    setLocatingGps(false);
+    setLocationFailed(true);
   };
 
   const startCamera = async (mode = facingMode) => {
@@ -175,7 +186,7 @@ export default function CameraCapture({ onCapture, onClose }) {
               {streaming && !error && (
                 <button
                   onClick={handleSnap}
-                  disabled={locatingGps}
+                  disabled={locatingGps || locationFailed}
                   className="absolute bottom-4 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-white border-4 border-slate-300 hover:border-[#1fd655] transition-colors flex items-center justify-center shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-300"
                   aria-label="Capture photo"
                 >
@@ -197,9 +208,22 @@ export default function CameraCapture({ onCapture, onClose }) {
                 </button>
               )}
               {!snapshot && (
-                <div className="absolute top-3 left-3 px-2 py-1 rounded bg-black/55 text-white text-xs flex items-center gap-1.5">
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded bg-black/55 px-2 py-1 text-xs text-white">
                   <MapPin className="w-3.5 h-3.5" />
-                  {location || 'Locating...'}
+                  {locationFailed ? (
+                    <>
+                      <span>Location unavailable</span>
+                      <button
+                        type="button"
+                        onClick={() => fetchLocation()}
+                        className="ml-1 underline decoration-white/60 underline-offset-2 hover:decoration-white"
+                      >
+                        Retry
+                      </button>
+                    </>
+                  ) : (
+                    location || 'Locating...'
+                  )}
                 </div>
               )}
             </>
