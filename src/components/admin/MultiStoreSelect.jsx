@@ -17,7 +17,7 @@ export default function MultiStoreSelect({ stores, brands, selected = [], onChan
       <p className="text-xs text-slate-500">Select every store this Store Manager can view, approve tickets for, and see analytics on.</p>
       <div className="border border-slate-200 rounded-lg max-h-56 overflow-y-auto p-3 space-y-3">
         {brands.map(brand => {
-          const brandStores = stores.filter(s => s.brand_id === brand.id);
+          const brandStores = stores.filter(s => s.brand_id === brand.id).sort((a, b) => (a.store_name || '').localeCompare(b.store_name || ''));
           if (brandStores.length === 0) return null;
           return (
             <div key={brand.id}>
