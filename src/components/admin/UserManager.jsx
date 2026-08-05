@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Users, Loader2, UserPlus, Trash2, MailCheck } from "lucide-react";
+import { Pencil, Users, Loader2, UserPlus, Trash2, MailCheck, Eye, EyeOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/use-toast";
@@ -27,6 +27,7 @@ export default function UserManager() {
   const [addData, setAddData] = useState({ email: '', full_name: '', password: '', role: 'user', user_type: 'user', department_id: '', brand_id: '', store_name: '', phone: '', assigned_stores: [], is_approver: false, is_enabled: true });
   const [addError, setAddError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // user to delete
   const [deleting, setDeleting] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(null);
@@ -314,14 +315,26 @@ HelpDesk Support Team`
               </div>
               <div className="space-y-1">
                 <Label>Password *</Label>
-                <Input
-                  type="password"
-                  value={addData.password}
-                  onChange={(e) => setAddData({ ...addData, password: e.target.value })}
-                  placeholder="Set a password for this user"
-                  required
-                  minLength={6}
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    value={addData.password}
+                    onChange={(e) => setAddData({ ...addData, password: e.target.value })}
+                    placeholder="Set a password for this user"
+                    required
+                    minLength={6}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    tabIndex={-1}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
                 <p className="text-xs text-slate-500">The user can change their password after logging in.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -395,7 +408,7 @@ HelpDesk Support Team`
                   <Select value={addData.store_name} onValueChange={(v) => setAddData({ ...addData, store_name: v })} disabled={!addData.brand_id}>
                     <SelectTrigger><SelectValue placeholder={addData.brand_id ? "Select store" : "Select brand first"} /></SelectTrigger>
                     <SelectContent>
-                      {stores.filter(s => s.brand_id === addData.brand_id).map(s => (
+                      {stores.filter(s => s.brand_id === addData.brand_id).sort((a, b) => (a.store_name || '').localeCompare(b.store_name || '')).map(s => (
                         <SelectItem key={s.id} value={s.store_name}>{s.store_name}</SelectItem>
                       ))}
                     </SelectContent>

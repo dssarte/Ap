@@ -278,15 +278,15 @@ export default function Home() {
             <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
               {isStaff ? 'Support overview' : isApprover ? 'Ticket approvals' : isBranchManager ? 'Branch tickets' : 'My support tickets'}
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-              {isStaff
-                ? user.user_type === 'admin'
-                  ? 'Monitor requests, priorities, and resolution progress across every department.'
-                  : `Monitor and coordinate requests assigned to ${user.department_name}.`
-                : isBranchManager
-                  ? `View and discuss tickets for ${(user.assigned_stores || []).join(', ')}.`
+            {!isBranchManager && (
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+                {isStaff
+                  ? user.user_type === 'admin'
+                    ? 'Monitor requests, priorities, and resolution progress across every department.'
+                    : `Monitor and coordinate requests assigned to ${user.department_name}.`
                   : 'Submit requests, follow their progress, and keep every conversation in one place.'}
-            </p>
+              </p>
+            )}
           </div>
           <Button onClick={() => setShowForm(true)} className="h-11 shrink-0 rounded-xl bg-emerald-700 px-5 font-semibold text-white shadow-sm hover:bg-emerald-800">
             <Plus className="mr-2 h-4 w-4" />
