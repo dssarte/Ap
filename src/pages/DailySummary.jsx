@@ -8,6 +8,7 @@ import moment from 'moment';
 import { auditBusinessDayKey, formatPHDate } from '@/lib/dateUtils';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
+import { BarChart, Bar, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const PASS_THRESHOLD = 100; // a store "finished" when 100% of its required checklists are done
 
@@ -148,6 +149,28 @@ export default function DailySummary() {
     return { total: rows.length, done, notStarted, avg };
   }, [rows]);
 
+  const completionStatusData = useMemo(() => {
+    if (!summary) return [];
+    const inProgress = Math.max(0, summary.total - summary.done - summary.notStarted);
+    return [
+      { name: 'Complete', value: summary.done, fill: '#16a34a' },
+      { name: 'In progress', value: inProgress, fill: '#f59e0b' },
+      { name: 'Not started', value: summary.notStarted, fill: '#ef4444' },
+    ].filter(item => item.value > 0);
+  }, [summary]);
+
+  const brandCompletionData = useMemo(() => groupedRows.map(group => {
+    const average = group.rows.length
+      ? group.rows.reduce((total, row) => total + row.rate, 0) / group.rows.length
+      : 0;
+    return {
+      name: group.brandName,
+      rate: Number(average.toFixed(1)),
+      complete: group.rows.filter(row => row.rate >= PASS_THRESHOLD).length,
+      stores: group.rows.length,
+    };
+  }).sort((a, b) => b.rate - a.rate), [groupedRows]);
+
   const handleExport = () => {
     const sheets = [
       {
@@ -159,6 +182,11 @@ export default function DailySummary() {
           r.rate >= PASS_THRESHOLD ? 'COMPLETE' : (r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'),
           r.missing.join(' | '),
         ]),
+      },
+      {
+        name: 'Brand Completion',
+        headers: ['Brand', 'Average Completion %', 'Complete Stores', 'Tracked Stores'],
+        rows: brandCompletionData.map(row => [row.name, row.rate, row.complete, row.stores]),
       },
     ];
     exportSheetsToExcel(`Daily_Summary_${selectedDate}`, sheets);
@@ -239,6 +267,44 @@ export default function DailySummary() {
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Overall Rate</p>
                 <p className={`text-3xl font-extrabold ${summary.avg >= 75 ? 'text-green-600' : 'text-red-600'}`}>{summary.avg}%</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="border border-slate-200 shadow-sm">
+              <CardHeader className="pb-2 pt-5 px-5">
+                <p className="font-bold text-slate-800">Store Completion Status</p>
+              </CardHeader>
+              <CardContent className="pb-5">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie data={completionStatusData} dataKey="value" nameKey="name" cx="50%" cy="48%" innerRadius={55} outerRadius={95} label={({ name, value }) => `${name}: ${value}`}>
+                      {completionStatusData.map(item => <Cell key={item.name} fill={item.fill} />)}
+                    </Pie>
+                    <Tooltip formatter={value => [`${value} store${value !== 1 ? 's' : ''}`, 'Count']} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card className="border border-slate-200 shadow-sm">
+              <CardHeader className="pb-2 pt-5 px-5">
+                <p className="font-bold text-slate-800">Average Completion by Brand</p>
+              </CardHeader>
+              <CardContent className="px-2 pb-5">
+                <ResponsiveContainer width="100%" height={Math.max(280, brandCompletionData.length * 42)}>
+                  <BarChart data={brandCompletionData} layout="vertical" margin={{ left: 12, right: 42 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={value => `${value}%`} />
+                    <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(value, name) => [name === 'rate' ? `${value}%` : value, name === 'rate' ? 'Completion rate' : name]} />
+                    <Bar dataKey="rate" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, formatter: value => `${value}%` }}>
+                      {brandCompletionData.map(row => <Cell key={row.name} fill={row.rate >= PASS_THRESHOLD ? '#16a34a' : row.rate >= 50 ? '#f59e0b' : '#ef4444'} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </CardContent>
             </Card>
           </div>
