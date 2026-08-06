@@ -41,6 +41,13 @@ function isTemplateAvailableNow(t) {
   return nowMinutes >= fromMinutes || nowMinutes <= toMinutes;
 }
 
+function isCrossMidnightTemplate(t) {
+  if (!t.has_time_restriction || !t.available_from_time || !t.available_to_time) return false;
+  const [fh, fm] = t.available_from_time.split(':').map(Number);
+  const [th, tm] = t.available_to_time.split(':').map(Number);
+  return (fh * 60 + fm) > (th * 60 + tm);
+}
+
 // Returns the start (moment) of the current daily cycle for a template, based on its availability window.
 // For templates without a time restriction, the cycle is simply the calendar day (midnight to midnight).
 function getCurrentCycleStart(t) {
@@ -178,6 +185,12 @@ export default function Audit() {
   // within the current availability cycle — one checklist per store per day.
   const isDoneForCycle = (t) => {
     if (effectiveStores.length === 0) return false;
+    // Overnight checklists (e.g. Closing, 9pm–5am): only count a prior
+    // submission as satisfying "today" while we're still inside that
+    // window (including its after-midnight tail). Outside the window —
+    // e.g. mid-afternoon, before tonight's window has even opened — last
+    // night's completed submission shouldn't make tonight's cycle look done.
+    if (isCrossMidnightTemplate(t) && !isTemplateAvailableNow(t)) return false;
     const cycleStart = getCurrentCycleStart(t);
     // A template is "done for today" only when every store the user manages has submitted within the current cycle
     return effectiveStores.every(storeName =>
@@ -287,7 +300,7 @@ export default function Audit() {
                         </p>
                       ) : t.has_time_restriction && t.available_from_time && t.available_to_time && (
                         <p className={`text-xs mt-1 font-medium ${available ? 'text-amber-600' : 'text-red-500'}`}>
-                          ⏰ {formatTimeLabel(t.available_from_time)} – {formatTimeLabel(t.available_to_time)}{t.available_to_time < t.available_from_time ? ' next day' : ''}
+                          ⏰ {formatTimeLabel(t.available_from_time)} – {formatTimeLabel(t.available_to_time)}{t.available_to_time < t.available_from_time ? ' (next day)' : ''}
                         </p>
                       )}
                     </div>
