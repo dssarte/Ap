@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { X, Send, Clock, User, Building2, Paperclip, MessageSquare, ArrowRightLeft, Lock, CornerUpLeft } from "lucide-react";
+import { X, Send, Clock, User, Building2, Paperclip, MessageSquare, ArrowRightLeft, Lock, CornerUpLeft, CheckCircle } from "lucide-react";
 import CannedResponsePicker from "./CannedResponsePicker";
 import { DuplicatesBadge } from "./TicketCard";
 import { formatInTimeZone } from "date-fns-tz";
@@ -414,6 +414,13 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                   <Clock className="w-4 h-4" />
                   {formatTicketDate(ticket.created_date, "MMM d, yyyy h:mm a 'PHT'")}
                 </span>
+                {(ticket.approval_status === 'approved' || ticket.approval_status === 'rejected') && ticket.approver_email && (
+                  <span className="flex items-center gap-1">
+                    <CheckCircle className="w-4 h-4" />
+                    {ticket.approval_status === 'approved' ? 'Approved' : 'Rejected'} by {ticket.approver_name || ticket.approver_email}
+                    {ticket.approved_at && ` · ${formatTicketDate(ticket.approved_at, "MMM d, h:mm a 'PHT'")}`}
+                  </span>
+                )}
               </div>
               {ticket._duplicates && (
                 <DuplicatesBadge duplicates={ticket._duplicates} open={duplicatesOpen} setOpen={setDuplicatesOpen} />
