@@ -230,14 +230,20 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
         sla_resolution_breached: false,
       });
 
-      // Notify the approver/staff immediately and apply any configured rules.
-      await base44.functions.invoke('sendTicketNotification', {
-        ticket_id: newTicket.id,
-        type: 'created',
-        message: `New ticket created: ${title}`,
-      }).catch((notificationError) => {
-        console.warn('Ticket saved, but participant notification delivery failed:', notificationError);
-      });
+      // Tickets awaiting approval aren't visible in the normal ticket
+      // workspace yet, and the actual approver already sees a live count on
+      // their own Approval Queue nav item — so skip the generic "created"
+      // notification here. It fires later, once the ticket is approved and
+      // actually shows up somewhere the recipient can act on it.
+      if (newTicket.approval_status !== 'pending') {
+        await base44.functions.invoke('sendTicketNotification', {
+          ticket_id: newTicket.id,
+          type: 'created',
+          message: `New ticket created: ${title}`,
+        }).catch((notificationError) => {
+          console.warn('Ticket saved, but participant notification delivery failed:', notificationError);
+        });
+      }
 
       // Apply automation rules
       try {
