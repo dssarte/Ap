@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, ClipboardCheck, CheckCircle2, XCircle, Store, CalendarDays } from 'lucide-react';
 import moment from 'moment';
@@ -128,6 +129,8 @@ export default function DailySummary() {
 
   // Group by brand for display — each brand shows as its own section,
   // with stores inside still ordered worst-performer-first.
+  // Group by brand for display — each brand shows as its own section,
+  // with stores inside still ordered worst-performer-first.
   const groupedRows = useMemo(() => {
     const groups = {};
     for (const r of sortedRows) {
@@ -140,6 +143,13 @@ export default function DailySummary() {
     }
     return Object.values(groups).sort((a, b) => a.brandName.localeCompare(b.brandName));
   }, [sortedRows, brands]);
+
+  const [brandFilter, setBrandFilter] = useState('');
+
+  const visibleGroups = useMemo(
+    () => brandFilter ? groupedRows.filter(g => g.brandId === brandFilter) : groupedRows,
+    [groupedRows, brandFilter]
+  );
 
   const summary = useMemo(() => {
     if (rows.length === 0) return null;
@@ -311,15 +321,26 @@ export default function DailySummary() {
 
           {/* Store table */}
           <Card className="border border-slate-200 shadow-sm">
-            <CardHeader className="pb-2 pt-5 px-5 flex flex-row items-center justify-between">
+            <CardHeader className="pb-2 pt-5 px-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="font-bold text-slate-800 flex items-center gap-2">
                 <Store className="w-4 h-4 text-[#1fd655]" /> Store Completion — {formatPHDate(selectedDate)}
               </p>
-              <p className="text-xs text-slate-400">{requiredTemplates.length} required checklist{requiredTemplates.length !== 1 ? 's' : ''}</p>
+              <div className="flex items-center gap-3">
+                <Select value={brandFilter || '__all__'} onValueChange={(v) => setBrandFilter(v === '__all__' ? '' : v)}>
+                  <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="All brands" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All brands</SelectItem>
+                    {groupedRows.map(g => (
+                      <SelectItem key={g.brandId} value={g.brandId}>{g.brandName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-400 whitespace-nowrap">{requiredTemplates.length} required checklist{requiredTemplates.length !== 1 ? 's' : ''}</p>
+              </div>
             </CardHeader>
             <CardContent className="px-0 pb-4">
               <div className="space-y-5 px-4 md:hidden">
-                {groupedRows.map((group) => (
+                {visibleGroups.map((group) => (
                   <div key={group.brandId} className="space-y-3">
                     <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{group.brandName}</p>
                     {group.rows.map((r) => {
@@ -340,7 +361,7 @@ export default function DailySummary() {
                     })}
                   </div>
                 ))}
-                {sortedRows.length === 0 && <p className="py-8 text-center text-sm text-slate-400">No stores with required checklists for this date.</p>}
+                {visibleGroups.length === 0 && <p className="py-8 text-center text-sm text-slate-400">No stores with required checklists for this date.</p>}
               </div>
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
@@ -353,7 +374,7 @@ export default function DailySummary() {
                       <th className="text-left px-5 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Missing</th>
                     </tr>
                   </thead>
-                  {groupedRows.map((group) => (
+                  {visibleGroups.map((group) => (
                     <tbody key={group.brandId}>
                       <tr className="bg-slate-100/80">
                         <td colSpan={5} className="px-5 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">{group.brandName}</td>
