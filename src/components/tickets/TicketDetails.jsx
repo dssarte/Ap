@@ -414,18 +414,18 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                   <Clock className="w-4 h-4" />
                   {formatTicketDate(ticket.created_date, "MMM d, yyyy h:mm a 'PHT'")}
                 </span>
-                {(ticket.approval_status === 'approved' || ticket.approval_status === 'rejected') && ticket.approver_email && (
-                  <span className="flex items-center gap-1">
-                    <CheckCircle className="w-4 h-4" />
-                    {ticket.approval_status === 'approved' ? 'Approved' : 'Rejected'} by {ticket.approver_name || ticket.approver_email}
-                    {ticket.approved_at && ` · ${formatTicketDate(ticket.approved_at, "MMM d, h:mm a 'PHT'")}`}
-                  </span>
-                )}
               </div>
               {ticket._duplicates && (
                 <DuplicatesBadge duplicates={ticket._duplicates} open={duplicatesOpen} setOpen={setDuplicatesOpen} />
               )}
             </div>
+            {(ticket.approval_status === 'approved' || ticket.approval_status === 'rejected') && ticket.approver_email && (
+              <div className="flex items-center gap-1 text-sm text-slate-600">
+                <CheckCircle className="w-4 h-4" />
+                {ticket.approval_status === 'approved' ? 'Approved' : 'Rejected'} by {ticket.approver_name || ticket.approver_email}
+                {ticket.approved_at && ` · ${formatTicketDate(ticket.approved_at, "MMM d, h:mm a 'PHT'")}`}
+              </div>
+            )}
 
             {/* Handling History */}
             {ticket.handling_history && ticket.handling_history.length > 0 && (
