@@ -400,7 +400,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
         
         <CardContent className="max-h-[calc(100dvh-8.5rem)] overflow-y-auto p-0 sm:max-h-[calc(90vh-200px)]">
           <div className="space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-slate-600">
+            {/* <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-slate-600">
               <div className="flex flex-wrap items-center gap-4">
                 <span className="flex items-center gap-1">
                   <Building2 className="w-4 h-4" />
@@ -421,6 +421,32 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                     {ticket.approved_at && ` · ${formatTicketDate(ticket.approved_at, "MMM d, h:mm a 'PHT'")}`}
                   </span>
                 )}
+              </div>
+              {ticket._duplicates && (
+                <DuplicatesBadge duplicates={ticket._duplicates} open={duplicatesOpen} setOpen={setDuplicatesOpen} />
+              )}
+            </div>
+            {(ticket.approval_status === 'approved' || ticket.approval_status === 'rejected') && ticket.approver_email && (
+              <div className="flex items-center gap-1 text-sm text-slate-600">
+                <CheckCircle className="w-4 h-4" />
+                {ticket.approval_status === 'approved' ? 'Approved' : 'Rejected'} by {ticket.approver_name || ticket.approver_email}
+                {ticket.approved_at && ` · ${formatTicketDate(ticket.approved_at, "MMM d, h:mm a 'PHT'")}`}
+              </div>
+            )} */}
+            <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-slate-600">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="flex items-center gap-1">
+                  <Building2 className="w-4 h-4" />
+                  {ticket.department_name}
+                </span>
+                <span className="flex items-center gap-1">
+                  <User className="w-4 h-4" />
+                  {ticket.submitter_name || ticket.submitter_email}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-4 h-4" />
+                  {formatTicketDate(ticket.created_date, "MMM d, yyyy h:mm a 'PHT'")}
+                </span>
               </div>
               {ticket._duplicates && (
                 <DuplicatesBadge duplicates={ticket._duplicates} open={duplicatesOpen} setOpen={setDuplicatesOpen} />
