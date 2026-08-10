@@ -53,7 +53,6 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
   const [status, setStatus] = useState(ticket.status);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState([]);
-  const [assignedTo, setAssignedTo] = useState(ticket.assigned_to || '');
   const [allUsers, setAllUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [showForwardDialog, setShowForwardDialog] = useState(false);
@@ -287,23 +286,6 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
       message: `Ticket status changed to ${newStatus.replace('_', ' ')}`,
       send_email: true
     });
-    
-    onUpdate?.();
-  };
-
-  const handleAssignmentChange = async (email) => {
-    setAssignedTo(email);
-    await base44.entities.Ticket.update(ticket.id, { assigned_to: email });
-    
-    // Send notification
-    if (email) {
-      await base44.functions.invoke('sendTicketNotification', {
-        ticket_id: ticket.id,
-        type: 'assigned',
-        message: `Ticket has been assigned to you`,
-        send_email: true
-      });
-    }
     
     onUpdate?.();
   };
