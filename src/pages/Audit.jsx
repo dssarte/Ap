@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import SignaturePad from '@/components/audit/SignaturePad';
 import CameraCapture from '@/components/audit/CameraCapture';
+import PhotoUploadPreview from '@/components/audit/PhotoUploadPreview';
+import PhotoThumb from '@/components/audit/PhotoThumb';
 import SubmissionDetail, { ScoreBadge } from '@/components/audit/SubmissionDetail';
 import { useDraftStorage } from '@/hooks/useAuditDraft';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -666,6 +668,21 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
   // Real-time camera capture target: { type: 'item'|'deviations'|'updates', itemId? }
   const [cameraTarget, setCameraTarget] = useState(null);
 
+  const [uploadPreviewTarget, setUploadPreviewTarget] = useState(null);
+
+  const handleUploadPreviewDone = async (stampedFiles) => {
+    const target = uploadPreviewTarget;
+    setUploadPreviewTarget(null);
+    if (!target) return;
+    if (target.type === 'item') {
+      await uploadItemPhotos(target.itemId, stampedFiles);
+    } else if (target.type === 'deviations') {
+      await uploadMultiplePhotos(stampedFiles, setDeviationsPhotos, setUploadingDeviations, deviationsPhotos.length);
+    } else if (target.type === 'updates') {
+      await uploadMultiplePhotos(stampedFiles, setUpdatesAttachments, setUploadingUpdates, updatesAttachments.length);
+    }
+  };
+
   const handleCameraCapture = async (file) => {
     const target = cameraTarget;
     if (!file) return;
@@ -1082,7 +1099,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
                       <label className={`inline-flex items-center gap-2 ${uploadingItemPhoto === item.id ? 'pointer-events-none opacity-50' : 'cursor-pointer'} bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium px-2.5 py-1 rounded-md border border-slate-300 transition-colors`}>
                         {uploadingItemPhoto === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (itemPhotos[item.id]?.length ? '+ Replace Photo' : '+ Add Photo')}
                         <input type="file" accept="image/jpeg,image/png,image/jpg" className="hidden"
-                          onChange={e => e.target.files.length && uploadItemPhotos(item.id, e.target.files)} />
+                          onChange={e => { const picked = Array.from(e.target.files); e.target.value = ''; if (picked.length) setUploadPreviewTarget({ type: 'item', itemId: item.id, files: picked, itemKey: item.id }); }} />
                       </label>
                       <button
                         type="button"
@@ -1097,7 +1114,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
                       <div className="flex flex-wrap gap-2">
                         {itemPhotos[item.id].map((url, i) => (
                           <div key={i} className="relative group">
-                            <img src={url} alt={`Item photo ${i+1}`} className="h-20 w-20 object-cover rounded-md border border-slate-200" />
+                            <PhotoThumb url={url} alt={`Item photo ${i+1}`} className="h-20 w-20 object-cover rounded-md border border-slate-200" />
                             <button onClick={() => removeItemPhoto(item.id, i)}
                               className="absolute -right-1.5 -top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-xs text-white opacity-100 transition-opacity sm:h-5 sm:w-5 sm:opacity-0 sm:group-hover:opacity-100">✕</button>
                           </div>
@@ -1144,7 +1161,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               <label className={`inline-flex items-center gap-2 ${uploadingDeviations ? 'pointer-events-none opacity-50' : 'cursor-pointer'} bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-3 py-1.5 rounded-md border border-slate-300 transition-colors`}>
                 {uploadingDeviations ? <Loader2 className="w-4 h-4 animate-spin" /> : '+ Add Photos'}
                 <input type="file" accept="image/jpeg,image/png,image/jpg" multiple className="hidden"
-                  onChange={e => e.target.files.length && uploadMultiplePhotos(e.target.files, setDeviationsPhotos, setUploadingDeviations, deviationsPhotos.length)} />
+                onChange={e => { const picked = Array.from(e.target.files); e.target.value = ''; if (picked.length) setUploadPreviewTarget({ type: 'deviations', files: picked, itemKey: 'deviations' }); }} />
               </label>
               <button
                 type="button"
@@ -1159,7 +1176,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               <div className="flex flex-wrap gap-2 mt-1">
                 {deviationsPhotos.map((url, i) => (
                   <div key={i} className="relative group">
-                    <img src={url} alt={`Deviation ${i+1}`} className="h-24 w-24 object-cover rounded-md border border-slate-200" />
+                    <PhotoThumb url={url} alt={`Item photo ${i+1}`} className="h-20 w-20 object-cover rounded-md border border-slate-200" />
                     <button onClick={() => removePhoto(setDeviationsPhotos, i)}
                       className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                   </div>
@@ -1186,7 +1203,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               <label className={`inline-flex items-center gap-2 ${uploadingUpdates ? 'pointer-events-none opacity-50' : 'cursor-pointer'} bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-3 py-1.5 rounded-md border border-slate-300 transition-colors`}>
                 {uploadingUpdates ? <Loader2 className="w-4 h-4 animate-spin" /> : '+ Add Photos'}
                 <input type="file" accept="image/jpeg,image/png,image/jpg" multiple className="hidden"
-                  onChange={e => e.target.files.length && uploadMultiplePhotos(e.target.files, setUpdatesAttachments, setUploadingUpdates, updatesAttachments.length)} />
+                  onChange={e => { const picked = Array.from(e.target.files); e.target.value = ''; if (picked.length) setUploadPreviewTarget({ type: 'updates', files: picked, itemKey: 'updates' }); }} />
               </label>
               <button
                 type="button"
@@ -1201,7 +1218,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               <div className="flex flex-wrap gap-2 mt-1">
                 {updatesAttachments.map((url, i) => (
                   <div key={i} className="relative group">
-                    <img src={url} alt={`Update ${i+1}`} className="h-24 w-24 object-cover rounded-md border border-slate-200" />
+                    <PhotoThumb url={url} alt={`Update ${i+1}`} className="h-24 w-24 object-cover rounded-md border border-slate-200" />
                     <button onClick={() => removePhoto(setUpdatesAttachments, i)}
                       className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                   </div>
@@ -1256,6 +1273,17 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
 
       {cameraTarget && (
         <CameraCapture onCapture={handleCameraCapture} onClose={() => setCameraTarget(null)} />
+      )}
+
+      {uploadPreviewTarget && (
+        <PhotoUploadPreview
+          files={uploadPreviewTarget.files}
+          storeName={selectedStore?.store_name || user.store_name || ''}
+          templateId={template.id}
+          itemKey={uploadPreviewTarget.itemKey}
+          onDone={handleUploadPreviewDone}
+          onClose={() => setUploadPreviewTarget(null)}
+        />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Loader2, Camera, RefreshCw, Check, X, MapPin } from "lucide-react";
 import { getLocation } from '@/lib/getLocation';
+import { getServerTime } from '@/lib/serverTime';
 
 export default function CameraCapture({ onCapture, onClose }) {
   const videoRef = useRef(null);
@@ -16,6 +17,7 @@ export default function CameraCapture({ onCapture, onClose }) {
   const [location, setLocation] = useState(null);
   const [locatingGps, setLocatingGps] = useState(true);
   const [locationFailed, setLocationFailed] = useState(false);
+  const serverTimeRef = useRef(null);
 
   const fetchLocation = async (attempt = 1) => {
     setLocatingGps(true);
@@ -79,6 +81,7 @@ export default function CameraCapture({ onCapture, onClose }) {
       await startCamera();
       fetchLocation();
     })();
+    getServerTime().then((t) => { serverTimeRef.current = t; });
     return stopStream;
   }, []);
 
@@ -91,8 +94,10 @@ export default function CameraCapture({ onCapture, onClose }) {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Burn a timestamp + location into the photo (Manila time)
-    const stamp = new Date().toLocaleString('en-PH', {
+    // Burn a timestamp + location into the photo (Manila time) — uses the
+    // server's clock, not the device's, so it can't be spoofed by changing
+    // the phone/laptop's date and time.
+    const stamp = (serverTimeRef.current || new Date()).toLocaleString('en-PH', {
       timeZone: 'Asia/Manila',
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', hour12: true,
