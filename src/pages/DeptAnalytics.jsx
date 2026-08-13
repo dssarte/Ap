@@ -203,23 +203,13 @@ export default function DeptAnalytics() {
           <h1 className="app-page-heading">Department analytics</h1>
           <p className="app-page-description">{activeDeptName}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Badge className="bg-[#1fd655]/10 text-slate-700 border border-[#1fd655]/30 font-semibold self-start sm:self-center">
-            {tickets.length} tickets in period
-          </Badge>
-          <ExcelExportButton onClick={handleExportExcel} disabled={tickets.length === 0} />
-        </div>
-      </div>
-
-      {/* Filters */}
-      <Card className="border-2 border-slate-200 shadow-md">
-        <CardContent className="app-filter-bar border-0 shadow-none">
+        <div className="flex flex-wrap items-end gap-3">
           {/* Department filter — admin only */}
           {isAdmin && (
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-slate-500">Department</label>
               <Select value={selectedDept} onValueChange={setSelectedDept}>
-                <SelectTrigger className="w-48 h-9">
+                <SelectTrigger className="w-44 h-9">
                   <SelectValue placeholder="All Departments" />
                 </SelectTrigger>
                 <SelectContent>
@@ -234,7 +224,7 @@ export default function DeptAnalytics() {
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold text-slate-500">Date Range</label>
             <Select value={dateRange} onValueChange={setDateRange}>
-              <SelectTrigger className="w-40 h-9">
+              <SelectTrigger className="w-36 h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -243,20 +233,28 @@ export default function DeptAnalytics() {
             </Select>
           </div>
 
-          {dateRange === 'custom' && (
-            <>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-slate-500">From</label>
-                <Input type="date" className="h-9 w-36" value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-slate-500">To</label>
-                <Input type="date" className="h-9 w-36" value={customTo} onChange={e => setCustomTo(e.target.value)} />
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+          <Badge className="bg-[#1fd655]/10 text-slate-700 border border-[#1fd655]/30 font-semibold h-9 flex items-center">
+            {tickets.length} tickets in period
+          </Badge>
+          <ExcelExportButton onClick={handleExportExcel} disabled={tickets.length === 0} />
+        </div>
+      </div>
+
+      {/* Custom date range inputs — only shown when needed */}
+      {dateRange === 'custom' && (
+        <Card className="border-2 border-slate-200 shadow-md">
+          <CardContent className="app-filter-bar border-0 shadow-none">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-slate-500">From</label>
+              <Input type="date" className="h-9 w-36" value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-slate-500">To</label>
+              <Input type="date" className="h-9 w-36" value={customTo} onChange={e => setCustomTo(e.target.value)} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">

@@ -441,7 +441,8 @@ export default function UserManual() {
         </div>
 
         <Tabs defaultValue={defaultTab}>
-          <TabsList className="app-tabs-list">
+          <div className="admin-tabs-box">
+          <TabsList className="admin-tabs-list">
             {(isRegularUser || isAdmin) && (
               <TabsTrigger value="user" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-6 h-11">
                 <Users className="w-4 h-4 mr-2" /> User Guide
@@ -478,6 +479,7 @@ export default function UserManual() {
               </TabsTrigger>
             )}
           </TabsList>
+          </div>
 
           {(isRegularUser || isAdmin) && (
             <TabsContent value="user"><UserGuideTab /></TabsContent>

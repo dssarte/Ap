@@ -247,11 +247,13 @@ export default function ApprovalQueue() {
           <SectionLoadingSkeleton rows={4} label="Loading approval requests" />
         ) : (
           <Tabs defaultValue="pending">
-            <TabsList className="app-tabs-list">
-              <TabsTrigger value="pending">Pending ({stats.pending})</TabsTrigger>
-              <TabsTrigger value="approved">Approved ({stats.approved})</TabsTrigger>
-              <TabsTrigger value="rejected">Rejected ({stats.rejected})</TabsTrigger>
+            <div className="admin-tabs-box">
+            <TabsList className="admin-tabs-list">
+              <TabsTrigger value="pending" className="border border-slate-200 text-slate-600 rounded-lg px-5 h-10 gap-2 data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold data-[state=active]:border-[#1fd655]">Pending ({stats.pending})</TabsTrigger>
+              <TabsTrigger value="approved" className="border border-slate-200 text-slate-600 rounded-lg px-5 h-10 gap-2 data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold data-[state=active]:border-[#1fd655]">Approved ({stats.approved})</TabsTrigger>
+              <TabsTrigger value="rejected" className="border border-slate-200 text-slate-600 rounded-lg px-5 h-10 gap-2 data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold data-[state=active]:border-[#1fd655]">Rejected ({stats.rejected})</TabsTrigger>
             </TabsList>
+            </div>
 
             {[
               { key: 'pending', list: pendingTickets },

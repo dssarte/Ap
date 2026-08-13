@@ -123,7 +123,8 @@ export default function Admin() {
         </div>
 
         <Tabs defaultValue="departments" className="space-y-8">
-          <TabsList className="app-tabs-list">
+          <div className="admin-tabs-box">
+          <TabsList className="admin-tabs-list">
             <TabsTrigger value="departments" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-6 h-11 transition-all">
               <Building2 className="w-5 h-5 mr-2" />
               Departments
@@ -169,6 +170,7 @@ export default function Admin() {
               Checklist Completion
             </TabsTrigger>
           </TabsList>
+          </div>
 
           <TabsContent value="departments">
             <DepartmentManager />
