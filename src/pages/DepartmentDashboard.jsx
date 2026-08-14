@@ -218,7 +218,8 @@ export default function DepartmentDashboard() {
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList className="app-tabs-list">
+        <div className="admin-tabs-box">
+        <TabsList className="admin-tabs-list">
           <TabsTrigger value="overview" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-5 h-10 gap-2">
             <BarChart3 className="w-4 h-4" /> Overview
           </TabsTrigger>
@@ -226,6 +227,7 @@ export default function DepartmentDashboard() {
             <FileText className="w-4 h-4" /> Historical Reports
           </TabsTrigger>
         </TabsList>
+        </div>
 
         {/* ── OVERVIEW TAB ────────────────────────────────────────────────────── */}
         <TabsContent value="overview" className="space-y-6">
