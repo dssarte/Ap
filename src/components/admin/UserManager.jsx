@@ -14,6 +14,50 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/use-toast";
 import MultiStoreSelect from "@/components/admin/MultiStoreSelect";
 
+// Store managers can have dozens of assigned stores — showing the raw
+// comma-joined list breaks table/card layouts, so collapse it to a count
+// with a click-to-expand panel that sections the list by brand, then store,
+// both sorted alphabetically.
+function AssignedStoresCell({ stores, allStores, brands }) {
+  const [open, setOpen] = useState(false);
+  if (!stores?.length) return <span>-</span>;
+  if (stores.length === 1) return <span>{stores[0]}</span>;
+
+  const groups = {};
+  stores.forEach(storeName => {
+    const storeRecord = allStores?.find(s => s.store_name === storeName);
+    const brandId = storeRecord?.brand_id || '__none__';
+    const brandName = brands?.find(b => b.id === brandId)?.brand_name || 'Other';
+    if (!groups[brandId]) groups[brandId] = { brandName, storeNames: [] };
+    groups[brandId].storeNames.push(storeName);
+  });
+  const sortedGroups = Object.values(groups)
+    .map(g => ({ ...g, storeNames: [...g.storeNames].sort((a, b) => a.localeCompare(b)) }))
+    .sort((a, b) => a.brandName.localeCompare(b.brandName));
+
+  return (
+    <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+      >
+        {stores.length} stores
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-64 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-xs leading-5 text-slate-600 shadow-lg">
+          {sortedGroups.map(g => (
+            <div key={g.brandName} className="mb-2 last:mb-0">
+              <p className="font-bold uppercase tracking-wide text-slate-400 text-[10px]">{g.brandName}</p>
+              <p>{g.storeNames.join(', ')}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function UserManager() {
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -462,7 +506,7 @@ HelpDesk Support Team`
                 <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   <div><dt className="text-xs text-slate-400">Department</dt><dd className="mt-0.5 text-slate-700">{user.department_name || '-'}</dd></div>
                   <div><dt className="text-xs text-slate-400">Phone</dt><dd className="mt-0.5 text-slate-700">{user.phone || '-'}</dd></div>
-                  <div className="col-span-2"><dt className="text-xs text-slate-400">Store</dt><dd className="mt-0.5 text-slate-700">{user.user_type === 'store_manager' ? (user.assigned_stores?.length ? user.assigned_stores.join(', ') : '-') : (user.store_name || '-')}</dd></div>
+                  <div className="col-span-2"><dt className="text-xs text-slate-400">Store</dt><dd className="mt-0.5 text-slate-700">{user.user_type === 'store_manager' ? <AssignedStoresCell stores={user.assigned_stores} allStores={stores} brands={brands} /> : (user.store_name || '-')}</dd></div>
                 </dl>
                 <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
                   {user._isPending
@@ -503,7 +547,7 @@ HelpDesk Support Team`
                   <TableCell className="text-slate-600">{user.department_name || '-'}</TableCell>
                   <TableCell className="text-slate-600">
                     {user.user_type === 'store_manager'
-                      ? (user.assigned_stores?.length ? user.assigned_stores.join(', ') : '-')
+                      ? <AssignedStoresCell stores={user.assigned_stores} allStores={stores} brands={brands} />
                       : (user.store_name || '-')}
                   </TableCell>
                   <TableCell className="text-slate-600">{user.phone || '-'}</TableCell>

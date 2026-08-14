@@ -9,7 +9,7 @@ import moment from 'moment';
 import { auditBusinessDayKey, formatPHDate } from '@/lib/dateUtils';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
-import { BarChart, Bar, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { BarChart, Bar, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const PASS_THRESHOLD = 100; // a store "finished" when 100% of its required checklists are done
 
@@ -159,14 +159,40 @@ export default function DailySummary() {
     return { total: rows.length, done, notStarted, avg };
   }, [rows]);
 
-  const completionStatusData = useMemo(() => {
+  // Per-checklist (Opening/Closing/Mid/etc.) completed vs not-started counts —
+  // driven entirely by requiredTemplates, so any checklist added later shows
+  // up here automatically with no code changes.
+  const templateCompletionData = useMemo(() => requiredTemplates.map(t => {
+    const applicableStores = scopedStores.filter(store => templateAppliesToStore(t, store.store_name));
+    const completed = applicableStores.filter(store =>
+      daySubs.some(s => s.template_id === t.id && s.brand?.includes(store.store_name))
+    ).length;
+    return {
+      id: t.id,
+      name: t.title,
+      completed,
+      notStarted: Math.max(0, applicableStores.length - completed),
+      total: applicableStores.length,
+    };
+  }).filter(item => item.total > 0), [requiredTemplates, scopedStores, daySubs]);
+
+  const [checklistFilter, setChecklistFilter] = useState('');
+
+  const visibleTemplateCompletionData = useMemo(
+    () => checklistFilter ? templateCompletionData.filter(d => d.id === checklistFilter) : templateCompletionData,
+    [templateCompletionData, checklistFilter]
+  );
+
+  // Overall per-store status across ALL required checklists for the day —
+  // distinct from templateCompletionData, which breaks it down per checklist.
+  const overallStatusData = useMemo(() => {
     if (!summary) return [];
     const inProgress = Math.max(0, summary.total - summary.done - summary.notStarted);
     return [
       { name: 'Complete', value: summary.done, fill: '#16a34a' },
       { name: 'In progress', value: inProgress, fill: '#f59e0b' },
       { name: 'Not started', value: summary.notStarted, fill: '#ef4444' },
-    ].filter(item => item.value > 0);
+    ];
   }, [summary]);
 
   const brandCompletionData = useMemo(() => groupedRows.map(group => {
@@ -283,41 +309,75 @@ export default function DailySummary() {
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card className="border border-slate-200 shadow-sm">
-              <CardHeader className="pb-2 pt-5 px-5">
+              <CardHeader className="pb-2 pt-5 px-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="font-bold text-slate-800">Store Completion Status</p>
+                <Select value={checklistFilter || '__all__'} onValueChange={(v) => setChecklistFilter(v === '__all__' ? '' : v)}>
+                  <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="All checklists" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All checklists</SelectItem>
+                    {templateCompletionData.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </CardHeader>
-              <CardContent className="pb-5">
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie data={completionStatusData} dataKey="value" nameKey="name" cx="50%" cy="48%" innerRadius={55} outerRadius={95} label={({ name, value }) => `${name}: ${value}`}>
-                      {completionStatusData.map(item => <Cell key={item.name} fill={item.fill} />)}
-                    </Pie>
-                    <Tooltip formatter={value => [`${value} store${value !== 1 ? 's' : ''}`, 'Count']} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
+              <CardContent className="px-2 pb-5">
+                {visibleTemplateCompletionData.length === 0 ? (
+                  <p className="py-16 text-center text-sm text-slate-400">No checklist data for this date.</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={Math.max(200, visibleTemplateCompletionData.length * 60)}>
+                    <BarChart data={visibleTemplateCompletionData} layout="vertical" margin={{ left: 12, right: 24 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                      <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(value, name) => [`${value} store${value !== 1 ? 's' : ''}`, name === 'completed' ? 'Completed' : 'Incomplete']} />
+                      <Legend formatter={(value) => value === 'completed' ? 'Completed' : 'Incomplete'} />
+                      <Bar dataKey="completed" name="completed" fill="#16a34a" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="notStarted" name="notStarted" fill="#ef4444" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </CardContent>
             </Card>
 
             <Card className="border border-slate-200 shadow-sm">
               <CardHeader className="pb-2 pt-5 px-5">
-                <p className="font-bold text-slate-800">Average Completion by Brand</p>
+                <p className="font-bold text-slate-800">Overall Store Status</p>
               </CardHeader>
               <CardContent className="px-2 pb-5">
-                <ResponsiveContainer width="100%" height={Math.max(280, brandCompletionData.length * 42)}>
-                  <BarChart data={brandCompletionData} layout="vertical" margin={{ left: 12, right: 42 }}>
+                <ResponsiveContainer width="100%" height={Math.max(200, overallStatusData.length * 60)}>
+                  <BarChart data={overallStatusData} layout="vertical" margin={{ left: 12, right: 24 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={value => `${value}%`} />
-                    <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(value, name) => [name === 'rate' ? `${value}%` : value, name === 'rate' ? 'Completion rate' : name]} />
-                    <Bar dataKey="rate" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, formatter: value => `${value}%` }}>
-                      {brandCompletionData.map(row => <Cell key={row.name} fill={row.rate >= PASS_THRESHOLD ? '#16a34a' : row.rate >= 50 ? '#f59e0b' : '#ef4444'} />)}
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={value => [`${value} store${value !== 1 ? 's' : ''}`, 'Count']} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                      {overallStatusData.map(item => <Cell key={item.name} fill={item.fill} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
           </div>
+
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader className="pb-2 pt-5 px-5">
+              <p className="font-bold text-slate-800">Average Completion by Brand</p>
+            </CardHeader>
+            <CardContent className="px-2 pb-5">
+              <ResponsiveContainer width="100%" height={Math.max(280, brandCompletionData.length * 42)}>
+                <BarChart data={brandCompletionData} layout="vertical" margin={{ left: 12, right: 42 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                  <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={value => `${value}%`} />
+                  <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(value, name) => [name === 'rate' ? `${value}%` : value, name === 'rate' ? 'Completion rate' : name]} />
+                  <Bar dataKey="rate" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, formatter: value => `${value}%` }}>
+                    {brandCompletionData.map(row => <Cell key={row.name} fill={row.rate >= PASS_THRESHOLD ? '#16a34a' : row.rate >= 50 ? '#f59e0b' : '#ef4444'} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
           {/* Store table */}
           <Card className="border border-slate-200 shadow-sm">
