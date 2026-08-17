@@ -6,10 +6,75 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, ClipboardList } from "lucide-react";
+import { Plus, Pencil, Trash2, ClipboardList, Sparkles } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StoreMultiSelect from "@/components/admin/StoreMultiSelect";
+
+// Presets are looked up by their exact matching Category title, not by
+// brand tab — a tab can hold multiple different checklists, so the preset
+// must only ever apply to the one checklist it was built for.
+const TITLE_PRESETS = {};
+
+const TEMPLATE_GROUPS = [
+  { value: 'angels-pizza', label: "Angel's Pizza" },
+  { value: 'figaro', label: 'Figaro' },
+  { value: 'tien-ma', label: 'Tien Ma' },
+  { value: 'koobideh-kebab', label: 'Koobideh Kebab' },
+  { value: 'angels-pizza-express', label: "Angel's Pizza Express" },
+];
+
+// Templates saved before brand tabs existed have no template_group (or the
+// old generic 'ap' value) — treat those as Angel's Pizza so nothing already
+// created goes missing from the list.
+function normalizeGroup(group) {
+  return (!group || group === 'ap') ? 'angels-pizza' : group;
+}
+
+// Templates can be restricted to dozens of stores — showing the raw
+// comma-joined list breaks the card layout, so collapse it to a count with
+// a click-to-expand panel sectioned by brand, both sorted alphabetically.
+function RestrictedStoresBadge({ restrictions }) {
+  const [open, setOpen] = useState(false);
+  if (!restrictions?.length) return null;
+  if (restrictions.length === 1) {
+    const r = restrictions[0];
+    return <span className="text-xs text-blue-600 font-medium">🏪 {r.brand_name} — {r.store_name}</span>;
+  }
+
+  const groups = {};
+  restrictions.forEach(r => {
+    const brandName = r.brand_name || 'Other';
+    if (!groups[brandName]) groups[brandName] = [];
+    groups[brandName].push(r.store_name);
+  });
+  const sortedGroups = Object.entries(groups)
+    .map(([brandName, storeNames]) => ({ brandName, storeNames: [...storeNames].sort((a, b) => a.localeCompare(b)) }))
+    .sort((a, b) => a.brandName.localeCompare(b.brandName));
+
+  return (
+    <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+      >
+        🏪 {restrictions.length} stores
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-64 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-xs leading-5 text-slate-600 shadow-lg">
+          {sortedGroups.map(g => (
+            <div key={g.brandName} className="mb-2 last:mb-0">
+              <p className="font-bold uppercase tracking-wide text-slate-400 text-[10px]">{g.brandName}</p>
+              <p>{g.storeNames.join(', ')}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function genId() {
   return Math.random().toString(36).slice(2, 9);
@@ -27,6 +92,7 @@ export default function AuditTemplateManager() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null); // null = new
+  const [groupTab, setGroupTab] = useState('angels-pizza');
 
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ['audit-templates'],
@@ -72,6 +138,8 @@ export default function AuditTemplateManager() {
   const openNew = () => { setEditing(null); setDialogOpen(true); };
   const openEdit = (t) => { setEditing(t); setDialogOpen(true); };
 
+  const visibleTemplates = templates.filter(t => normalizeGroup(t.template_group) === groupTab);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -84,18 +152,28 @@ export default function AuditTemplateManager() {
         </Button>
       </div>
 
+      <Tabs value={groupTab} onValueChange={setGroupTab}>
+        <TabsList className="flex h-auto max-w-full flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          {TEMPLATE_GROUPS.map(g => (
+            <TabsTrigger key={g.value} value={g.value} className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-4 h-9 transition-all">
+              {g.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
       {isLoading ? (
         <p className="text-slate-400 text-sm">Loading...</p>
-      ) : templates.length === 0 ? (
+      ) : visibleTemplates.length === 0 ? (
         <Card className="border-2 border-dashed border-slate-200">
           <CardContent className="py-16 text-center">
             <ClipboardList className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-400">No audit templates yet. Create one to get started.</p>
+            <p className="text-slate-400">No {TEMPLATE_GROUPS.find(g => g.value === groupTab)?.label} templates yet. Create one to get started.</p>
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-4">
-          {templates.map(t => (
+          {visibleTemplates.map(t => (
             <Card key={t.id} className="border-2 border-slate-200 shadow-sm">
               <CardContent className="p-5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -109,10 +187,8 @@ export default function AuditTemplateManager() {
                       {t.sections?.length || 0} section(s) · {t.sections?.reduce((s, sec) => s + (sec.items?.length || 0), 0)} items
                     </p>
                     {(t.store_restrictions?.length > 0 || t.store_name) ? (
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        {(t.store_restrictions?.length > 0 ? t.store_restrictions : [{ brand_name: t.brand_name, store_name: t.store_name }]).map((r, i) => (
-                          <span key={i} className="text-xs text-blue-600 font-medium">🏪 {r.brand_name} — {r.store_name}{i < (t.store_restrictions?.length || 1) - 1 ? ',' : ''}</span>
-                        ))}
+                      <div className="mt-0.5">
+                        <RestrictedStoresBadge restrictions={t.store_restrictions?.length > 0 ? t.store_restrictions : [{ brand_name: t.brand_name, store_name: t.store_name }]} />
                       </div>
                     ) : (
                       <p className="text-xs text-green-600 mt-0.5 font-medium">👥 Visible to QA</p>
@@ -151,6 +227,7 @@ export default function AuditTemplateManager() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         initial={editing}
+        group={groupTab}
         onSave={(data) => saveMutation.mutate(data)}
         saving={saveMutation.isPending}
         auditCategories={auditCategories}
@@ -162,7 +239,7 @@ export default function AuditTemplateManager() {
   );
 }
 
-function TemplateDialog({ open, onClose, initial, onSave, saving, auditCategories, existingTitles, brands, stores }) {
+function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCategories, existingTitles, brands, stores }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [sections, setSections] = useState([]);
@@ -229,6 +306,15 @@ function TemplateDialog({ open, onClose, initial, onSave, saving, auditCategorie
     setSections(s => [...s, { id: genId(), title: '', items: [] }]);
   };
 
+  const matchedPreset = TITLE_PRESETS[title];
+
+  const loadTitlePreset = () => {
+    if (!matchedPreset) return;
+    if (sections.length > 0 && !window.confirm(`This replaces the current sections with the ${matchedPreset.title} preset. Continue?`)) return;
+    setDescription(matchedPreset.description);
+    setSections(JSON.parse(JSON.stringify(matchedPreset.sections)));
+  };
+
   const updateSection = (idx, field, val) => {
     setSections(s => s.map((sec, i) => i === idx ? { ...sec, [field]: val } : sec));
   };
@@ -274,6 +360,7 @@ function TemplateDialog({ open, onClose, initial, onSave, saving, auditCategorie
       description: description.trim(),
       sections,
       is_active: initial?.is_active ?? true,
+      template_group: initial ? normalizeGroup(initial.template_group) : group,
       active_ticket: activeTicket,
       has_time_restriction: hasTimeRestriction,
       available_from_time: hasTimeRestriction ? availableFromTime : '',
@@ -407,9 +494,16 @@ function TemplateDialog({ open, onClose, initial, onSave, saving, auditCategorie
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-sm font-semibold text-slate-700">Sections</label>
-              <Button variant="outline" size="sm" onClick={addSection} className="gap-1">
-                <Plus className="w-3.5 h-3.5" /> Add Section
-              </Button>
+              <div className="flex items-center gap-2">
+                {!initial?.id && matchedPreset && (
+                  <Button variant="outline" size="sm" onClick={loadTitlePreset} className="gap-1 text-purple-700 border-purple-200 hover:bg-purple-50">
+                    <Sparkles className="w-3.5 h-3.5" /> Load {matchedPreset.title} Preset
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={addSection} className="gap-1">
+                  <Plus className="w-3.5 h-3.5" /> Add Section
+                </Button>
+              </div>
             </div>
 
             {sections.map((sec, secIdx) => (
