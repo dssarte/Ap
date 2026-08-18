@@ -20,6 +20,12 @@
       "default": false,
       "description": "If true, a submitted audit with at least one NO answer automatically creates a ticket routed to the handling department head. YES/N/A-only submissions create no ticket."
     },
+    "template_group": {
+      "type": "string",
+      "enum": ["angels-pizza", "figaro", "tien-ma", "koobideh-kebab", "angels-pizza-express"],
+      "default": "angels-pizza",
+      "description": "Which brand tab this template is managed under in Admin > Audit Templates. Legacy rows saved as 'ap' are treated as 'angels-pizza'."
+    },
     "has_time_restriction": {
       "type": "boolean",
       "default": false,
