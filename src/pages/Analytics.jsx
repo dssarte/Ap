@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ShieldAlert, Ticket, Clock, CheckCircle2 } from "lucide-react";
+import { Loader2, ShieldAlert, Ticket, Clock, CheckCircle2, TrendingUp, ShieldCheck, AlertTriangle } from "lucide-react";
 import { subDays, differenceInHours } from 'date-fns';
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
@@ -13,6 +13,10 @@ import {
 import ExcelExportButton from "@/components/ExcelExportButton";
 import { exportSheetsToExcel } from "@/lib/exportExcel";
 import { SectionLoadingSkeleton } from '@/components/PageState';
+import VolumeOverTimeChart from "@/components/admin/analytics/VolumeOverTimeChart";
+import DeptResolutionChart from "@/components/admin/analytics/DeptResolutionChart";
+import SLAComplianceChart from "@/components/admin/analytics/SLAComplianceChart";
+import SLAComplianceOverTime from "@/components/admin/analytics/SLAComplianceOverTime";
 
 const STATUS_COLORS = {
   open: '#3b82f6',
@@ -52,6 +56,7 @@ export default function Analytics() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dateRange, setDateRange] = useState('1');
+  const [selectedDepartment, setSelectedDepartment] = useState('all');
 
   useEffect(() => {
     base44.auth.me()
@@ -85,8 +90,11 @@ export default function Analytics() {
       const stores = user.assigned_stores || [];
       filtered = filtered.filter(t => t.store_name && stores.includes(t.store_name));
     }
+    if (selectedDepartment !== 'all') {
+      filtered = filtered.filter(t => t.department_id === selectedDepartment);
+    }
     return filtered;
-  }, [rawTickets, dateRange, user]);
+  }, [rawTickets, dateRange, user, selectedDepartment]);
 
   // --- Tickets by Status ---
   const statusData = useMemo(() => {
@@ -132,7 +140,9 @@ export default function Analytics() {
     const total = tickets.length;
     const open = tickets.filter(t => t.status === 'open' || t.status === 'in_progress').length;
     const resolved = tickets.filter(t => t.status === 'resolved' || t.status === 'closed').length;
-    return { total, open, resolved };
+    const breached = tickets.filter(t => t.sla_response_breached || t.sla_resolution_breached).length;
+    const slaCompliance = total > 0 ? Math.round(((total - breached) / total) * 100) : 100;
+    return { total, open, resolved, breached, slaCompliance };
   }, [tickets]);
 
   const handleExportExcel = () => {
@@ -147,6 +157,8 @@ export default function Analytics() {
           ['Open / Active', kpis.open],
           ['Resolved', kpis.resolved],
           ['Avg Resolution Time', formatResolution(avgResolutionHours)],
+          ['SLA Compliance', `${kpis.slaCompliance}%`],
+          ['SLA Breaches', kpis.breached],
         ],
       },
       {
@@ -197,12 +209,23 @@ export default function Analytics() {
       <div className="app-page-header">
         <div>
           <p className="app-page-eyebrow">Operational intelligence</p>
-          <h1 className="app-page-heading">Analytics overview</h1>
+          <h1 className="app-page-heading">Analytics Overview</h1>
           <p className="app-page-description">
             {user?.user_type === 'store_manager' ? `Metrics for ${(user.assigned_stores || []).join(', ') || 'your stores'}` : 'System-wide ticket performance metrics'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {user?.user_type === 'admin' && (
+            <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+              <SelectTrigger className="w-52">
+                <SelectValue placeholder="Filter department" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
           <Select value={dateRange} onValueChange={setDateRange}>
             <SelectTrigger className="w-44">
               <SelectValue />
@@ -216,16 +239,21 @@ export default function Analytics() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-5 gap-4">
         <KPICard title="Total Tickets" value={kpis.total} sub="In selected period" icon={Ticket} color="bg-slate-700" />
         <KPICard title="Open / Active" value={kpis.open} sub="Needs attention" icon={Clock} color="bg-blue-500" />
+        <KPICard title="Resolved" value={kpis.resolved} sub={`${kpis.total ? Math.round((kpis.resolved / kpis.total) * 100) : 0}% resolution rate`} icon={TrendingUp} color="bg-indigo-500" />
         <KPICard title="Avg Resolution Time" value={formatResolution(avgResolutionHours)} sub="Per resolved ticket" icon={CheckCircle2} color="bg-emerald-500" />
+        <KPICard title="SLA Compliance" value={`${kpis.slaCompliance}%`} sub={`${kpis.breached} breach${kpis.breached !== 1 ? 'es' : ''}`} icon={kpis.slaCompliance >= 90 ? ShieldCheck : AlertTriangle} color={kpis.slaCompliance >= 90 ? 'bg-emerald-500' : 'bg-red-500'} />
       </div>
 
       {isLoading ? (
         <SectionLoadingSkeleton rows={4} label="Loading analytics" />
       ) : (
         <div className="space-y-6">
+          {/* Ticket Volume Over Time (full width) */}
+          <VolumeOverTimeChart tickets={tickets} dateRange={dateRange} />
+
           {/* Row 1: Status Pie + Dept Bar side by side */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Tickets by Status */}
@@ -284,6 +312,15 @@ export default function Analytics() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Row 2: Avg Resolution by Dept + SLA Compliance by Dept */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <DeptResolutionChart tickets={tickets} />
+            <SLAComplianceChart tickets={tickets} />
+          </div>
+
+          {/* SLA Compliance Over Time (full width) */}
+          <SLAComplianceOverTime tickets={tickets} dateRange={dateRange} />
 
           {/* Dept Resolution Table */}
           <Card className="border-2 border-slate-200 shadow-md">
