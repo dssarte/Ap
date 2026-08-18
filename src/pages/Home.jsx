@@ -57,7 +57,7 @@ export default function Home() {
       is_active: true,
     });
 
-    setCategories(Array.isArray(cats) ? cats : []);
+    setCategories(Array.isArray(cats) ? cats.filter(c => !c.is_audit_only) : []);
     } catch (error) {
       console.error("Failed to load categories:", error);
       setCategories([]);

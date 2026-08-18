@@ -8,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { X, Send, Clock, User, Building2, Paperclip, MessageSquare, ArrowRightLeft, Lock, CornerUpLeft, CheckCircle } from "lucide-react";
-import CannedResponsePicker from "./CannedResponsePicker";
 import { DuplicatesBadge } from "./TicketCard";
 import { formatInTimeZone } from "date-fns-tz";
 import SLAIndicator from "./SLAIndicator";
@@ -643,13 +642,7 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
                       </span>
                     </Button>
                   </label>
-                  {isStaff && (
-                    <CannedResponsePicker
-                      departmentId={ticket.department_id}
-                      onSelect={(text) => setNewComment(prev => prev ? prev + '\n' + text : text)}
-                    />
-                  )}
-                  <Button 
+                  <Button
                     onClick={handleAddComment} 
                     disabled={loading || uploadingFiles || (!newComment.trim() && attachmentUrls.length === 0) || (ticket.status === 'closed' && !canCommentOnClosed)}
                     size="icon"

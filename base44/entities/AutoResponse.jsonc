@@ -1,0 +1,37 @@
+{
+  "name": "AutoResponse",
+  "type": "object",
+  "properties": {
+    "department_id": {
+      "type": "string",
+      "description": "Department this auto-response applies to"
+    },
+    "department_name": {
+      "type": "string",
+      "description": "Department name for display"
+    },
+    "message": {
+      "type": "string",
+      "description": "Comment text automatically posted on a new ticket received during the active window"
+    },
+    "start_time": {
+      "type": "string",
+      "description": "Time of day (HH:MM, 24h) the auto-response window opens"
+    },
+    "end_time": {
+      "type": "string",
+      "description": "Time of day (HH:MM, 24h) the auto-response window closes. If earlier than start_time, the window crosses midnight into the next day"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this auto-response is active"
+    }
+  },
+  "required": [
+    "department_id",
+    "message",
+    "start_time",
+    "end_time"
+  ]
+}

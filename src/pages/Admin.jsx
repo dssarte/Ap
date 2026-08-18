@@ -2,14 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Building2, Users, Loader2, ShieldAlert, Tags, Clock, Zap, BarChart3, GitBranch, ClipboardList, Store, Download, CalendarCheck, Database, FileDown } from "lucide-react";
+import { Building2, Users, Loader2, ShieldAlert, Tags, Clock, Zap, GitBranch, ClipboardList, Store, Download, CalendarCheck, Database, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import DepartmentManager from "@/components/admin/DepartmentManager";
 import UserManager from "@/components/admin/UserManager";
 import CategoryManager from "@/components/admin/CategoryManager";
 import SLAManager from "@/components/admin/SLAManager";
-import CannedResponseManager from "@/components/admin/CannedResponseManager";
-import AnalyticsDashboard from "@/components/admin/AnalyticsDashboard";
+import AutoResponseManager from "@/components/admin/AutoResponseManager";
 import RulesEngine from "@/components/admin/RulesEngine";
 import AuditTemplateManager from "@/components/admin/AuditTemplateManager";
 import BrandManager from "@/components/admin/BrandManager";
@@ -143,11 +142,7 @@ export default function Admin() {
             </TabsTrigger>
             <TabsTrigger value="canned" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-6 h-11 transition-all">
               <Zap className="w-5 h-5 mr-2" />
-              Canned Responses
-            </TabsTrigger>
-            <TabsTrigger value="analytics" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-6 h-11 transition-all">
-              <BarChart3 className="w-5 h-5 mr-2" />
-              Analytics
+              Auto Responses
             </TabsTrigger>
             <TabsTrigger value="rules" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-6 h-11 transition-all">
               <GitBranch className="w-5 h-5 mr-2" />
@@ -189,11 +184,7 @@ export default function Admin() {
           </TabsContent>
 
           <TabsContent value="canned">
-            <CannedResponseManager />
-          </TabsContent>
-
-          <TabsContent value="analytics">
-            <AnalyticsDashboard />
+            <AutoResponseManager />
           </TabsContent>
 
           <TabsContent value="rules">
