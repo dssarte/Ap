@@ -306,7 +306,7 @@ export default function Audit() {
                         </p>
                       )}
                     </div>
-                    <Button size="sm" disabled={!available} className="bg-[#1fd655] hover:bg-[#1bc14c] text-slate-900 font-semibold flex-shrink-0 disabled:opacity-100 disabled:bg-slate-200 disabled:text-slate-400">
+                    <Button size="sm" disabled={!available} className="bg-[#1fd655] hover:bg-[#1bc14c] text-slate-900 font-semibold flex-shrink-0 disabled:opacity-100 disabled:bg-slate-200 disabled:!text-black">
                       {doneForCycle ? 'Done' : available ? 'Start' : 'Unavailable'}
                     </Button>
                   </CardContent>

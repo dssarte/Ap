@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
-import { auditBusinessDayKey } from '@/lib/dateUtils';
+import { auditBusinessDayKey, isTimeWithinWindow } from '@/lib/dateUtils';
 
 const entityTables = {
   User: 'users', Brand: 'brands', Store: 'stores', Department: 'departments',
-  Category: 'categories', SLA: 'slas', CannedResponse: 'canned_responses',
+  Category: 'categories', SLA: 'slas',
+  AutoResponse: 'auto_responses',
   TicketRule: 'ticket_rules', PendingUser: 'pending_users', ChecklistConfig: 'checklist_configs',
   AuditTemplate: 'audit_templates', AuditAssignment: 'audit_assignments', Ticket: 'tickets',
   TicketComment: 'ticket_comments', TicketFeedback: 'ticket_feedback', Notification: 'notifications',
@@ -103,6 +104,35 @@ function entityApi(name) {
 }
 
 const entities = new Proxy({}, { get: (_, name) => entityApi(name) });
+
+// Posts a department's configured auto-response as a ticket comment when a
+// new ticket lands during that department's active-hours window. Best-effort:
+// a lookup failure should never block ticket creation.
+async function maybeSendAutoResponse(ticket) {
+  const departmentId = ticket?.handling_department_id || ticket?.department_id;
+  if (!ticket?.id || !departmentId) return;
+  try {
+    const responses = await entityApi('AutoResponse').filter({ department_id: departmentId, is_active: true });
+    const match = (responses || []).find(r => isTimeWithinWindow(r.start_time, r.end_time));
+    if (!match) return;
+    const authorName = match.department_name || 'Automated Response';
+    await entityApi('TicketComment').create({
+      ticket_id: ticket.id,
+      content: match.message,
+      author_email: 'auto-response@system',
+      author_name: authorName,
+      is_internal: false,
+    });
+    await functions.invoke('sendTicketNotification', {
+      ticket_id: ticket.id,
+      type: 'commented',
+      message: `${authorName} posted an auto-response on ticket: ${ticket.title}`,
+      created_by: 'auto-response@system',
+    }).catch((error) => console.warn('Auto response comment saved, but notification delivery failed:', error));
+  } catch (error) {
+    console.warn('Auto response skipped:', error);
+  }
+}
 
 const auditData = {
   async listGeneratedTickets({ dateFrom = null, dateTo = null, maxRows = 25000 } = {}) {
@@ -225,7 +255,10 @@ const auditData = {
       p_submission: cleanPayload(submission),
       p_tickets: tickets.map(cleanPayload),
     });
-    if (!error) return { ...data, atomic: true };
+    if (!error) {
+      await Promise.all((data?.tickets || []).map(maybeSendAutoResponse));
+      return { ...data, atomic: true };
+    }
     if (!isMissingRpc(error)) throw error;
 
     // Deployment-order fallback: the site remains usable if the frontend is
@@ -240,6 +273,7 @@ const auditData = {
         audit_template_id: savedSubmission.template_id,
       }));
     }
+    await Promise.all(savedTickets.map(maybeSendAutoResponse));
     return { submission: savedSubmission, tickets: savedTickets, atomic: false };
   },
 };
@@ -382,6 +416,7 @@ const functions = {
         p_ticket_id: ticketId,
         p_type: body.type || 'updated',
         p_message: body.message || null,
+        p_created_by: body.created_by || null,
       });
       if (!notifyError) return { data: { success: true, recipients: notified || 0 } };
       if (!isMissingRpc(notifyError)) throw notifyError;
@@ -397,6 +432,7 @@ const functions = {
       const now = new Date().toISOString();
       const rows = [...recipients].map(email => ({
         id: crypto.randomUUID(), created_date: now, updated_date: now,
+        created_by: body.created_by || undefined,
         user_email: email, ticket_id: ticketId, type: body.type || 'updated',
         title: `Ticket #${String(ticketId).slice(0,8)} - ${body.type || 'updated'}`,
         message: body.message || `Ticket ${ticket.title} was updated`,
@@ -449,9 +485,10 @@ const ticketWorkflows = {
     const { data, error } = await supabase.rpc('create_manual_ticket', {
       p_ticket: cleanPayload(ticket),
     });
-    if (!error) return data;
-    if (!isMissingRpc(error)) throw error;
-    return entityApi('Ticket').create(ticket);
+    const created = !error ? data : (isMissingRpc(error) ? await entityApi('Ticket').create(ticket) : null);
+    if (error && !isMissingRpc(error)) throw error;
+    await maybeSendAutoResponse(created);
+    return created;
   },
 
   async processApproval(ticketId, action, rejectionReason = null) {
