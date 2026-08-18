@@ -32,6 +32,31 @@ export function formatPHMonthYear(value) {
   return formatWith(value, { month: 'short', year: '2-digit' });
 }
 
+/**
+ * Whether the current time in Asia/Manila falls within a HH:MM–HH:MM window.
+ * Supports windows that cross midnight (e.g. 22:00–06:00) the same way audit
+ * template time restrictions do. An equal start/end means "always active".
+ */
+export function isTimeWithinWindow(startTime, endTime, now = new Date()) {
+  if (!startTime || !endTime) return true;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PH_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now);
+  const getPart = (type) => Number(parts.find(part => part.type === type)?.value);
+  const nowMinutes = getPart('hour') * 60 + getPart('minute');
+
+  const [fh, fm] = startTime.split(':').map(Number);
+  const [th, tm] = endTime.split(':').map(Number);
+  const fromMinutes = fh * 60 + fm;
+  const toMinutes = th * 60 + tm;
+  if (fromMinutes === toMinutes) return true;
+  if (fromMinutes < toMinutes) return nowMinutes >= fromMinutes && nowMinutes <= toMinutes;
+  return nowMinutes >= fromMinutes || nowMinutes <= toMinutes;
+}
+
 export function isClosingAudit(templateTitle) {
   return /\bclosing\b/i.test(String(templateTitle || ''));
 }

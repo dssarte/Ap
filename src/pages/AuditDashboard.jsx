@@ -567,7 +567,8 @@ export default function AuditDashboard() {
             ))}
           </div>
 
-          {/* Highest and lowest performing templates */}
+          {/* Highest and lowest performing templates — hidden per request, restore by removing the `false &&` guard */}
+          {false && (
           <div className="grid gap-4 md:grid-cols-2">
             <Card className="border border-emerald-200 bg-emerald-50/60 shadow-sm">
               <CardContent className="flex items-center gap-4 p-5">
@@ -590,9 +591,10 @@ export default function AuditDashboard() {
               </CardContent>
             </Card>
           </div>
+          )}
 
           {/* NO findings headline analytics */}
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Card className="border border-red-200 bg-red-50/60 shadow-sm">
               <CardContent className="p-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-red-700">Total NO findings</p>
@@ -600,6 +602,8 @@ export default function AuditDashboard() {
                 <p className="mt-1 text-xs text-slate-500">Across all templates in the selected date range</p>
               </CardContent>
             </Card>
+            {/* Template with most NO — hidden per request, restore by removing the `false &&` guard */}
+            {false && (
             <Card className="border border-amber-200 bg-amber-50/60 shadow-sm">
               <CardContent className="p-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Template with most NO</p>
@@ -607,6 +611,7 @@ export default function AuditDashboard() {
                 <p className="mt-1 text-sm text-slate-600">{mostNoTemplate ? `${mostNoTemplate.noFindings} NO · ${mostNoTemplate.tickets} generated ticket${mostNoTemplate.tickets !== 1 ? 's' : ''}` : '—'}</p>
               </CardContent>
             </Card>
+            )}
             <Card className="border border-orange-200 bg-orange-50/60 shadow-sm">
               <CardContent className="p-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-orange-700">Top NO checklist item</p>
@@ -650,6 +655,8 @@ export default function AuditDashboard() {
               </CardContent>
             </Card>
 
+            {/* Daily NO Trend — hidden per request, restore by removing the `false &&` guard. The Daily Audit and Ticket Summary card now takes this slot instead. */}
+            {false && (
             <Card className="border border-slate-200 shadow-sm">
               <CardHeader className="pb-2 pt-5 px-5">
                 <p className="font-bold text-slate-800 flex items-center gap-2"><TrendingUp className="h-4 w-4 text-red-500" /> Daily NO Trend</p>
@@ -669,7 +676,76 @@ export default function AuditDashboard() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+            )}
+
+            {/* Daily Audit and Ticket Summary — moved here from further down, into the freed-up Daily NO Trend slot */}
+            <Card className="border border-slate-200 shadow-sm">
+              <CardHeader className="pb-2 pt-5 px-5">
+                <p className="font-bold text-slate-800 flex items-center gap-2"><CalendarDays className="w-4 h-4 text-[#1fd655]" /> Daily Audit and Ticket Summary</p>
+              </CardHeader>
+              <CardContent className="px-2 pb-5">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={dailyRows} margin={{ top: 8, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <Tooltip labelFormatter={(_, payload) => payload?.[0]?.payload?.day || ''} />
+                    <Legend />
+                    <Bar dataKey="audits" name="Audits" fill="#16a34a" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="tickets" name="Generated tickets" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
           </div>
+
+          {/* All-template analytics table — moved up, directly below Daily Audit and Ticket Summary */}
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader className="pb-2 pt-5 px-5">
+              <p className="font-bold text-slate-800 flex items-center gap-2"><Ticket className="w-4 h-4 text-[#1fd655]" /> All Template Analytics</p>
+            </CardHeader>
+            <CardContent className="px-0 pb-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-slate-100 bg-slate-50">
+                    {['Rank', 'Template', 'Average', 'Audits', 'Pass', 'Fail', 'Pass rate', 'NO findings', 'Tickets'].map(header => <th key={header} className={`${header === 'Template' ? 'text-left' : 'text-center'} px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600`}>{header}</th>)}
+                  </tr></thead>
+                  <tbody>{templateRows.map((row, index) => <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-3 text-center font-semibold text-slate-500">{index + 1}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-800">{row.title}</td>
+                    <td className="px-4 py-3 text-center"><ScoreBadge score={row.avg} /></td>
+                    <td className="px-4 py-3 text-center">{row.audits}</td>
+                    <td className="px-4 py-3 text-center text-green-600">{row.passing}</td>
+                    <td className="px-4 py-3 text-center text-red-600">{row.failing}</td>
+                    <td className="px-4 py-3 text-center">{row.passRate.toFixed(1)}%</td>
+                    <td className="px-4 py-3 text-center text-amber-600">{row.noFindings}</td>
+                    <td className="px-4 py-3 text-center font-semibold text-violet-600">{row.tickets}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Daily summary table — moved up, directly below All Template Analytics */}
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader className="pb-2 pt-5 px-5"><p className="font-bold text-slate-800">Daily Summary</p></CardHeader>
+            <CardContent className="px-0 pb-4">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead><tr className="border-b border-slate-100 bg-slate-50">
+                  {['Business date', 'Average', 'Audits', 'Pass', 'Fail', 'NO findings', 'Tickets'].map(header => <th key={header} className={`${header === 'Business date' ? 'text-left' : 'text-center'} px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600`}>{header}</th>)}
+                </tr></thead>
+                <tbody>{[...dailyRows].reverse().map(row => <tr key={row.day} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-3 font-semibold text-slate-800">{moment(row.day, 'YYYY-MM-DD').format('MMM D, YYYY')}</td>
+                  <td className="px-4 py-3 text-center"><ScoreBadge score={row.avg} /></td>
+                  <td className="px-4 py-3 text-center">{row.audits}</td>
+                  <td className="px-4 py-3 text-center text-green-600">{row.passing}</td>
+                  <td className="px-4 py-3 text-center text-red-600">{row.failing}</td>
+                  <td className="px-4 py-3 text-center text-amber-600">{row.noFindings}</td>
+                  <td className="px-4 py-3 text-center font-semibold text-violet-600">{row.tickets}</td>
+                </tr>)}</tbody>
+              </table></div>
+            </CardContent>
+          </Card>
 
           {/* Individual checklist-item NO analysis */}
           <Card className="border border-slate-200 shadow-sm">
@@ -736,7 +812,8 @@ export default function AuditDashboard() {
             </CardContent>
           </Card>
 
-          {/* Template bar graph */}
+          {/* Template bar graph (Average Score by Audit Template) — hidden per request, restore by removing the `false &&` guard */}
+          {false && (
           <Card className="border border-slate-200 shadow-sm">
             <CardHeader className="pb-2 pt-5 px-5">
               <p className="font-bold text-slate-800 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-[#1fd655]" /> Average Score by Audit Template</p>
@@ -756,8 +833,10 @@ export default function AuditDashboard() {
               </ResponsiveContainer>
             </CardContent>
           </Card>
+          )}
 
-          {/* Pie graphs */}
+          {/* Pie graphs (Audit Volume by Template, Pass and Fail Distribution) — hidden per request, restore by removing the `false &&` guard */}
+          {false && (
           <div className="grid gap-4 lg:grid-cols-2">
             <Card className="border border-slate-200 shadow-sm">
               <CardHeader className="pb-2 pt-5 px-5">
@@ -789,74 +868,7 @@ export default function AuditDashboard() {
               </CardContent>
             </Card>
           </div>
-
-          {/* Daily audit and generated-ticket graph */}
-          <Card className="border border-slate-200 shadow-sm">
-            <CardHeader className="pb-2 pt-5 px-5">
-              <p className="font-bold text-slate-800 flex items-center gap-2"><CalendarDays className="w-4 h-4 text-[#1fd655]" /> Daily Audit and Ticket Summary</p>
-            </CardHeader>
-            <CardContent className="px-2 pb-5">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={dailyRows} margin={{ top: 8, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <Tooltip labelFormatter={(_, payload) => payload?.[0]?.payload?.day || ''} />
-                  <Legend />
-                  <Bar dataKey="audits" name="Audits" fill="#16a34a" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="tickets" name="Generated tickets" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* All-template analytics table */}
-          <Card className="border border-slate-200 shadow-sm">
-            <CardHeader className="pb-2 pt-5 px-5">
-              <p className="font-bold text-slate-800 flex items-center gap-2"><Ticket className="w-4 h-4 text-[#1fd655]" /> All Template Analytics</p>
-            </CardHeader>
-            <CardContent className="px-0 pb-4">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b border-slate-100 bg-slate-50">
-                    {['Rank', 'Template', 'Average', 'Audits', 'Pass', 'Fail', 'Pass rate', 'NO findings', 'Tickets'].map(header => <th key={header} className={`${header === 'Template' ? 'text-left' : 'text-center'} px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600`}>{header}</th>)}
-                  </tr></thead>
-                  <tbody>{templateRows.map((row, index) => <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-4 py-3 text-center font-semibold text-slate-500">{index + 1}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{row.title}</td>
-                    <td className="px-4 py-3 text-center"><ScoreBadge score={row.avg} /></td>
-                    <td className="px-4 py-3 text-center">{row.audits}</td>
-                    <td className="px-4 py-3 text-center text-green-600">{row.passing}</td>
-                    <td className="px-4 py-3 text-center text-red-600">{row.failing}</td>
-                    <td className="px-4 py-3 text-center">{row.passRate.toFixed(1)}%</td>
-                    <td className="px-4 py-3 text-center text-amber-600">{row.noFindings}</td>
-                    <td className="px-4 py-3 text-center font-semibold text-violet-600">{row.tickets}</td>
-                  </tr>)}</tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Daily summary table */}
-          <Card className="border border-slate-200 shadow-sm">
-            <CardHeader className="pb-2 pt-5 px-5"><p className="font-bold text-slate-800">Daily Summary</p></CardHeader>
-            <CardContent className="px-0 pb-4">
-              <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead><tr className="border-b border-slate-100 bg-slate-50">
-                  {['Business date', 'Average', 'Audits', 'Pass', 'Fail', 'NO findings', 'Tickets'].map(header => <th key={header} className={`${header === 'Business date' ? 'text-left' : 'text-center'} px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600`}>{header}</th>)}
-                </tr></thead>
-                <tbody>{[...dailyRows].reverse().map(row => <tr key={row.day} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-semibold text-slate-800">{moment(row.day, 'YYYY-MM-DD').format('MMM D, YYYY')}</td>
-                  <td className="px-4 py-3 text-center"><ScoreBadge score={row.avg} /></td>
-                  <td className="px-4 py-3 text-center">{row.audits}</td>
-                  <td className="px-4 py-3 text-center text-green-600">{row.passing}</td>
-                  <td className="px-4 py-3 text-center text-red-600">{row.failing}</td>
-                  <td className="px-4 py-3 text-center text-amber-600">{row.noFindings}</td>
-                  <td className="px-4 py-3 text-center font-semibold text-violet-600">{row.tickets}</td>
-                </tr>)}</tbody>
-              </table></div>
-            </CardContent>
-          </Card>
+          )}
 
           {/* Score Trend Chart */}
           {trendData.length > 1 && (
@@ -884,7 +896,8 @@ export default function AuditDashboard() {
             </Card>
           )}
 
-          {/* Per-store Bar Chart */}
+          {/* Per-store Bar Chart (Average Score by Store) — hidden per request, restore by removing the `false &&` guard */}
+          {false && (
           <Card className="border border-slate-200 shadow-sm">
             <CardHeader className="pb-2 pt-5 px-5">
               <p className="font-bold text-slate-800 flex items-center gap-2"><Store className="w-4 h-4 text-[#1fd655]" /> Average Score by Store</p>
@@ -906,6 +919,7 @@ export default function AuditDashboard() {
               </ResponsiveContainer>
             </CardContent>
           </Card>
+          )}
 
           {/* Detailed Store Table */}
           <Card className="border border-slate-200 shadow-sm">
