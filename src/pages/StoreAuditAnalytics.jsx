@@ -69,8 +69,6 @@ export default function StoreAuditAnalytics() {
   const today = moment().utcOffset(8).format('YYYY-MM-DD');
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
-  const [auditDateFrom, setAuditDateFrom] = useState('');
-  const [auditDateTo, setAuditDateTo] = useState('');
   const [selectedSubmission, setSelectedSubmission] = useState(null);
 const submissionDetailRef = useRef(null);
 const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
@@ -178,17 +176,17 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
   const handleSelectAll = () => persistConfig(completionTemplates.map(t => t.id));
   const handleClearAll = () => persistConfig([]);
 
-  useEffect(() => { setPage(1); }, [storeSubmissions.length, pageSize, selectedStore, auditDateFrom, auditDateTo]);
+  useEffect(() => { setPage(1); }, [storeSubmissions.length, pageSize, selectedStore, dateFrom, dateTo]);
 
-  // Recent Audits filtered by the audit date range (empty = no restriction)
+  // Recent Audits filtered by the shared date range (empty = no restriction)
   const recentAudits = useMemo(() => {
     return storeSubmissions.filter(s => {
       const k = auditBusinessDayKey(s);
-      if (auditDateFrom && k < auditDateFrom) return false;
-      if (auditDateTo && k > auditDateTo) return false;
+      if (dateFrom && k < dateFrom) return false;
+      if (dateTo && k > dateTo) return false;
       return true;
     });
-  }, [storeSubmissions, auditDateFrom, auditDateTo]);
+  }, [storeSubmissions, dateFrom, dateTo]);
 
   const handleExportExcel = () => {
     const sheets = [
@@ -450,6 +448,22 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
               </Select>
             </div>
           )}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">From</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={e => setDateFrom(e.target.value)}
+              className="h-9 px-2 py-1 text-sm rounded-md border border-slate-200 bg-white text-slate-700"
+            />
+            <span className="text-xs text-slate-400">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={e => setDateTo(e.target.value)}
+              className="h-9 px-2 py-1 text-sm rounded-md border border-slate-200 bg-white text-slate-700"
+            />
+          </div>
           <ExcelExportButton onClick={handleExportExcel} disabled={storeSubmissions.length === 0} />
         </div>
       </div>
@@ -536,8 +550,6 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
             submissions={storeSubmissions}
             dateFrom={dateFrom}
             dateTo={dateTo}
-            onDateFromChange={setDateFrom}
-            onDateToChange={setDateTo}
             isAdmin={isAdmin}
             selectedIds={selectedIds}
             onToggle={handleToggle}
@@ -603,27 +615,6 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
               <div className="flex items-center gap-3">
                 <p className="font-bold text-slate-800">Recent Audits</p>
                 <p className="text-xs text-slate-400">{recentAudits.length} total</p>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Date Range</span>
-                <input
-                  type="date"
-                  value={auditDateFrom}
-                  onChange={e => setAuditDateFrom(e.target.value)}
-                  className="h-9 px-2 py-1 text-sm rounded-md border border-slate-200 bg-white text-slate-700"
-                />
-                <span className="text-xs text-slate-400">to</span>
-                <input
-                  type="date"
-                  value={auditDateTo}
-                  onChange={e => setAuditDateTo(e.target.value)}
-                  className="h-9 px-2 py-1 text-sm rounded-md border border-slate-200 bg-white text-slate-700"
-                />
-                {(auditDateFrom || auditDateTo) && (
-                  <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={() => { setAuditDateFrom(''); setAuditDateTo(''); }}>
-                    Clear
-                  </Button>
-                )}
               </div>
             </CardHeader>
             <CardContent className="px-0 pb-4">
