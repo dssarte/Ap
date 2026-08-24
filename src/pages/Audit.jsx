@@ -187,9 +187,30 @@ export default function Audit() {
       ? allSubmissions.filter(sub => effectiveStores.some(name => sub.brand?.includes(name)))
       : allSubmissions.filter(sub => sub.submitted_by_email === user?.email);
 
+  // History tab: the newest-200 batch above can't reliably cover an
+  // arbitrary picked date range once daily volume grows past 200 (an admin's
+  // company-wide feed fills up with just today long before older days show
+  // up) — so once both ends of the range are picked, fetch that date window
+  // directly from the server instead of filtering the small recent batch.
+  const historyRangeSelected = view === 'history' && !!historyDateFrom && !!historyDateTo;
+  const { data: historySubmissions = [], isLoading: loadingHistorySubmissions } = useQuery({
+    queryKey: ['audit-submissions-history', isAdmin, effectiveStores.join(','), user?.email, historyDateFrom, historyDateTo],
+    queryFn: () => {
+      if (isAdmin) return base44.audit.listSubmissions({ dateFrom: historyDateFrom, dateTo: historyDateTo, maxRows: 5000 });
+      if (effectiveStores.length > 0) return base44.audit.listSubmissions({ dateFrom: historyDateFrom, dateTo: historyDateTo, stores: effectiveStores, maxRows: 5000 });
+      return base44.entities.AuditSubmission.filter({ submitted_by_email: user.email }, '-created_date', 1000);
+    },
+    enabled: historyRangeSelected,
+  });
+  const historySubmissionsScoped = isAdmin
+    ? historySubmissions
+    : user?.user_type === 'store_manager'
+      ? historySubmissions.filter(sub => effectiveStores.some(name => sub.brand?.includes(name)))
+      : historySubmissions.filter(sub => sub.submitted_by_email === user?.email);
+
   const deleteMutation = useMutation({
     mutationFn: (id) => base44.entities.AuditSubmission.delete(id),
-    onSuccess: () => qc.invalidateQueries(['audit-submissions']),
+    onSuccess: () => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); },
   });
 
   // For store-locked users, a template is "done for today" if their store already has a submission
@@ -369,10 +390,10 @@ export default function Audit() {
                 <p className="text-slate-400">Please select a date range to view audit history.</p>
               </CardContent>
             </Card>
-          ) : loadingSubmissions ? (
+          ) : loadingHistorySubmissions ? (
           <SectionLoadingSkeleton rows={4} label="Loading audit history" />
         ) : (() => {
-            const filtered = submissions.filter(sub => {
+            const filtered = historySubmissionsScoped.filter(sub => {
               const businessDay = auditBusinessDayKey(sub);
               const inRange = businessDay >= historyDateFrom && businessDay <= historyDateTo;
               const matchesStore = !historyStoreFilter || (sub.brand || '').includes(historyStoreFilter);
@@ -428,7 +449,7 @@ export default function Audit() {
           user={user}
           brands={brands}
           stores={stores}
-          onDone={() => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-all']); setView('history'); }}
+          onDone={() => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); qc.invalidateQueries(['audit-submissions-all']); setView('history'); }}
           onCancel={() => setView('list')}
         />
       )}
@@ -441,7 +462,7 @@ export default function Audit() {
           brands={brands}
           stores={stores}
           existingSubmission={selectedSubmission}
-          onDone={() => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-all']); setView('history'); }}
+          onDone={() => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); qc.invalidateQueries(['audit-submissions-all']); setView('history'); }}
           onCancel={() => setView('history')}
         />
       )}
