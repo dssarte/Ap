@@ -5,7 +5,7 @@ import { queryClientInstance } from '@/lib/query-client';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, TrendingUp, TrendingDown, Minus, ClipboardCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight, FileText } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, ClipboardCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight, FileText, AlertTriangle } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell
@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useEffect } from 'react';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
+import NoAnswerTracker from '@/components/audit/NoAnswerTracker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
@@ -29,11 +30,42 @@ function ScoreBadge({ score }) {
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${cls}`}>{score.toFixed(1)}%</span>;
 }
 
+// A NO item can recur dozens of times over a date range — showing every
+// occurrence inline blows up the row height, so collapse it to a count with
+// a click-to-expand panel listing them all.
+function DateOccurrencesBadge({ labels }) {
+  const [open, setOpen] = useState(false);
+  if (!labels?.length) return <span className="text-slate-400">—</span>;
+  if (labels.length === 1) return <span className="whitespace-nowrap">{labels[0]}</span>;
+
+  return (
+    <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 whitespace-nowrap"
+      >
+        {labels.length} dates
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-56 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-xs leading-5 text-slate-600 shadow-lg">
+          {labels.map((label, i) => (
+            <div key={i} className="whitespace-nowrap">{label}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StoreAuditAnalytics() {
   const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [selectedStore, setSelectedStore] = useState('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [dailySummaryPage, setDailySummaryPage] = useState(1);
+  const [dailySummaryPageSize, setDailySummaryPageSize] = useState(10);
   const today = moment().utcOffset(8).format('YYYY-MM-DD');
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -44,7 +76,7 @@ const submissionDetailRef = useRef(null);
 const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
 
   useEffect(() => {
-    base44.auth.me().then(setUser).catch(() => {});
+    base44.auth.me().then(setUser).catch(() => {}).finally(() => setAuthLoading(false));
   }, []);
 
   const storeNames = useMemo(() => {
@@ -75,11 +107,33 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
     return submissions.filter(s => s.brand && activeStores.some(name => s.brand.includes(name)) && s.score != null);
   }, [submissions, storeNames, selectedStore]);
 
-  // All active templates available for checklist completion tracking
+  // All active templates available for checklist completion tracking. Kept
+  // as full rows (not column-trimmed) — SubmissionDetail's modal reads
+  // template.sections off this same list to render a submission's checklist.
   const { data: allTemplates = [] } = useQuery({
     queryKey: ['audit-templates-active-analytics'],
     queryFn: () => base44.entities.AuditTemplate.filter({ is_active: true }, '-created_date', 100),
     enabled: storeNames.length > 0,
+  });
+
+  // Template definitions for resolving NO-answer item labels — scoped to just
+  // the templates this store's submissions actually used, instead of every
+  // template (with full sections/items) ever created across the whole app.
+  const submissionTemplateIds = useMemo(
+    () => [...new Set(submissions.map(s => s.template_id).filter(Boolean))],
+    [submissions]
+  );
+  const { data: templateDefinitions = [] } = useQuery({
+    queryKey: ['audit-template-definitions-store-analytics', submissionTemplateIds.join(',')],
+    queryFn: () => base44.entities.AuditTemplate.filter({ id: submissionTemplateIds }, 'title', 500),
+    enabled: submissionTemplateIds.length > 0,
+  });
+
+  // Tickets generated from this store's audits, for the Daily Summary table
+  const { data: generatedTickets = [] } = useQuery({
+    queryKey: ['audit-generated-tickets-store-analytics', dateFrom, dateTo],
+    queryFn: () => base44.audit.listGeneratedTickets({ dateFrom, dateTo, maxRows: 25000 }),
+    enabled: storeNames.length > 0 && !!dateFrom && !!dateTo,
   });
 
   // Global checklist completion config (admin-controlled, shared across all store users)
@@ -194,6 +248,133 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
     });
   }, [storeSubmissions, dateFrom, dateTo]);
 
+  // Resolve checklist item ids to their section/label for NO-answer grouping
+  const auditItemLookup = useMemo(() => {
+    const lookup = new Map();
+    templateDefinitions.forEach(template => {
+      (template.sections || []).forEach(section => {
+        (section.items || []).forEach(item => {
+          lookup.set(`${template.id}::${item.id}`, {
+            section: section.title || 'General',
+            item: item.label || item.id || 'Unlabelled checklist item',
+            template: template.title || 'Untitled template',
+          });
+        });
+      });
+    });
+    return lookup;
+  }, [templateDefinitions]);
+
+  // Rank every individual checklist item marked NO, combining identically named
+  // items in the same section across templates
+  const noItemRows = useMemo(() => {
+    const groups = new Map();
+    rangeSubmissions.forEach(submission => {
+      Object.entries(submission.answers || {}).forEach(([itemId, answer]) => {
+        if (String(answer || '').trim().toUpperCase() !== 'NO') return;
+
+        const definition = auditItemLookup.get(`${submission.template_id}::${itemId}`) || {
+          section: 'Unmapped section',
+          item: itemId || 'Unlabelled checklist item',
+          template: submission.template_title || 'Untitled template',
+        };
+        const section = String(definition.section || 'General').trim();
+        const item = String(definition.item || itemId || 'Unlabelled checklist item').trim();
+        const groupKey = `${section.toLocaleLowerCase()}::${item.toLocaleLowerCase()}`;
+        const group = groups.get(groupKey) || {
+          id: groupKey,
+          section,
+          item,
+          label: `${section} — ${item}`,
+          count: 0,
+          stores: new Map(),
+          templates: new Set(),
+          occurrences: [],
+        };
+        const storeName = submission.brand || 'Unknown store';
+        group.count += 1;
+        group.stores.set(storeName, (group.stores.get(storeName) || 0) + 1);
+        group.templates.add(definition.template || submission.template_title || 'Untitled template');
+        group.occurrences.push(moment(submission.submission_date || submission.created_date));
+        groups.set(groupKey, group);
+      });
+    });
+
+    return Array.from(groups.values())
+      .map(group => {
+        const storeEntries = Array.from(group.stores.entries())
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        const dateLabels = group.occurrences
+          .slice()
+          .sort((a, b) => a.valueOf() - b.valueOf())
+          .map(m => m.format('MMM D, YYYY, h:mm A'));
+        return {
+          ...group,
+          storeCount: storeEntries.length,
+          storeSummary: storeEntries.map(([store, count]) => `${store} (${count})`).join(', '),
+          templateSummary: Array.from(group.templates).sort().join(', '),
+          dateLabels,
+        };
+      })
+      .sort((a, b) => b.count - a.count || b.storeCount - a.storeCount || a.label.localeCompare(b.label));
+  }, [rangeSubmissions, auditItemLookup]);
+
+  const topNoItem = noItemRows[0] || null;
+  const topNoItemChartRows = noItemRows.slice(0, 15);
+
+  // Per-day rollup: score/pass/fail/NO-findings/ticket totals for the Daily Summary table and trend
+  const dailyRows = useMemo(() => {
+    const groups = new Map();
+    rangeSubmissions.forEach(submission => {
+      const day = auditBusinessDayKey(submission);
+      if (!day) return;
+      const group = groups.get(day) || { day, scores: [], audits: 0, passing: 0, failing: 0, noFindings: 0, tickets: 0 };
+      const score = Number(submission.score);
+      if (Number.isFinite(score)) group.scores.push(score);
+      group.audits += 1;
+      if (score >= PASS_THRESHOLD) group.passing += 1;
+      else group.failing += 1;
+      group.noFindings += Number(submission.no_count || 0);
+      groups.set(day, group);
+    });
+
+    const submissionDay = new Map(rangeSubmissions.map(submission => [submission.id, auditBusinessDayKey(submission)]));
+    generatedTickets.forEach(ticket => {
+      const day = submissionDay.get(ticket.audit_submission_id);
+      const group = groups.get(day);
+      if (group) group.tickets += 1;
+    });
+
+    return Array.from(groups.values())
+      .map(group => ({
+        ...group,
+        avg: group.scores.length
+          ? group.scores.reduce((total, score) => total + score, 0) / group.scores.length
+          : null,
+        label: moment(group.day, 'YYYY-MM-DD').format('MMM D'),
+      }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+  }, [rangeSubmissions, generatedTickets]);
+
+  const dailySummaryRowsDesc = useMemo(() => [...dailyRows].reverse(), [dailyRows]);
+  const dailySummaryTotalPages = Math.max(1, Math.ceil(dailySummaryRowsDesc.length / dailySummaryPageSize));
+  const pagedDailySummaryRows = useMemo(() => {
+    const start = (dailySummaryPage - 1) * dailySummaryPageSize;
+    return dailySummaryRowsDesc.slice(start, start + dailySummaryPageSize);
+  }, [dailySummaryRowsDesc, dailySummaryPage, dailySummaryPageSize]);
+  useEffect(() => { setDailySummaryPage(1); }, [dailyRows.length, dailySummaryPageSize]);
+
+  const noTrend = useMemo(() => {
+    const total = dailyRows.reduce((sum, row) => sum + row.noFindings, 0);
+    if (dailyRows.length < 2) return { direction: 'stable', delta: 0, total };
+    const midpoint = Math.ceil(dailyRows.length / 2);
+    const average = rows => rows.length ? rows.reduce((sum, row) => sum + row.noFindings, 0) / rows.length : 0;
+    const earlyAverage = average(dailyRows.slice(0, midpoint));
+    const recentAverage = average(dailyRows.slice(midpoint));
+    const delta = recentAverage - earlyAverage;
+    return { total, delta, direction: delta > 0.5 ? 'rising' : delta < -0.5 ? 'falling' : 'stable' };
+  }, [dailyRows]);
+
   // Per-template averages, scoped to the selected date range
   const templateScores = useMemo(() => {
     const groups = {};
@@ -273,7 +454,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
         </div>
       </div>
 
-      {isLoading ? (
+      {authLoading || isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : storeSubmissions.length === 0 ? (
         <Card className="border-2 border-dashed border-slate-200">
@@ -315,6 +496,36 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Failing</p>
                 <p className="text-3xl font-extrabold text-red-600">{stats.failing}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* NO findings headline analytics */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="border border-red-200 bg-red-50/60 shadow-sm">
+              <CardContent className="p-5">
+                <p className="text-xs font-bold uppercase tracking-wide text-red-700">Total NO findings</p>
+                <p className="mt-2 text-3xl font-extrabold text-red-700">{noTrend.total}</p>
+                <p className="mt-1 text-xs text-slate-500">Across all templates in the selected date range</p>
+              </CardContent>
+            </Card>
+            <Card className="border border-orange-200 bg-orange-50/60 shadow-sm">
+              <CardContent className="p-5">
+                <p className="text-xs font-bold uppercase tracking-wide text-orange-700">Top NO checklist item</p>
+                <p className="mt-2 line-clamp-2 text-lg font-bold text-slate-900">{topNoItem?.label || 'No NO findings'}</p>
+                <p className="mt-1 text-sm text-slate-600">{topNoItem ? `${topNoItem.count} NO · ${topNoItem.storeCount} affected store${topNoItem.storeCount !== 1 ? 's' : ''}` : '—'}</p>
+              </CardContent>
+            </Card>
+            <Card className={`border shadow-sm ${noTrend.direction === 'rising' ? 'border-red-200 bg-red-50/60' : noTrend.direction === 'falling' ? 'border-green-200 bg-green-50/60' : 'border-slate-200 bg-slate-50/60'}`}>
+              <CardContent className="flex items-center gap-4 p-5">
+                <div className={`rounded-xl p-3 ${noTrend.direction === 'rising' ? 'bg-red-100' : noTrend.direction === 'falling' ? 'bg-green-100' : 'bg-slate-200'}`}>
+                  {noTrend.direction === 'rising' ? <TrendingUp className="h-6 w-6 text-red-700" /> : noTrend.direction === 'falling' ? <TrendingDown className="h-6 w-6 text-green-700" /> : <Minus className="h-6 w-6 text-slate-600" />}
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-600">All-NO trend</p>
+                  <p className={`mt-1 text-xl font-extrabold capitalize ${noTrend.direction === 'rising' ? 'text-red-700' : noTrend.direction === 'falling' ? 'text-green-700' : 'text-slate-700'}`}>{noTrend.direction}</p>
+                  <p className="mt-1 text-xs text-slate-500">{dailyRows.length > 1 ? `${noTrend.delta >= 0 ? '+' : ''}${noTrend.delta.toFixed(1)} average NO per day` : 'Select multiple dates to calculate direction'}</p>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -494,6 +705,126 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
               </div>
             </CardContent>
           </Card>
+
+          {/* Daily Summary */}
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader className="pb-2 pt-5 px-5"><p className="font-bold text-slate-800">Daily Summary</p></CardHeader>
+            <CardContent className="px-0 pb-4">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead><tr className="border-b border-slate-100 bg-slate-50">
+                  {['Business date', 'Average', 'Audits', 'Pass', 'Fail', 'NO findings', 'Tickets'].map(header => <th key={header} className={`${header === 'Business date' ? 'text-left' : 'text-center'} px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600`}>{header}</th>)}
+                </tr></thead>
+                <tbody>{pagedDailySummaryRows.length === 0 ? (
+                  <tr><td colSpan={7} className="text-center px-4 py-6 text-slate-400">No data for this range.</td></tr>
+                ) : pagedDailySummaryRows.map(row => <tr key={row.day} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-3 font-semibold text-slate-800">{moment(row.day, 'YYYY-MM-DD').format('MMM D, YYYY')}</td>
+                  <td className="px-4 py-3 text-center"><ScoreBadge score={row.avg} /></td>
+                  <td className="px-4 py-3 text-center">{row.audits}</td>
+                  <td className="px-4 py-3 text-center text-green-600">{row.passing}</td>
+                  <td className="px-4 py-3 text-center text-red-600">{row.failing}</td>
+                  <td className="px-4 py-3 text-center text-amber-600">{row.noFindings}</td>
+                  <td className="px-4 py-3 text-center font-semibold text-violet-600">{row.tickets}</td>
+                </tr>)}</tbody>
+              </table></div>
+              <div className="flex items-center justify-between px-5 pt-4 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Show</span>
+                  <Select value={String(dailySummaryPageSize)} onValueChange={v => setDailySummaryPageSize(Number(v))}>
+                    <SelectTrigger className="h-8 w-[70px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAGE_SIZE_OPTIONS.map(opt => (
+                        <SelectItem key={opt} value={String(opt)}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {dailySummaryTotalPages > 1 && (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-slate-500">Page {dailySummaryPage} of {dailySummaryTotalPages}</p>
+                    <Button variant="outline" size="sm" onClick={() => setDailySummaryPage(p => Math.max(1, p - 1))} disabled={dailySummaryPage === 1}>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setDailySummaryPage(p => Math.min(dailySummaryTotalPages, p + 1))} disabled={dailySummaryPage === dailySummaryTotalPages}>
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Individual checklist-item NO analysis */}
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader className="pb-2 pt-5 px-5">
+              <p className="font-bold text-slate-800 flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-red-500" /> Top NO Findings by Checklist Item</p>
+              <p className="text-xs text-slate-500">The chart shows the top 15; the complete ranked list and every affected store appear below.</p>
+            </CardHeader>
+            <CardContent className="px-2 pb-5">
+              {topNoItemChartRows.length ? (
+                <ResponsiveContainer width="100%" height={Math.max(300, topNoItemChartRows.length * 42)}>
+                  <BarChart data={topNoItemChartRows} layout="vertical" margin={{ left: 12, right: 42 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="label" width={210} tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      formatter={(value) => [value, 'NO findings']}
+                      labelFormatter={(_, payload) => {
+                        const row = payload?.[0]?.payload;
+                        return row ? `${row.label} · ${row.storeCount} affected store${row.storeCount !== 1 ? 's' : ''}` : '';
+                      }}
+                    />
+                    <Bar dataKey="count" name="NO findings" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11 }}>
+                      {topNoItemChartRows.map((row, index) => <Cell key={row.id} fill={index === 0 ? '#dc2626' : index < 5 ? '#f97316' : '#f59e0b'} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="py-12 text-center text-sm text-slate-400">No checklist items were marked NO for your store.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader className="pb-2 pt-5 px-5">
+              <p className="font-bold text-slate-800">Complete Checklist Item NO Summary</p>
+              <p className="text-xs text-slate-500">All NO answers in the selected date range, with total occurrences and affected stores.</p>
+            </CardHeader>
+            <CardContent className="px-0 pb-4">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1150px] text-sm">
+                  <thead><tr className="border-b border-slate-100 bg-slate-50">
+                    {['Rank', 'Date', 'Area / Section', 'Checklist Item', 'Template', 'Total NO', 'Stores', 'Store Breakdown'].map(header => (
+                      <th key={header} className={`${['Area / Section', 'Checklist Item', 'Template', 'Store Breakdown'].includes(header) ? 'text-left' : 'text-center'} px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600`}>{header}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {noItemRows.map((row, index) => (
+                      <tr key={row.id} className="border-b border-slate-100 align-top hover:bg-slate-50">
+                        <td className="px-4 py-3 text-center font-semibold text-slate-500">{index + 1}</td>
+                        <td className="px-4 py-3 text-center text-slate-600">
+                          <DateOccurrencesBadge labels={row.dateLabels} />
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-700">{row.section}</td>
+                        <td className="px-4 py-3 font-bold text-slate-900">{row.item}</td>
+                        <td className="max-w-[240px] px-4 py-3 text-slate-600">{row.templateSummary}</td>
+                        <td className="px-4 py-3 text-center text-lg font-extrabold text-red-600">{row.count}</td>
+                        <td className="px-4 py-3 text-center font-semibold text-slate-700">{row.storeCount}</td>
+                        <td className="min-w-[320px] px-4 py-3 leading-6 text-slate-600">{row.storeSummary}</td>
+                      </tr>
+                    ))}
+                    {!noItemRows.length && (
+                      <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-400">No checklist items were marked NO for your store.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* NO Answer Tracker */}
+          <NoAnswerTracker allowedStores={storeNames} showFilters={false} />
         </>
       )}
       <Dialog open={!!selectedSubmission} onOpenChange={(open) => { if (!open) setSelectedSubmission(null); }}>

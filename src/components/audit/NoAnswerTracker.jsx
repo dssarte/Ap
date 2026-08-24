@@ -18,11 +18,11 @@ function AnswerBadge({ value }) {
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${cls}`}>{value === 'NA' ? 'N/A' : value}</span>;
 }
 
-export default function NoAnswerTracker({ allowedStores = null }) {
+export default function NoAnswerTracker({ allowedStores = null, showFilters = true, initialDateFrom = null, initialDateTo = null }) {
   const [selectedBrandId, setSelectedBrandId] = useState('all');
   const [selectedStore, setSelectedStore] = useState('all');
-  const [dateFrom, setDateFrom] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
-  const [dateTo, setDateTo] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
+  const [dateFrom, setDateFrom] = useState(() => initialDateFrom || moment().utcOffset(8).format('YYYY-MM-DD'));
+  const [dateTo, setDateTo] = useState(() => initialDateTo || moment().utcOffset(8).format('YYYY-MM-DD'));
 
   const { data: submissions = [], isLoading } = useQuery({
     queryKey: ['audit-submissions-no-tracker', dateFrom, dateTo, allowedStores?.join('|') || 'all'],
@@ -171,24 +171,28 @@ export default function NoAnswerTracker({ allowedStores = null }) {
       </CardHeader>
       <CardContent className="px-5 pb-5 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          <Select value={selectedBrandId} onValueChange={setSelectedBrandId}>
-            <SelectTrigger className="w-48 h-9">
-              <SelectValue placeholder="Select brand..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Brands</SelectItem>
-              {brands.map(b => <SelectItem key={b.id} value={b.id}>{b.brand_name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={selectedStore} onValueChange={setSelectedStore}>
-            <SelectTrigger className="w-64 h-9">
-              <SelectValue placeholder="Select store..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Stores</SelectItem>
-              {stores.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {showFilters && (
+            <>
+              <Select value={selectedBrandId} onValueChange={setSelectedBrandId}>
+                <SelectTrigger className="w-48 h-9">
+                  <SelectValue placeholder="Select brand..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Brands</SelectItem>
+                  {brands.map(b => <SelectItem key={b.id} value={b.id}>{b.brand_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={selectedStore} onValueChange={setSelectedStore}>
+                <SelectTrigger className="w-64 h-9">
+                  <SelectValue placeholder="Select store..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Stores</SelectItem>
+                  {stores.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </>
+          )}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
               className="border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-[#1fd655]" />
