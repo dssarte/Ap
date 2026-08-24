@@ -13,6 +13,26 @@ import FeedbackModal from "@/components/tickets/FeedbackModal";
 import { SectionLoadingSkeleton, FeedbackBanner } from '@/components/PageState';
 import { groupDuplicateTickets } from '@/lib/duplicateTickets';
 
+// Caps how many page-number buttons render at once (plus ellipses) so the
+// pagination bar doesn't shrink/wrap when there are dozens of pages —
+// always shows the first and last page, with a window around the current one.
+function getPageNumbers(current, total, maxVisible = 7) {
+  if (total <= maxVisible) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const pages = [1];
+  const windowSize = maxVisible - 2; // reserve slots for the first and last page
+  let start = Math.max(2, current - Math.floor(windowSize / 2));
+  let end = Math.min(total - 1, start + windowSize - 1);
+  start = Math.max(2, end - windowSize + 1);
+
+  if (start > 2) pages.push('ellipsis-start');
+  for (let p = start; p <= end; p++) pages.push(p);
+  if (end < total - 1) pages.push('ellipsis-end');
+  pages.push(total);
+
+  return pages;
+}
+
 export default function Home() {
   const [user, setUser] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -395,16 +415,20 @@ export default function Home() {
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                  <Button
-                    key={page}
-                    variant={currentPage === page ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => setCurrentPage(page)}
-                    className={currentPage === page ? 'bg-emerald-700 text-white hover:bg-emerald-800' : ''}
-                  >
-                    {page}
-                  </Button>
+                {getPageNumbers(currentPage, totalPages).map((page, i) => (
+                  typeof page === 'number' ? (
+                    <Button
+                      key={page}
+                      variant={currentPage === page ? 'default' : 'outline'}
+                      size="icon"
+                      onClick={() => setCurrentPage(page)}
+                      className={currentPage === page ? 'bg-emerald-700 text-white hover:bg-emerald-800' : ''}
+                    >
+                      {page}
+                    </Button>
+                  ) : (
+                    <span key={page + i} className="px-1 text-slate-400 select-none">…</span>
+                  )
                 ))}
                 <Button
                   variant="outline"
