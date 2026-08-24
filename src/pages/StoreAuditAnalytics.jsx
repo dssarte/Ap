@@ -30,11 +30,42 @@ function ScoreBadge({ score }) {
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${cls}`}>{score.toFixed(1)}%</span>;
 }
 
+// A NO item can recur dozens of times over a date range — showing every
+// occurrence inline blows up the row height, so collapse it to a count with
+// a click-to-expand panel listing them all.
+function DateOccurrencesBadge({ labels }) {
+  const [open, setOpen] = useState(false);
+  if (!labels?.length) return <span className="text-slate-400">—</span>;
+  if (labels.length === 1) return <span className="whitespace-nowrap">{labels[0]}</span>;
+
+  return (
+    <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 whitespace-nowrap"
+      >
+        {labels.length} dates
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-56 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-xs leading-5 text-slate-600 shadow-lg">
+          {labels.map((label, i) => (
+            <div key={i} className="whitespace-nowrap">{label}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StoreAuditAnalytics() {
   const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [selectedStore, setSelectedStore] = useState('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [dailySummaryPage, setDailySummaryPage] = useState(1);
+  const [dailySummaryPageSize, setDailySummaryPageSize] = useState(10);
   const today = moment().utcOffset(8).format('YYYY-MM-DD');
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -45,7 +76,7 @@ const submissionDetailRef = useRef(null);
 const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
 
   useEffect(() => {
-    base44.auth.me().then(setUser).catch(() => {});
+    base44.auth.me().then(setUser).catch(() => {}).finally(() => setAuthLoading(false));
   }, []);
 
   const storeNames = useMemo(() => {
@@ -76,18 +107,26 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
     return submissions.filter(s => s.brand && activeStores.some(name => s.brand.includes(name)) && s.score != null);
   }, [submissions, storeNames, selectedStore]);
 
-  // All active templates available for checklist completion tracking
+  // All active templates available for checklist completion tracking. Kept
+  // as full rows (not column-trimmed) — SubmissionDetail's modal reads
+  // template.sections off this same list to render a submission's checklist.
   const { data: allTemplates = [] } = useQuery({
     queryKey: ['audit-templates-active-analytics'],
     queryFn: () => base44.entities.AuditTemplate.filter({ is_active: true }, '-created_date', 100),
     enabled: storeNames.length > 0,
   });
 
-  // Full template definitions (including inactive) for resolving NO-answer item labels
+  // Template definitions for resolving NO-answer item labels — scoped to just
+  // the templates this store's submissions actually used, instead of every
+  // template (with full sections/items) ever created across the whole app.
+  const submissionTemplateIds = useMemo(
+    () => [...new Set(submissions.map(s => s.template_id).filter(Boolean))],
+    [submissions]
+  );
   const { data: templateDefinitions = [] } = useQuery({
-    queryKey: ['audit-template-definitions-store-analytics'],
-    queryFn: () => base44.entities.AuditTemplate.list('title', 500),
-    enabled: storeNames.length > 0,
+    queryKey: ['audit-template-definitions-store-analytics', submissionTemplateIds.join(',')],
+    queryFn: () => base44.entities.AuditTemplate.filter({ id: submissionTemplateIds }, 'title', 500),
+    enabled: submissionTemplateIds.length > 0,
   });
 
   // Tickets generated from this store's audits, for the Daily Summary table
@@ -317,6 +356,14 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
       .sort((a, b) => a.day.localeCompare(b.day));
   }, [rangeSubmissions, generatedTickets]);
 
+  const dailySummaryRowsDesc = useMemo(() => [...dailyRows].reverse(), [dailyRows]);
+  const dailySummaryTotalPages = Math.max(1, Math.ceil(dailySummaryRowsDesc.length / dailySummaryPageSize));
+  const pagedDailySummaryRows = useMemo(() => {
+    const start = (dailySummaryPage - 1) * dailySummaryPageSize;
+    return dailySummaryRowsDesc.slice(start, start + dailySummaryPageSize);
+  }, [dailySummaryRowsDesc, dailySummaryPage, dailySummaryPageSize]);
+  useEffect(() => { setDailySummaryPage(1); }, [dailyRows.length, dailySummaryPageSize]);
+
   const noTrend = useMemo(() => {
     const total = dailyRows.reduce((sum, row) => sum + row.noFindings, 0);
     if (dailyRows.length < 2) return { direction: 'stable', delta: 0, total };
@@ -407,7 +454,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
         </div>
       </div>
 
-      {isLoading ? (
+      {authLoading || isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : storeSubmissions.length === 0 ? (
         <Card className="border-2 border-dashed border-slate-200">
@@ -667,7 +714,9 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
                 <thead><tr className="border-b border-slate-100 bg-slate-50">
                   {['Business date', 'Average', 'Audits', 'Pass', 'Fail', 'NO findings', 'Tickets'].map(header => <th key={header} className={`${header === 'Business date' ? 'text-left' : 'text-center'} px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600`}>{header}</th>)}
                 </tr></thead>
-                <tbody>{[...dailyRows].reverse().map(row => <tr key={row.day} className="border-b border-slate-100 hover:bg-slate-50">
+                <tbody>{pagedDailySummaryRows.length === 0 ? (
+                  <tr><td colSpan={7} className="text-center px-4 py-6 text-slate-400">No data for this range.</td></tr>
+                ) : pagedDailySummaryRows.map(row => <tr key={row.day} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="px-4 py-3 font-semibold text-slate-800">{moment(row.day, 'YYYY-MM-DD').format('MMM D, YYYY')}</td>
                   <td className="px-4 py-3 text-center"><ScoreBadge score={row.avg} /></td>
                   <td className="px-4 py-3 text-center">{row.audits}</td>
@@ -677,6 +726,32 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
                   <td className="px-4 py-3 text-center font-semibold text-violet-600">{row.tickets}</td>
                 </tr>)}</tbody>
               </table></div>
+              <div className="flex items-center justify-between px-5 pt-4 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Show</span>
+                  <Select value={String(dailySummaryPageSize)} onValueChange={v => setDailySummaryPageSize(Number(v))}>
+                    <SelectTrigger className="h-8 w-[70px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAGE_SIZE_OPTIONS.map(opt => (
+                        <SelectItem key={opt} value={String(opt)}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {dailySummaryTotalPages > 1 && (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-slate-500">Page {dailySummaryPage} of {dailySummaryTotalPages}</p>
+                    <Button variant="outline" size="sm" onClick={() => setDailySummaryPage(p => Math.max(1, p - 1))} disabled={dailySummaryPage === 1}>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setDailySummaryPage(p => Math.min(dailySummaryTotalPages, p + 1))} disabled={dailySummaryPage === dailySummaryTotalPages}>
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -729,9 +804,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
                       <tr key={row.id} className="border-b border-slate-100 align-top hover:bg-slate-50">
                         <td className="px-4 py-3 text-center font-semibold text-slate-500">{index + 1}</td>
                         <td className="px-4 py-3 text-center text-slate-600">
-                          {row.dateLabels.length ? row.dateLabels.map((label, i) => (
-                            <div key={i} className="whitespace-nowrap">{label}</div>
-                          )) : '—'}
+                          <DateOccurrencesBadge labels={row.dateLabels} />
                         </td>
                         <td className="px-4 py-3 font-semibold text-slate-700">{row.section}</td>
                         <td className="px-4 py-3 font-bold text-slate-900">{row.item}</td>
