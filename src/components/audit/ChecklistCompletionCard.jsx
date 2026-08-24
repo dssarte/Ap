@@ -12,8 +12,6 @@ export default function ChecklistCompletionCard({
   submissions,
   dateFrom,
   dateTo,
-  onDateFromChange,
-  onDateToChange,
   isAdmin = false,
   selectedIds = [],
   onToggle,
@@ -72,6 +70,7 @@ export default function ChecklistCompletionCard({
           <CalendarCheck className="w-4 h-4 text-[#1fd655]" /> Checklist Completion Rate
         </p>
         <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-xs text-slate-400">{totalTemplates} checklist{totalTemplates !== 1 ? 's' : ''} required daily</p>
           {showStoreSelector && (
             <div className="flex items-center gap-1.5">
               <Store className="w-3.5 h-3.5 text-slate-400" />
@@ -88,19 +87,6 @@ export default function ChecklistCompletionCard({
               </Select>
             </div>
           )}
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={e => onDateFromChange(e.target.value)}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-[#1fd655]"
-          />
-          <span className="text-slate-400 text-sm">–</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={e => onDateToChange(e.target.value)}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-[#1fd655]"
-          />
           {isAdmin && (
             <Button
               variant="outline"
@@ -147,12 +133,9 @@ export default function ChecklistCompletionCard({
       )}
 
       <CardContent className="px-5 pb-5 space-y-4">
-        <div className="flex items-center gap-4">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Overall Completion</p>
-            <p className={`text-3xl font-extrabold ${overallRate >= 75 ? 'text-green-600' : 'text-red-600'}`}>{overallRate}%</p>
-          </div>
-          <p className="text-xs text-slate-400">{totalTemplates} checklist{totalTemplates !== 1 ? 's' : ''} required daily</p>
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Overall Completion</p>
+          <p className={`text-3xl font-extrabold ${overallRate >= 75 ? 'text-green-600' : 'text-red-600'}`}>{overallRate}%</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
