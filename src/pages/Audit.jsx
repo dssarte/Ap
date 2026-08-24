@@ -163,9 +163,18 @@ export default function Audit() {
     enabled: !!user,
   });
 
+  // Scoped server-side by role instead of fetching the newest 200 rows across
+  // the ENTIRE table and filtering client-side — that unscoped shape forced
+  // Postgres to walk the whole table checking row-level security for every
+  // row until it found 200 this particular user could see, which got slower
+  // (and eventually timed out) as audit_submissions grew.
   const { data: allSubmissions = [], isLoading: loadingSubmissions } = useQuery({
-    queryKey: ['audit-submissions'],
-    queryFn: () => base44.entities.AuditSubmission.list('-created_date', 200),
+    queryKey: ['audit-submissions', isAdmin, effectiveStores.join(','), user?.email],
+    queryFn: () => {
+      if (isAdmin) return base44.entities.AuditSubmission.list('-created_date', 200);
+      if (effectiveStores.length > 0) return base44.audit.listSubmissions({ stores: effectiveStores, maxRows: 200 });
+      return base44.entities.AuditSubmission.filter({ submitted_by_email: user.email }, '-created_date', 200);
+    },
     enabled: !!user,
   });
 
