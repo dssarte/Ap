@@ -449,7 +449,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
             </div>
           )}
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">From</span>
+            <span className="text-xs text-slate-400">From</span>
             <input
               type="date"
               value={dateFrom}
