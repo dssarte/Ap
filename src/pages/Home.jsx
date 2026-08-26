@@ -109,14 +109,19 @@ export default function Home() {
         return allTickets.filter(t => t.approver_email === user.email);
       }
 
-      // Branch managers see every ticket for their currently assigned stores,
-      // including pending, approved, rejected, resolved, and closed tickets.
+      // Branch managers see every approved-or-further ticket for their
+      // currently assigned stores. Tickets still pending approval stay out
+      // of this list until approved — they surface in the Approval Queue
+      // instead, not the general ticket overview.
       if (user.user_type === 'store_manager') {
         const stores = Array.isArray(user.assigned_stores) ? user.assigned_stores : [];
         if (stores.length === 0) return [];
         const assigned = new Set(stores.map(name => String(name).trim().toLowerCase()));
         const visibleTickets = await base44.entities.Ticket.list('-created_date', 2000);
-        return visibleTickets.filter(ticket => assigned.has(String(ticket.store_name || '').trim().toLowerCase()));
+        return visibleTickets.filter(ticket =>
+          assigned.has(String(ticket.store_name || '').trim().toLowerCase())
+          && ticket.approval_status !== 'pending'
+        );
       }
       
       // Regular user sees all their tickets (including pending approval)

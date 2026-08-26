@@ -106,6 +106,10 @@ export default function UserManager() {
 
   const handleEdit = async (e) => {
     e.preventDefault();
+    if (formData.user_type === 'store_manager' && (formData.assigned_stores || []).length === 0) {
+      toast({ title: "Select a store", description: "Select at least one brand and store for this store manager.", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
       const dept = departments.find(d => d.id === formData.department_id);
@@ -200,6 +204,10 @@ HelpDesk Support Team`
   const handleAddUser = async (e) => {
     e.preventDefault();
     setAddError('');
+    if (addData.user_type === 'store_manager' && addData.assigned_stores.length === 0) {
+      setAddError('Select at least one brand and store for this store manager.');
+      return;
+    }
     setSaving(true);
     try {
       const dept = departments.find(d => d.id === addData.department_id);
@@ -394,7 +402,17 @@ HelpDesk Support Team`
                 </div>
                 <div className="space-y-1">
                   <Label>User Category *</Label>
-                  <Select value={addData.user_type} onValueChange={(v) => setAddData({ ...addData, user_type: v, is_approver: v === 'department_head' ? addData.is_approver : false })}>
+                  <Select value={addData.user_type} onValueChange={(v) => {
+                    const sodDept = departments.find(d => (d.name || '').trim().toLowerCase() === 'sod');
+                    setAddData({
+                      ...addData,
+                      user_type: v,
+                      is_approver: v === 'department_head' ? addData.is_approver : false,
+                      department_id: v === 'store_manager' ? (sodDept?.id || addData.department_id) : addData.department_id,
+                      brand_id: v === 'department_head' ? '' : addData.brand_id,
+                      store_name: v === 'department_head' ? '' : addData.store_name,
+                    });
+                  }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="user">User</SelectItem>
@@ -421,7 +439,11 @@ HelpDesk Support Team`
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>Department</Label>
-                  <Select value={addData.department_id} onValueChange={(v) => setAddData({ ...addData, department_id: v })}>
+                  <Select
+                    value={addData.department_id}
+                    onValueChange={(v) => setAddData({ ...addData, department_id: v })}
+                    disabled={addData.user_type === 'store_manager'}
+                  >
                     <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
                     <SelectContent>
                       {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
@@ -437,7 +459,7 @@ HelpDesk Support Team`
                   />
                 </div>
               </div>
-              {addData.user_type !== 'store_manager' && <div className="grid grid-cols-2 gap-3">
+              {addData.user_type !== 'store_manager' && addData.user_type !== 'department_head' && <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>Brand</Label>
                   <Select value={addData.brand_id} onValueChange={(v) => setAddData({ ...addData, brand_id: v, store_name: '' })}>
@@ -461,13 +483,14 @@ HelpDesk Support Team`
               </div>}
               {addData.user_type === 'store_manager' && (
                 <div className="space-y-2">
+                  <Label>Brand and Store *</Label>
                   <MultiStoreSelect
                     stores={stores.filter(store => store.is_active !== false)}
                     brands={brands.filter(brand => brand.is_active !== false)}
                     selected={addData.assigned_stores}
                     onChange={(vals) => setAddData({ ...addData, assigned_stores: vals })}
                   />
-                  <p className="text-xs text-slate-500">Only selected active stores are visible in approvals, audits, and analytics. No selection means no operational access.</p>
+                  <p className="text-xs text-slate-500">At least one store is required — it's what routes tickets and audits to this store manager.</p>
                 </div>
               )}
               <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
@@ -625,7 +648,17 @@ HelpDesk Support Team`
                 <Label className="text-slate-900 font-semibold">User Category *</Label>
                 <Select
                   value={formData.user_type}
-                  onValueChange={(value) => setFormData({ ...formData, user_type: value, is_approver: value === 'department_head' ? formData.is_approver : false })}
+                  onValueChange={(value) => {
+                    const sodDept = departments.find(d => (d.name || '').trim().toLowerCase() === 'sod');
+                    setFormData({
+                      ...formData,
+                      user_type: value,
+                      is_approver: value === 'department_head' ? formData.is_approver : false,
+                      department_id: value === 'store_manager' ? (sodDept?.id || formData.department_id) : formData.department_id,
+                      brand_id: value === 'department_head' ? '' : formData.brand_id,
+                      store_name: value === 'department_head' ? '' : formData.store_name,
+                    });
+                  }}
                 >
                   <SelectTrigger className="border-slate-300 h-11">
                     <SelectValue />
@@ -657,6 +690,7 @@ HelpDesk Support Team`
                 <Select
                   value={formData.department_id}
                   onValueChange={(value) => setFormData({ ...formData, department_id: value })}
+                  disabled={formData.user_type === 'store_manager'}
                 >
                   <SelectTrigger className="border-slate-300 h-11">
                     <SelectValue placeholder="Select department" />
@@ -672,7 +706,7 @@ HelpDesk Support Team`
                 )}
               </div>
 
-              {formData.user_type !== 'store_manager' && <>
+              {formData.user_type !== 'store_manager' && formData.user_type !== 'department_head' && <>
               <div className="space-y-2">
                 <Label className="text-slate-900 font-semibold">Brand</Label>
                 <Select
@@ -711,13 +745,14 @@ HelpDesk Support Team`
               </>}
               {formData.user_type === 'store_manager' && (
                 <div className="space-y-2">
+                  <Label className="text-slate-900 font-semibold">Brand and Store *</Label>
                   <MultiStoreSelect
                     stores={stores.filter(store => store.is_active !== false)}
                     brands={brands.filter(brand => brand.is_active !== false)}
                     selected={formData.assigned_stores}
                     onChange={(vals) => setFormData({ ...formData, assigned_stores: vals })}
                   />
-                  <p className="text-xs text-slate-500">Only selected active stores are visible in approvals, audits, and analytics. Leave all stores unselected to remove operational access.</p>
+                  <p className="text-xs text-slate-500">At least one store is required — it's what routes tickets and audits to this store manager.</p>
                 </div>
               )}
               <div className="space-y-2">
