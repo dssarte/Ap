@@ -204,11 +204,12 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
       // instead of into a department head's personal queue.
       const routesToStoreManager = (user.department_name || '').trim().toLowerCase() === 'sod' && !!user.store_name;
 
-      // Store managers already hold approval authority themselves, so their
-      // own tickets skip the approval step entirely (handled below, right
-      // after creation) — no need to look up a department-head approver.
+      // Store managers and department heads already hold approval authority
+      // themselves, so their own tickets skip the approval step entirely
+      // (handled below, right after creation) — no need to look up an approver.
+      const skipsApproval = isBranchManager || user.user_type === 'department_head';
       let approver = { approver_email: '', approver_name: '' };
-      if (!routesToStoreManager && !isBranchManager) {
+      if (!routesToStoreManager && !skipsApproval) {
         try {
           const result = await base44.functions.invoke('findApproverForDepartment', { department_id: user.department_id });
           approver = result.data;
@@ -247,12 +248,13 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
       });
 
       // Every ticket is created pending approval server-side, no exceptions —
-      // store managers hold approval authority themselves, so immediately
-      // self-approve here instead of waiting on someone else's queue. This
-      // reuses the same approval RPC a human approver would trigger, so
-      // department routing (via the ticket's category) stays consistent.
+      // store managers and department heads hold approval authority
+      // themselves, so immediately self-approve here instead of waiting on
+      // someone else's queue. This reuses the same approval RPC a human
+      // approver would trigger, so department routing (via the ticket's
+      // category) stays consistent.
       let finalTicket = newTicket;
-      if (isBranchManager) {
+      if (skipsApproval) {
         try {
           const approvalResult = await base44.tickets.processApproval(newTicket.id, 'approve');
           finalTicket = approvalResult?.ticket || newTicket;
