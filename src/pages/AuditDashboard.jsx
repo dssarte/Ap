@@ -499,7 +499,7 @@ export default function AuditDashboard() {
         <div>
           <p className="app-page-eyebrow">Quality intelligence</p>
           <div>
-            <h1 className="app-page-heading">Audit dashboard</h1>
+            <h1 className="app-page-heading">Audit Dashboard</h1>
             <p className="app-page-description">Store quality performance summary.</p>
           </div>
         </div>

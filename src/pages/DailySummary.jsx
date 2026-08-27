@@ -246,7 +246,7 @@ export default function DailySummary() {
         <div>
           <p className="app-page-eyebrow">Checklist monitoring</p>
           <div>
-            <h1 className="app-page-heading">Daily summary</h1>
+            <h1 className="app-page-heading">Daily Summary</h1>
             <p className="app-page-description">
               {isStoreManager ? `Checklist completion for ${assignedStores.length} linked store${assignedStores.length !== 1 ? 's' : ''}` : 'Checklist completion across all stores'}
             </p>

@@ -145,38 +145,38 @@ export default function Layout({ children, currentPageName }) {
   if (user?.user_type === 'store_manager') {
     if (user.assigned_stores?.length) {
       navItems.push(
-        { name: 'Approval queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null },
-        { name: 'Conduct audit', icon: ClipboardList, page: 'Audit' },
-        { name: 'Store analytics', icon: BarChart3, page: 'StoreAuditAnalytics' },
-        { name: 'Daily summary', icon: CalendarCheck, page: 'DailySummary' },
-        { name: 'Audit dashboard', icon: ClipboardCheck, page: 'AuditDashboard' },
+        { name: 'Approval Queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null },
+        { name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' },
+        { name: 'Store Analytics', icon: BarChart3, page: 'StoreAuditAnalytics' },
+        { name: 'Daily Summary', icon: CalendarCheck, page: 'DailySummary' },
+        { name: 'Audit Dashboard', icon: ClipboardCheck, page: 'AuditDashboard' },
       );
     }
   } else {
-    if (user?.user_type === 'approver') navItems.push({ name: 'Approval queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null });
+    if (user?.user_type === 'approver') navItems.push({ name: 'Approval Queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null });
     if (user?.user_type === 'department_head') {
       navItems.push(
-        { name: 'My tickets', icon: Inbox, page: 'DepartmentDashboard' },
-        { name: 'Department analytics', icon: BarChart3, page: 'DeptAnalytics' },
+        { name: 'My Tickets', icon: Inbox, page: 'DepartmentDashboard' },
+        { name: 'Department Analytics', icon: BarChart3, page: 'DeptAnalytics' },
       );
       if (user.is_approver) {
-        navItems.splice(1, 0, { name: 'Approval queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null });
+        navItems.splice(1, 0, { name: 'Approval Queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null });
       }
     }
-    if (['admin', 'department_head'].includes(user?.user_type)) navItems.push({ name: 'Reports', icon: FileBarChart, page: 'Reports' });
     if (user?.user_type === 'admin') {
       navItems.push(
+        { name: 'Reports', icon: FileBarChart, page: 'Reports' },
         { name: 'Analytics', icon: BarChart3, page: 'Analytics' },
-        { name: 'Daily summary', icon: CalendarCheck, page: 'DailySummary' },
+        { name: 'Daily Summary', icon: CalendarCheck, page: 'DailySummary' },
         { name: 'Administration', icon: Settings, page: 'Admin' },
       );
     }
-    if (isQA || hasAuditAssignments) navItems.push({ name: 'Conduct audit', icon: ClipboardList, page: 'Audit' });
-    if (user?.store_name) navItems.push({ name: 'Store analytics', icon: BarChart3, page: 'StoreAuditAnalytics' });
+    if (isQA || hasAuditAssignments) navItems.push({ name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' });
+    if (user?.store_name) navItems.push({ name: 'Store Analytics', icon: BarChart3, page: 'StoreAuditAnalytics' });
     if (isQA) {
       navItems.push(
-        { name: 'Store ranking', icon: Trophy, page: 'StoreRanking' },
-        { name: 'Audit dashboard', icon: ShieldCheck, page: 'AuditDashboard' },
+        { name: 'Store Ranking', icon: Trophy, page: 'StoreRanking' },
+        { name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' },
       );
     }
   }

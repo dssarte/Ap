@@ -11,6 +11,12 @@ import VolumeChart from '@/components/dept-analytics/VolumeChart';
 import StaffResolutionChart from '@/components/dept-analytics/StaffResolutionChart';
 import CategoryTrendsChart from '@/components/dept-analytics/CategoryTrendsChart';
 import StaffWorkloadTable from '@/components/dept-analytics/StaffWorkloadTable';
+import TicketsByStatus from '@/components/reports/TicketsByStatus';
+import TicketsByPriority from '@/components/reports/TicketsByPriority';
+import TicketsByDepartment from '@/components/reports/TicketsByDepartment';
+import ResolutionTimeByCategory from '@/components/reports/ResolutionTimeByCategory';
+import ExportButton from '@/components/reports/ExportButton';
+import FeedbackInsights from '@/components/dashboard/FeedbackInsights';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 
@@ -74,12 +80,13 @@ export default function DeptAnalytics() {
     enabled: !!user,
   });
 
-  // Tickets for the selected department
+  // Tickets for the selected department — filtered by handling_department_id,
+  // the department currently responsible for the ticket after routing/approval.
   const { data: rawTickets = [], isLoading } = useQuery({
     queryKey: ['analytics-tickets', selectedDept],
     queryFn: () =>
       selectedDept
-        ? base44.entities.Ticket.filter({ department_id: selectedDept }, '-created_date', 2000)
+        ? base44.entities.Ticket.filter({ handling_department_id: selectedDept }, '-created_date', 2000)
         : base44.entities.Ticket.list('-created_date', 2000),
     enabled: !!user && hasAccess,
   });
@@ -200,7 +207,7 @@ export default function DeptAnalytics() {
       <div className="app-page-header">
         <div>
           <p className="app-page-eyebrow">Team performance</p>
-          <h1 className="app-page-heading">Department analytics</h1>
+          <h1 className="app-page-heading">Department Analytics</h1>
           <p className="app-page-description">{activeDeptName}</p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -236,6 +243,7 @@ export default function DeptAnalytics() {
           <Badge className="bg-[#1fd655]/10 text-slate-700 border border-[#1fd655]/30 font-semibold h-9 flex items-center">
             {tickets.length} tickets in period
           </Badge>
+          <ExportButton tickets={tickets} dateRange={dateRange} departmentName={activeDeptName} />
           <ExcelExportButton onClick={handleExportExcel} disabled={tickets.length === 0} />
         </div>
       </div>
@@ -278,6 +286,17 @@ export default function DeptAnalytics() {
           <CategoryTrendsChart tickets={tickets} />
 
           <StaffWorkloadTable tickets={tickets} staffUsers={staffUsers} />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <TicketsByStatus tickets={tickets} />
+            <TicketsByPriority tickets={tickets} />
+          </div>
+
+          {isAdmin && !selectedDept && <TicketsByDepartment tickets={tickets} />}
+
+          <ResolutionTimeByCategory tickets={tickets} />
+
+          <FeedbackInsights departmentId={selectedDept || user?.department_id} dateRangeDays={dateRange === 'custom' ? '30' : dateRange} />
         </div>
       )}
     </div>

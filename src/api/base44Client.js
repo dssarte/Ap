@@ -471,7 +471,21 @@ const functions = {
       }
       return { data: { success: true, applied: Object.keys(changes).length > 0, changes } };
     }
-    if (['exportDatabaseBackup','exportDatabaseSql','generatePresentation','generateUserManualPDF'].includes(name)) {
+    if (name === 'exportDatabaseBackup') {
+      const backup = {};
+      for (const [entityName, table] of Object.entries(entityTables)) {
+        const rows = [];
+        const pageSize = 1000;
+        for (let offset = 0; ; offset += pageSize) {
+          const page = unwrap(await supabase.from(table).select('*').range(offset, offset + pageSize - 1)) || [];
+          rows.push(...page);
+          if (page.length < pageSize) break;
+        }
+        backup[entityName] = rows;
+      }
+      return { data: { exported_at: new Date().toISOString(), tables: backup } };
+    }
+    if (name === 'exportDatabaseSql') {
       return { data: { success: false, local: true, message: `${name} requires a Supabase Edge Function.` } };
     }
     const { data, error } = await supabase.functions.invoke(name, { body });

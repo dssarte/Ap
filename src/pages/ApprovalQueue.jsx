@@ -229,7 +229,7 @@ export default function ApprovalQueue() {
         <div className="app-page-header">
           <div>
             <p className="app-page-eyebrow">Request governance</p>
-            <h1 className="app-page-heading">Approval queue</h1>
+            <h1 className="app-page-heading">Approval Queue</h1>
             <p className="app-page-description">Review and approve pending ticket requests.</p>
           </div>
           {!isLoading && (

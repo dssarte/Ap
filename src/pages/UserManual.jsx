@@ -10,6 +10,8 @@ import {
   Shield, Eye, Plus, Search, Bell, Download, Loader2, ClipboardList
 } from "lucide-react";
 import AuditManualTab from "@/components/usermanual/AuditManualTab";
+import { generateUserManualPdf } from '@/lib/generateUserManualPdf';
+import { generatePresentationPdf } from '@/lib/generatePresentationPdf';
 
 const Section = ({ icon: Icon, title, children }) => (
   <div className="mb-8">
@@ -356,16 +358,7 @@ export default function UserManual() {
   const handleDownloadManual = async () => {
     setDownloadingManual(true);
     try {
-      const response = await base44.functions.invoke('generateUserManualPDF');
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'HelpDesk_User_Manual_Complete.pdf';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
+      await generateUserManualPdf();
     } catch (e) {
       alert('Failed to generate manual: ' + e.message);
     }
@@ -375,16 +368,7 @@ export default function UserManual() {
   const handleDownloadPresentation = async () => {
     setDownloading(true);
     try {
-      const response = await base44.functions.invoke('generatePresentation');
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'HelpDesk_Management_Presentation.pdf';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
+      await generatePresentationPdf();
     } catch (e) {
       alert('Failed to generate presentation: ' + e.message);
     }
