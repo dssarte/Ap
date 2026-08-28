@@ -1,21 +1,27 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
+import { queryClientInstance } from '@/lib/query-client';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, TrendingUp, TrendingDown, Minus, Store, ClipboardCheck, Trophy, AlertTriangle, CalendarDays, Ticket } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, TrendingUp, TrendingDown, Minus, Store, ClipboardCheck, Trophy, AlertTriangle, CalendarDays, Ticket, CheckCircle2, XCircle, ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, Cell, PieChart, Pie
 } from 'recharts';
 import moment from 'moment';
 import NoAnswerTracker from '@/components/audit/NoAnswerTracker';
+import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
+import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
-import { auditBusinessDayKey } from '@/lib/dateUtils';
+import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 
 const PASS_THRESHOLD = 75;
+const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100];
 const COLORS = ['#1fd655', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
 function isOdChecklist(title) {
@@ -42,16 +48,53 @@ function TrendIcon({ trend }) {
   return <Minus className="w-4 h-4 text-slate-400" />;
 }
 
+// A NO item can recur dozens of times over a date range — showing every
+// occurrence inline blows up the row height, so collapse it to a count with
+// a click-to-expand panel listing them all.
+function DateOccurrencesBadge({ labels }) {
+  const [open, setOpen] = useState(false);
+  if (!labels?.length) return <span className="text-slate-400">—</span>;
+  if (labels.length === 1) return <span className="whitespace-nowrap">{labels[0]}</span>;
+
+  return (
+    <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 whitespace-nowrap"
+      >
+        {labels.length} dates
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 w-56 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-xs leading-5 text-slate-600 shadow-lg">
+          {labels.map((label, i) => (
+            <div key={i} className="whitespace-nowrap">{label}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AuditDashboard() {
   const [user, setUser] = useState(null);
   const [selectedBrandId, setSelectedBrandId] = useState('all');
+  const [selectedStoreId, setSelectedStoreId] = useState('all');
   const [selectedTemplateId, setSelectedTemplateId] = useState('all');
   const [dateFrom, setDateFrom] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
   const [dateTo, setDateTo] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const submissionDetailRef = useRef(null);
+  const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
   }, []);
+
+  const isAdmin = user?.user_type === 'admin';
 
   // Store managers are scoped to their assigned stores only; admins/QA see everything
   const allowedStores = useMemo(() => {
@@ -65,6 +108,11 @@ export default function AuditDashboard() {
   const { data: brands = [] } = useQuery({
     queryKey: ['brands-active'],
     queryFn: () => base44.entities.Brand.filter({ is_active: true }, 'brand_name', 200),
+  });
+
+  const { data: stores = [] } = useQuery({
+    queryKey: ['stores-active'],
+    queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 500),
   });
 
   const { data: submissions = [], isLoading } = useQuery({
@@ -96,11 +144,145 @@ export default function AuditDashboard() {
     queryFn: () => base44.entities.AuditTemplate.list('title', 500),
   });
 
+  // Global checklist completion config (admin-controlled, shared across all store users)
+  const { data: configRecords = [] } = useQuery({
+    queryKey: ['checklist-completion-config'],
+    queryFn: () => base44.entities.ChecklistConfig.filter({ config_key: 'default' }, '-updated_date', 10),
+  });
+  const configRecord = configRecords[0];
+
+  // Exclude QA audit templates (unrestricted) — only store-restricted checklists count toward completion
+  const completionTemplates = useMemo(() => {
+    return templates.filter(t => (t.store_restrictions?.length > 0 || t.store_name));
+  }, [templates]);
+
+  // Determine selected IDs: admin config if set, otherwise default to all store-restricted templates
+  const selectedIds = useMemo(() => {
+    if (configRecord?.selected_template_ids) return configRecord.selected_template_ids;
+    return completionTemplates.map(t => t.id);
+  }, [configRecord, completionTemplates]);
+
+  const persistConfig = async (ids) => {
+    setSaving(true);
+    try {
+      if (configRecord?.id) {
+        await base44.entities.ChecklistConfig.update(configRecord.id, { selected_template_ids: ids });
+      } else {
+        await base44.entities.ChecklistConfig.create({ config_key: 'default', selected_template_ids: ids });
+      }
+      await queryClientInstance.invalidateQueries({ queryKey: ['checklist-completion-config'] });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggle = (id) => {
+    const next = selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id];
+    persistConfig(next);
+  };
+  const handleSelectAll = () => persistConfig(completionTemplates.map(t => t.id));
+  const handleClearAll = () => persistConfig([]);
+
+  // This user's own store records — used to resolve their assigned store
+  // names to actual brand_id/store_id links instead of guessing via
+  // substring matches on the name.
+  const ownStoreRecords = useMemo(() => {
+    if (!allowedStores) return stores;
+    return stores.filter(s => allowedStores.includes(s.store_name));
+  }, [stores, allowedStores]);
+
   // Brands visible to this user (store managers only see brands tied to their assigned stores)
   const visibleBrands = useMemo(() => {
     if (!allowedStores) return brands;
-    return brands.filter(b => allowedStores.some(name => name.includes(b.brand_name) || b.brand_name.includes(name)));
-  }, [brands, allowedStores]);
+    const ownBrandIds = new Set(ownStoreRecords.map(s => s.brand_id));
+    return brands.filter(b => ownBrandIds.has(b.id));
+  }, [brands, allowedStores, ownStoreRecords]);
+
+  // Stores visible under the current brand selection (store managers stay
+  // scoped to their own assigned stores regardless of brand). "QA" isn't a
+  // real brand, so there's no per-store view under it.
+  const visibleStores = useMemo(() => {
+    const base = allowedStores ? ownStoreRecords : stores;
+    if (selectedBrandId === 'all') return base;
+    if (selectedBrandId === 'qa') return [];
+    return base.filter(s => s.brand_id === selectedBrandId);
+  }, [stores, ownStoreRecords, allowedStores, selectedBrandId]);
+
+  // Store names for NoAnswerTracker's own independent query — it takes a
+  // store-name allowlist, not the dashboard's brand/store filter, so this
+  // narrows it down to just what's currently selected. Without this, the
+  // NO Answer Tracker section stayed unscoped by Brand/Store, showing every
+  // store's data regardless of what the rest of the dashboard was filtered to.
+  const noAnswerTrackerStores = useMemo(() => {
+    if (selectedStoreId !== 'all') {
+      const store = stores.find(s => s.id === selectedStoreId);
+      return store ? [store.store_name] : (allowedStores || []);
+    }
+    if (selectedBrandId !== 'all' && selectedBrandId !== 'qa') {
+      return visibleStores.map(s => s.store_name);
+    }
+    return allowedStores;
+  }, [selectedStoreId, selectedBrandId, stores, visibleStores, allowedStores]);
+
+  // Unrestricted templates (no store_restrictions and no store_name) are the
+  // generic QA checklists shared across every brand — kept as their own "QA"
+  // filter option instead of mixing into a specific brand's template list.
+  const qaTemplateIds = useMemo(() => {
+    return new Set(
+      templates.filter(t => (t.store_restrictions?.length ?? 0) === 0 && !t.store_name).map(t => t.id)
+    );
+  }, [templates]);
+  const hasQaTemplates = qaTemplateIds.size > 0;
+
+  // Templates scoped to the current brand/store selection, for the filter
+  // dropdown.
+  const filterTemplates = useMemo(() => {
+    if (selectedBrandId === 'qa') return templates.filter(t => qaTemplateIds.has(t.id));
+    return templates.filter(t => {
+      if (qaTemplateIds.has(t.id)) return false;
+      const restrictions = t.store_restrictions || [];
+      if (selectedStoreId !== 'all') {
+        return restrictions.some(r => r.store_id === selectedStoreId) || t.store_id === selectedStoreId;
+      }
+      if (selectedBrandId !== 'all') {
+        return restrictions.some(r => r.brand_id === selectedBrandId) || t.brand_id === selectedBrandId;
+      }
+      if (allowedStores) {
+        const ownBrandIds = new Set(visibleBrands.map(b => b.id));
+        return restrictions.some(r => ownBrandIds.has(r.brand_id)) || ownBrandIds.has(t.brand_id);
+      }
+      return true;
+    });
+  }, [templates, selectedBrandId, selectedStoreId, allowedStores, visibleBrands, qaTemplateIds]);
+
+  // Store-restricted templates scoped to the current brand/store selection —
+  // what the Checklist Completion Rate card should actually count as "N
+  // required daily" for the page you're looking at, instead of the raw
+  // site-wide total. Templates required for other brands/stores don't
+  // apply here, so they're excluded rather than counted in.
+  const scopedCompletionTemplates = useMemo(() => {
+    if (selectedBrandId === 'qa') return [];
+    if (selectedTemplateId !== 'all') return completionTemplates.filter(t => t.id === selectedTemplateId);
+    return completionTemplates.filter(t => {
+      const restrictions = t.store_restrictions?.length > 0
+        ? t.store_restrictions
+        : (t.store_name ? [{ store_name: t.store_name, brand_id: t.brand_id, store_id: t.store_id }] : []);
+      if (selectedStoreId !== 'all') {
+        return restrictions.some(r => r.store_id === selectedStoreId) || t.store_id === selectedStoreId;
+      }
+      if (selectedBrandId !== 'all') {
+        return restrictions.some(r => r.brand_id === selectedBrandId) || t.brand_id === selectedBrandId;
+      }
+      if (allowedStores) {
+        const ownBrandIds = new Set(visibleBrands.map(b => b.id));
+        return restrictions.some(r => ownBrandIds.has(r.brand_id)) || ownBrandIds.has(t.brand_id);
+      }
+      return true;
+    });
+  }, [completionTemplates, selectedBrandId, selectedStoreId, selectedTemplateId, allowedStores, visibleBrands]);
+
+  useEffect(() => { setSelectedStoreId('all'); }, [selectedBrandId]);
+  useEffect(() => { setSelectedTemplateId('all'); }, [selectedBrandId, selectedStoreId]);
 
   // Filter submissions
   const filtered = useMemo(() => {
@@ -109,9 +291,15 @@ export default function AuditDashboard() {
     if (allowedStores) {
       subs = subs.filter(s => allowedStores.some(name => s.brand?.includes(name)));
     }
-    if (selectedBrandId !== 'all') {
+    if (selectedBrandId === 'qa') {
+      subs = subs.filter(s => qaTemplateIds.has(s.template_id));
+    } else if (selectedBrandId !== 'all') {
       const brand = brands.find(b => b.id === selectedBrandId);
       if (brand) subs = subs.filter(s => s.brand && s.brand.startsWith(brand.brand_name));
+    }
+    if (selectedStoreId !== 'all') {
+      const store = stores.find(s => s.id === selectedStoreId);
+      if (store) subs = subs.filter(s => s.brand?.includes(store.store_name));
     }
     if (selectedTemplateId !== 'all') {
       subs = subs.filter(s => s.template_id === selectedTemplateId);
@@ -125,7 +313,7 @@ export default function AuditDashboard() {
       });
     }
     return subs;
-  }, [submissions, brands, allowedStores, selectedBrandId, selectedTemplateId, dateFrom, dateTo]);
+  }, [submissions, brands, stores, allowedStores, selectedBrandId, selectedStoreId, selectedTemplateId, dateFrom, dateTo, qaTemplateIds]);
 
   const filteredSubmissionIds = useMemo(
     () => new Set(filtered.map(submission => submission.id)),
@@ -136,6 +324,16 @@ export default function AuditDashboard() {
     () => generatedTickets.filter(ticket => filteredSubmissionIds.has(ticket.audit_submission_id)),
     [generatedTickets, filteredSubmissionIds]
   );
+
+  useEffect(() => { setPage(1); }, [filtered.length, pageSize, selectedBrandId, selectedStoreId, selectedTemplateId, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pagedSubmissions = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return [...filtered]
+      .sort((a, b) => new Date(b.submission_date || b.created_date) - new Date(a.submission_date || a.created_date))
+      .slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
 
   // Performance for every audit template represented by the current filters.
   // Unlike the headline score, this deliberately includes OD checklists so the
@@ -229,11 +427,13 @@ export default function AuditDashboard() {
           count: 0,
           stores: new Map(),
           templates: new Set(),
+          occurrences: [],
         };
         const storeName = submission.brand || 'Unknown store';
         group.count += 1;
         group.stores.set(storeName, (group.stores.get(storeName) || 0) + 1);
         group.templates.add(definition.template || submission.template_title || 'Untitled template');
+        group.occurrences.push(moment(submission.submission_date || submission.created_date));
         groups.set(groupKey, group);
       });
     });
@@ -242,11 +442,16 @@ export default function AuditDashboard() {
       .map(group => {
         const storeEntries = Array.from(group.stores.entries())
           .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        const dateLabels = group.occurrences
+          .slice()
+          .sort((a, b) => a.valueOf() - b.valueOf())
+          .map(m => m.format('MMM D, YYYY, h:mm A'));
         return {
           ...group,
           storeCount: storeEntries.length,
           storeSummary: storeEntries.map(([store, count]) => `${store} (${count})`).join(', '),
           templateSummary: Array.from(group.templates).sort().join(', '),
+          dateLabels,
         };
       })
       .sort((a, b) => b.count - a.count || b.storeCount - a.storeCount || a.label.localeCompare(b.label));
@@ -414,7 +619,7 @@ export default function AuditDashboard() {
   }, [trendData]);
 
   const handleExportExcel = () => {
-    const brandLabel = selectedBrandId === 'all' ? 'All Brands' : (brands.find(b => b.id === selectedBrandId)?.brand_name || 'All Brands');
+    const brandLabel = selectedBrandId === 'all' ? 'All Brands' : selectedBrandId === 'qa' ? 'QA' : (brands.find(b => b.id === selectedBrandId)?.brand_name || 'All Brands');
     const sheets = [
       {
         name: 'Store Performance',
@@ -515,8 +720,21 @@ export default function AuditDashboard() {
           <SelectContent>
             <SelectItem value="all">All Brands</SelectItem>
             {visibleBrands.map(b => <SelectItem key={b.id} value={b.id}>{b.brand_name}</SelectItem>)}
+            {hasQaTemplates && <SelectItem value="qa">QA</SelectItem>}
           </SelectContent>
         </Select>
+
+        {selectedBrandId !== 'qa' && (
+          <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
+            <SelectTrigger className="w-48 h-9">
+              <SelectValue placeholder="All Stores" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Stores</SelectItem>
+              {visibleStores.map(s => <SelectItem key={s.id} value={s.id}>{s.store_name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
 
         <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
           <SelectTrigger className="w-56 h-9">
@@ -524,7 +742,7 @@ export default function AuditDashboard() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Templates</SelectItem>
-            {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>)}
+            {filterTemplates.map(t => <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>)}
           </SelectContent>
         </Select>
 
@@ -633,6 +851,20 @@ export default function AuditDashboard() {
             </Card>
           </div>
 
+          {/* Checklist Completion Rate */}
+          <ChecklistCompletionCard
+            templates={scopedCompletionTemplates}
+            submissions={filtered}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            isAdmin={isAdmin}
+            selectedIds={selectedIds}
+            onToggle={handleToggle}
+            onSelectAll={handleSelectAll}
+            onClearAll={handleClearAll}
+            saving={saving}
+          />
+
           {/* NO findings graphs */}
           <div className="grid gap-4 xl:grid-cols-2">
             <Card className="border border-slate-200 shadow-sm">
@@ -726,6 +958,94 @@ export default function AuditDashboard() {
             </CardContent>
           </Card>
 
+          {/* Recent Audits — individual submissions, clickable to view the full checklist and export a PDF */}
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader className="pb-2 pt-5 px-5 flex flex-row items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <p className="font-bold text-slate-800">Recent Audits</p>
+                <p className="text-xs text-slate-400">{filtered.length} total</p>
+              </div>
+            </CardHeader>
+            <CardContent className="px-0 pb-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50">
+                      <th className="text-left px-5 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Template</th>
+                      <th className="text-left px-3 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Store</th>
+                      <th className="text-center px-3 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Score</th>
+                      <th className="text-center px-3 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">YES</th>
+                      <th className="text-center px-3 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">NO</th>
+                      <th className="text-center px-3 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">N/A</th>
+                      <th className="text-center px-3 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Status</th>
+                      <th className="text-right px-5 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedSubmissions.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center px-5 py-10 text-slate-400 text-sm">No audits in the selected date range.</td>
+                      </tr>
+                    ) : pagedSubmissions.map((s, i) => (
+                      <tr
+                        key={s.id}
+                        onClick={() => setSelectedSubmission(s)}
+                        className={`cursor-pointer transition-colors hover:bg-emerald-50/60 border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}
+                      >
+                        <td className="px-5 py-3 font-medium text-slate-800">{s.template_title}</td>
+                        <td className="px-3 py-3 text-slate-600 text-xs">{s.brand || '—'}</td>
+                        <td className="text-center px-3 py-3"><ScoreBadge score={s.score} /></td>
+                        <td className="text-center px-3 py-3">
+                          <span className="flex items-center justify-center gap-1 text-green-600 font-semibold text-xs">
+                            <CheckCircle2 className="w-3.5 h-3.5" />{s.yes_count}
+                          </span>
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          <span className="flex items-center justify-center gap-1 text-red-500 font-semibold text-xs">
+                            <XCircle className="w-3.5 h-3.5" />{s.no_count}
+                          </span>
+                        </td>
+                        <td className="text-center px-3 py-3 text-slate-400 text-xs">{s.na_count}</td>
+                        <td className="text-center px-3 py-3">
+                          <Badge className={s.score >= PASS_THRESHOLD ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}>
+                            {s.score >= PASS_THRESHOLD ? 'PASS' : 'FAIL'}
+                          </Badge>
+                        </td>
+                        <td className="text-right px-5 py-3 text-slate-500 text-xs">{formatPHDateTime(s.submission_date || s.created_date)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between px-5 pt-4 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Show</span>
+                  <Select value={String(pageSize)} onValueChange={v => setPageSize(Number(v))}>
+                    <SelectTrigger className="h-8 w-[70px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAGE_SIZE_OPTIONS.map(opt => (
+                        <SelectItem key={opt} value={String(opt)}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+                    <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Daily summary table — moved up, directly below All Template Analytics */}
           <Card className="border border-slate-200 shadow-sm">
             <CardHeader className="pb-2 pt-5 px-5"><p className="font-bold text-slate-800">Daily Summary</p></CardHeader>
@@ -785,9 +1105,9 @@ export default function AuditDashboard() {
             </CardHeader>
             <CardContent className="px-0 pb-4">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1050px] text-sm">
+                <table className="w-full min-w-[1150px] text-sm">
                   <thead><tr className="border-b border-slate-100 bg-slate-50">
-                    {['Rank', 'Area / Section', 'Checklist Item', 'Template', 'Total NO', 'Stores', 'Store Breakdown'].map(header => (
+                    {['Rank', 'Date', 'Area / Section', 'Checklist Item', 'Template', 'Total NO', 'Stores', 'Store Breakdown'].map(header => (
                       <th key={header} className={`${['Area / Section', 'Checklist Item', 'Template', 'Store Breakdown'].includes(header) ? 'text-left' : 'text-center'} px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600`}>{header}</th>
                     ))}
                   </tr></thead>
@@ -795,6 +1115,9 @@ export default function AuditDashboard() {
                     {noItemRows.map((row, index) => (
                       <tr key={row.id} className="border-b border-slate-100 align-top hover:bg-slate-50">
                         <td className="px-4 py-3 text-center font-semibold text-slate-500">{index + 1}</td>
+                        <td className="px-4 py-3 text-center text-slate-600">
+                          <DateOccurrencesBadge labels={row.dateLabels} />
+                        </td>
                         <td className="px-4 py-3 font-semibold text-slate-700">{row.section}</td>
                         <td className="px-4 py-3 font-bold text-slate-900">{row.item}</td>
                         <td className="max-w-[240px] px-4 py-3 text-slate-600">{row.templateSummary}</td>
@@ -804,7 +1127,7 @@ export default function AuditDashboard() {
                       </tr>
                     ))}
                     {!noItemRows.length && (
-                      <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">No checklist items were marked NO for the selected filters.</td></tr>
+                      <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-400">No checklist items were marked NO for the selected filters.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -974,9 +1297,36 @@ export default function AuditDashboard() {
           </Card>
 
           {/* NO Answer Tracker */}
-          <NoAnswerTracker allowedStores={allowedStores} />
+          <NoAnswerTracker allowedStores={noAnswerTrackerStores} />
         </>
       )}
+      <Dialog open={!!selectedSubmission} onOpenChange={(open) => { if (!open) setSelectedSubmission(null); }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] p-0 gap-0 overflow-hidden flex flex-col">
+          <DialogHeader className="flex-row items-center justify-between gap-3 space-y-0 p-4 pb-3 pr-10 sm:p-6 sm:pb-4 sm:pr-12">
+            <DialogTitle className="text-2xl truncate min-w-0">{selectedSubmission?.template_title}</DialogTitle>
+            <Button
+              onClick={() => submissionDetailRef.current?.exportPdf()}
+              disabled={exportingSubmissionPdf}
+              className="bg-[#1fd655] hover:bg-[#1bc14c] text-slate-900 font-bold gap-2 shrink-0"
+            >
+              {exportingSubmissionPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+              Export PDF
+            </Button>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto p-4 pt-0 pr-3 sm:p-6 sm:pt-0 sm:pr-5">
+            {selectedSubmission && (
+              <SubmissionDetail
+                ref={submissionDetailRef}
+                submission={selectedSubmission}
+                templates={templates}
+                user={user}
+                hideExportButton
+                onExportingChange={setExportingSubmissionPdf}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
