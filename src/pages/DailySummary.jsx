@@ -13,20 +13,28 @@ import { BarChart, Bar, CartesianGrid, Cell, Legend, ResponsiveContainer, Toolti
 
 const PASS_THRESHOLD = 100; // a store "finished" when 100% of its required checklists are done
 
-// Does this template apply to a given store name?
-function templateAppliesToStore(t, storeName) {
-  if (!storeName) return false;
+// Does this template apply to a given store? Matches by store_id first —
+// the stable link — falling back to store_name only for older restriction
+// entries saved before store_id was tracked. A name-only match would break
+// silently if the store was ever renamed after the restriction was saved.
+function templateAppliesToStore(t, store) {
+  if (!store) return false;
   const restrictions = t.store_restrictions?.length > 0
     ? t.store_restrictions
-    : t.store_name ? [{ store_name: t.store_name }] : [];
+    : t.store_name ? [{ store_name: t.store_name, store_id: t.store_id }] : [];
   if (restrictions.length === 0) return false;
-  return restrictions.some(r => r.store_name === storeName);
+  return restrictions.some(r =>
+    (r.store_id && store.id && r.store_id === store.id) || r.store_name === store.store_name
+  );
 }
 
 export default function DailySummary() {
   const [user, setUser] = useState(null);
   const today = moment().utcOffset(8).format('YYYY-MM-DD');
   const [selectedDate, setSelectedDate] = useState(today);
+  const [filterBrandId, setFilterBrandId] = useState('all');
+  const [filterStoreId, setFilterStoreId] = useState('all');
+  const [filterTemplateId, setFilterTemplateId] = useState('all');
 
   useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
 
@@ -82,10 +90,12 @@ export default function DailySummary() {
       : completionTemplates.map(t => t.id),
     [configRecord, completionTemplates]
   );
-  const requiredTemplates = useMemo(
-    () => completionTemplates.filter(t => requiredIds.includes(t.id)),
-    [completionTemplates, requiredIds]
-  );
+  // Narrowed further by the top-level Checklist filter, when one is selected
+  const requiredTemplates = useMemo(() => {
+    let list = completionTemplates.filter(t => requiredIds.includes(t.id));
+    if (filterTemplateId !== 'all') list = list.filter(t => t.id === filterTemplateId);
+    return list;
+  }, [completionTemplates, requiredIds, filterTemplateId]);
 
   // Submissions for the selected date only
   const daySubs = useMemo(
@@ -94,17 +104,102 @@ export default function DailySummary() {
   );
 
   // Store managers only see the stores linked to their account
-  const scopedStores = useMemo(
+  const ownScopedStores = useMemo(
     () => isStoreManager
       ? stores.filter(s => assignedStores.includes(s.store_name))
       : stores,
     [stores, isStoreManager, assignedStores]
   );
 
+  // Brands visible in the top filter (store managers only see brands tied to their assigned stores)
+  const visibleBrands = useMemo(() => {
+    if (!isStoreManager) return brands;
+    const ownBrandIds = new Set(ownScopedStores.map(s => s.brand_id));
+    return brands.filter(b => ownBrandIds.has(b.id));
+  }, [brands, isStoreManager, ownScopedStores]);
+
+  // Stores visible in the top filter, scoped further by the selected brand
+  const visibleStores = useMemo(() => {
+    if (filterBrandId === 'all') return ownScopedStores;
+    return ownScopedStores.filter(s => s.brand_id === filterBrandId);
+  }, [ownScopedStores, filterBrandId]);
+
+  // Checklists visible in the top filter, scoped to the current brand/store
+  // selection. Only templates actually marked required in the Checklist
+  // Completion config are offered — a store-restricted template nobody
+  // selected as required isn't something you'd filter the daily summary by.
+  const visibleChecklists = useMemo(() => {
+    return completionTemplates.filter(t => requiredIds.includes(t.id)).filter(t => {
+      const restrictions = t.store_restrictions?.length > 0
+        ? t.store_restrictions
+        : (t.store_name ? [{ store_name: t.store_name, brand_id: t.brand_id, store_id: t.store_id }] : []);
+      if (filterStoreId !== 'all') {
+        return restrictions.some(r => r.store_id === filterStoreId) || t.store_id === filterStoreId;
+      }
+      if (filterBrandId !== 'all') {
+        return restrictions.some(r => r.brand_id === filterBrandId) || t.brand_id === filterBrandId;
+      }
+      if (isStoreManager) {
+        const ownBrandIds = new Set(visibleBrands.map(b => b.id));
+        return restrictions.some(r => ownBrandIds.has(r.brand_id)) || ownBrandIds.has(t.brand_id);
+      }
+      return true;
+    });
+  }, [completionTemplates, requiredIds, filterBrandId, filterStoreId, isStoreManager, visibleBrands]);
+
+  // Auto-cascading a Store/Checklist pick into deriving the matching Brand
+  // only applies on the very first pick, starting from all three at "all".
+  // Once Store or Checklist has been explicitly set, later picks change
+  // only that one filter and leave the other alone — otherwise picking a
+  // checklist after a store would silently reset the store you just chose.
+  const isDefaultFilterState = filterBrandId === 'all' && filterStoreId === 'all' && filterTemplateId === 'all';
+
+  // Brand always resets Store and Checklist — unlike Store/Checklist below,
+  // this isn't gated to "first pick only": Store and Checklist are scoped
+  // to a brand, so a stale selection from a different brand would just show
+  // no results otherwise.
+  const handleBrandChange = (val) => {
+    setFilterBrandId(val);
+    setFilterStoreId('all');
+    setFilterTemplateId('all');
+  };
+  // Store — on the first pick, drives the Brand filter to match and clears
+  // Checklist. After that, just changes the store.
+  const handleStoreChange = (val) => {
+    const fresh = isDefaultFilterState;
+    setFilterStoreId(val);
+    if (!fresh) return;
+    setFilterTemplateId('all');
+    if (val === 'all') return;
+    const store = ownScopedStores.find(s => s.id === val);
+    if (store?.brand_id) setFilterBrandId(store.brand_id);
+  };
+  // Checklist — on the first pick, drives the Brand filter to match (a
+  // checklist belongs to one brand) and sets Store to "All Stores" of that
+  // brand. After that, just changes the checklist.
+  const handleTemplateChange = (val) => {
+    const fresh = isDefaultFilterState;
+    setFilterTemplateId(val);
+    if (!fresh || val === 'all') return;
+    const template = completionTemplates.find(t => t.id === val);
+    const brandId = template?.brand_id || template?.store_restrictions?.[0]?.brand_id || 'all';
+    setFilterBrandId(brandId);
+    setFilterStoreId('all');
+  };
+
+  // Final store scope used everywhere below — the store-manager restriction
+  // plus the top-level Brand/Store filters.
+  const scopedStores = useMemo(() => {
+    let list = ownScopedStores;
+    if (filterBrandId !== 'all') list = list.filter(s => s.brand_id === filterBrandId);
+    if (filterStoreId !== 'all') list = list.filter(s => s.id === filterStoreId);
+    return list;
+  }, [ownScopedStores, filterBrandId, filterStoreId]);
+
   // Per-store completion rows
   const rows = useMemo(() => {
     return scopedStores.map(store => {
-      const applicable = requiredTemplates.filter(t => templateAppliesToStore(t, store.store_name));
+      const applicable = requiredTemplates.filter(t => templateAppliesToStore(t, store));
       const storeDaySubs = daySubs.filter(s => s.brand?.includes(store.store_name));
       const doneIds = new Set(storeDaySubs.map(s => s.template_id));
       const completed = applicable.filter(t => doneIds.has(t.id));
@@ -117,15 +212,32 @@ export default function DailySummary() {
         rate,
         missing: missing.map(t => t.title),
       };
-    }).filter(r => r.required > 0); // hide stores with no required checklists that day
+    });
   }, [scopedStores, requiredTemplates, daySubs]);
 
-  // Sort: incomplete first, then by rate ascending — worst performers on top
-  // Sort: incomplete first, then by rate ascending — worst performers on top
-  const sortedRows = useMemo(
-    () => [...rows].sort((a, b) => a.rate - b.rate),
-    [rows]
-  );
+  // Distinct required checklists that actually apply to a store in the
+  // current brand/store scope — the "N required checklists" count shown in
+  // the Store Completion header, so it reflects the selected brand instead
+  // of always showing the site-wide required total.
+  const scopedRequiredCount = useMemo(() => {
+    return requiredTemplates.filter(t => scopedStores.some(store => templateAppliesToStore(t, store))).length;
+  }, [requiredTemplates, scopedStores]);
+
+  // Stores with at least one required checklist today — used for the KPI
+  // cards and aggregate charts, so a brand with nothing configured yet
+  // doesn't get averaged in as 0%. Stores with nothing required still show
+  // in the table below (as "not started" is still worth tracking there),
+  // just without a completion rate contributing to the summary stats.
+  const trackedRows = useMemo(() => rows.filter(r => r.required > 0), [rows]);
+
+  // Sort: incomplete first, then by rate ascending — worst performers on
+  // top. Stores with nothing required have no rate to rank by, so they're
+  // appended after the tracked ones instead of sorting in as "0%".
+  const sortedRows = useMemo(() => {
+    const tracked = [...trackedRows].sort((a, b) => a.rate - b.rate);
+    const untracked = rows.filter(r => r.required === 0);
+    return [...tracked, ...untracked];
+  }, [rows, trackedRows]);
 
   // Group by brand for display — each brand shows as its own section,
   // with stores inside still ordered worst-performer-first.
@@ -144,26 +256,22 @@ export default function DailySummary() {
     return Object.values(groups).sort((a, b) => a.brandName.localeCompare(b.brandName));
   }, [sortedRows, brands]);
 
-  const [brandFilter, setBrandFilter] = useState('');
-
-  const visibleGroups = useMemo(
-    () => brandFilter ? groupedRows.filter(g => g.brandId === brandFilter) : groupedRows,
-    [groupedRows, brandFilter]
-  );
-
+  // Always returns a value (never null) so the KPI cards stay visible even
+  // for a brand with nothing required yet — they just show zeros.
   const summary = useMemo(() => {
-    if (rows.length === 0) return null;
-    const done = rows.filter(r => r.rate >= PASS_THRESHOLD).length;
-    const notStarted = rows.filter(r => r.completed === 0).length;
-    const avg = Math.round(rows.reduce((s, r) => s + r.rate, 0) / rows.length);
-    return { total: rows.length, done, notStarted, avg };
-  }, [rows]);
+    const done = trackedRows.filter(r => r.rate >= PASS_THRESHOLD).length;
+    const notStarted = trackedRows.filter(r => r.completed === 0).length;
+    const avg = trackedRows.length > 0
+      ? Math.round(trackedRows.reduce((s, r) => s + r.rate, 0) / trackedRows.length)
+      : 0;
+    return { total: trackedRows.length, done, notStarted, avg };
+  }, [trackedRows]);
 
   // Per-checklist (Opening/Closing/Mid/etc.) completed vs not-started counts —
   // driven entirely by requiredTemplates, so any checklist added later shows
   // up here automatically with no code changes.
   const templateCompletionData = useMemo(() => requiredTemplates.map(t => {
-    const applicableStores = scopedStores.filter(store => templateAppliesToStore(t, store.store_name));
+    const applicableStores = scopedStores.filter(store => templateAppliesToStore(t, store));
     const completed = applicableStores.filter(store =>
       daySubs.some(s => s.template_id === t.id && s.brand?.includes(store.store_name))
     ).length;
@@ -175,13 +283,6 @@ export default function DailySummary() {
       total: applicableStores.length,
     };
   }).filter(item => item.total > 0), [requiredTemplates, scopedStores, daySubs]);
-
-  const [checklistFilter, setChecklistFilter] = useState('');
-
-  const visibleTemplateCompletionData = useMemo(
-    () => checklistFilter ? templateCompletionData.filter(d => d.id === checklistFilter) : templateCompletionData,
-    [templateCompletionData, checklistFilter]
-  );
 
   // Overall per-store status across ALL required checklists for the day —
   // distinct from templateCompletionData, which breaks it down per checklist.
@@ -215,7 +316,7 @@ export default function DailySummary() {
         headers: ['Store', 'Required', 'Completed', 'Rate %', 'Status', 'Missing Checklists'],
         rows: sortedRows.map(r => [
           r.store.store_name, r.required, r.completed, r.rate,
-          r.rate >= PASS_THRESHOLD ? 'COMPLETE' : (r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'),
+          r.required === 0 ? 'NO CHECKLISTS REQUIRED' : r.rate >= PASS_THRESHOLD ? 'COMPLETE' : (r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'),
           r.missing.join(' | '),
         ]),
       },
@@ -267,14 +368,46 @@ export default function DailySummary() {
         </div>
       </div>
 
+      {/* Filters */}
+      <div className="app-filter-bar">
+        <Select value={filterBrandId} onValueChange={handleBrandChange}>
+          <SelectTrigger className="w-48 h-9">
+            <SelectValue placeholder="All Brands" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Brands</SelectItem>
+            {visibleBrands.map(b => <SelectItem key={b.id} value={b.id}>{b.brand_name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterStoreId} onValueChange={handleStoreChange}>
+          <SelectTrigger className="w-48 h-9">
+            <SelectValue placeholder="All Stores" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Stores</SelectItem>
+            {visibleStores.map(s => <SelectItem key={s.id} value={s.id}>{s.store_name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterTemplateId} onValueChange={handleTemplateChange}>
+          <SelectTrigger className="w-56 h-9">
+            <SelectValue placeholder="All Checklists" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Checklists</SelectItem>
+            {visibleChecklists.map(t => <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
-      ) : !summary ? (
+      ) : scopedStores.length === 0 ? (
         <Card className="border-2 border-dashed border-slate-200">
           <CardContent className="py-16 text-center">
             <ClipboardCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-400">No stores with required checklists found.</p>
-            <p className="text-slate-400 text-sm mt-1">Assign store-restricted audit templates to see completion here.</p>
+            <p className="text-slate-400">No stores found for this filter.</p>
           </CardContent>
         </Card>
       ) : (
@@ -309,24 +442,15 @@ export default function DailySummary() {
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card className="border border-slate-200 shadow-sm">
-              <CardHeader className="pb-2 pt-5 px-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <CardHeader className="pb-2 pt-5 px-5">
                 <p className="font-bold text-slate-800">Store Completion Status</p>
-                <Select value={checklistFilter || '__all__'} onValueChange={(v) => setChecklistFilter(v === '__all__' ? '' : v)}>
-                  <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="All checklists" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">All checklists</SelectItem>
-                    {templateCompletionData.map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </CardHeader>
               <CardContent className="px-2 pb-5">
-                {visibleTemplateCompletionData.length === 0 ? (
+                {templateCompletionData.length === 0 ? (
                   <p className="py-16 text-center text-sm text-slate-400">No checklist data for this date.</p>
                 ) : (
-                  <ResponsiveContainer width="100%" height={Math.max(200, visibleTemplateCompletionData.length * 60)}>
-                    <BarChart data={visibleTemplateCompletionData} layout="vertical" margin={{ left: 12, right: 24 }}>
+                  <ResponsiveContainer width="100%" height={Math.max(200, templateCompletionData.length * 60)}>
+                    <BarChart data={templateCompletionData} layout="vertical" margin={{ left: 12, right: 24 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                       <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
                       <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
@@ -385,35 +509,25 @@ export default function DailySummary() {
               <p className="font-bold text-slate-800 flex items-center gap-2">
                 <Store className="w-4 h-4 text-[#1fd655]" /> Store Completion — {formatPHDate(selectedDate)}
               </p>
-              <div className="flex items-center gap-3">
-                <Select value={brandFilter || '__all__'} onValueChange={(v) => setBrandFilter(v === '__all__' ? '' : v)}>
-                  <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="All brands" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">All brands</SelectItem>
-                    {groupedRows.map(g => (
-                      <SelectItem key={g.brandId} value={g.brandId}>{g.brandName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-slate-400 whitespace-nowrap">{requiredTemplates.length} required checklist{requiredTemplates.length !== 1 ? 's' : ''}</p>
-              </div>
+              <p className="text-xs text-slate-400 whitespace-nowrap">{scopedRequiredCount} required checklist{scopedRequiredCount !== 1 ? 's' : ''}</p>
             </CardHeader>
             <CardContent className="px-0 pb-4">
               <div className="space-y-5 px-4 md:hidden">
-                {visibleGroups.map((group) => (
+                {groupedRows.map((group) => (
                   <div key={group.brandId} className="space-y-3">
                     <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{group.brandName}</p>
                     {group.rows.map((r) => {
-                      const complete = r.rate >= PASS_THRESHOLD;
+                      const noneRequired = r.required === 0;
+                      const complete = !noneRequired && r.rate >= PASS_THRESHOLD;
                       return (
                         <article key={r.store.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                           <div className="flex items-start justify-between gap-3">
                             <div><h3 className="font-semibold text-slate-900">{r.store.store_name}</h3>{r.store.location && <p className="mt-0.5 text-xs text-slate-400">{r.store.location}</p>}</div>
-                            <Badge className={complete ? 'border-green-200 bg-green-100 text-green-700' : r.completed === 0 ? 'border-red-200 bg-red-100 text-red-700' : 'border-amber-200 bg-amber-100 text-amber-700'}>{complete ? 'Complete' : r.completed === 0 ? 'Not started' : 'In progress'}</Badge>
+                            <Badge className={noneRequired ? 'border-slate-200 bg-slate-100 text-slate-500' : complete ? 'border-green-200 bg-green-100 text-green-700' : r.completed === 0 ? 'border-red-200 bg-red-100 text-red-700' : 'border-amber-200 bg-amber-100 text-amber-700'}>{noneRequired ? 'No checklists required' : complete ? 'Complete' : r.completed === 0 ? 'Not started' : 'In progress'}</Badge>
                           </div>
                           <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
                             <div><p className="text-xs text-slate-500">Completed</p><p className="mt-1 font-semibold text-slate-800">{r.completed} / {r.required}</p></div>
-                            <div><p className="text-xs text-slate-500">Completion rate</p><p className={`mt-1 font-bold ${complete ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{r.rate}%</p></div>
+                            <div><p className="text-xs text-slate-500">Completion rate</p><p className={`mt-1 font-bold ${noneRequired ? 'text-slate-400' : complete ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{noneRequired ? '—' : `${r.rate}%`}</p></div>
                           </div>
                           {r.missing.length > 0 && <div className="mt-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Missing</p><p className="mt-1 text-xs leading-5 text-slate-600">{r.missing.join(' · ')}</p></div>}
                         </article>
@@ -421,7 +535,7 @@ export default function DailySummary() {
                     })}
                   </div>
                 ))}
-                {visibleGroups.length === 0 && <p className="py-8 text-center text-sm text-slate-400">No stores with required checklists for this date.</p>}
+                {groupedRows.length === 0 && <p className="py-8 text-center text-sm text-slate-400">No stores with required checklists for this date.</p>}
               </div>
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
@@ -434,13 +548,14 @@ export default function DailySummary() {
                       <th className="text-left px-5 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Missing</th>
                     </tr>
                   </thead>
-                  {visibleGroups.map((group) => (
+                  {groupedRows.map((group) => (
                     <tbody key={group.brandId}>
-                      <tr className="bg-slate-100/80">
-                        <td colSpan={5} className="px-5 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">{group.brandName}</td>
+                      <tr className="bg-slate-400">
+                        <td colSpan={5} className="px-5 py-2 text-xs font-bold uppercase tracking-wide text-white">{group.brandName}</td>
                       </tr>
                       {group.rows.map((r, i) => {
-                        const complete = r.rate >= PASS_THRESHOLD;
+                        const noneRequired = r.required === 0;
+                        const complete = !noneRequired && r.rate >= PASS_THRESHOLD;
                         return (
                           <tr key={r.store.id} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}>
                             <td className="px-5 py-3 font-medium text-slate-800">
@@ -451,18 +566,18 @@ export default function DailySummary() {
                               <span className="inline-flex items-center gap-1.5">
                                 {complete
                                   ? <CheckCircle2 className="w-4 h-4 text-green-500" />
-                                  : r.completed === 0 ? <XCircle className="w-4 h-4 text-red-400" /> : null}
+                                  : !noneRequired && r.completed === 0 ? <XCircle className="w-4 h-4 text-red-400" /> : null}
                                 {r.completed} / {r.required}
                               </span>
                             </td>
                             <td className="text-center px-3 py-3">
-                              <span className={`font-bold ${r.rate >= PASS_THRESHOLD ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
-                                {r.rate}%
+                              <span className={`font-bold ${noneRequired ? 'text-slate-400' : r.rate >= PASS_THRESHOLD ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                                {noneRequired ? '—' : `${r.rate}%`}
                               </span>
                             </td>
                             <td className="text-center px-3 py-3">
-                              <Badge className={complete ? 'bg-green-100 text-green-700 border-green-200' : r.completed === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}>
-                                {complete ? 'COMPLETE' : r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'}
+                              <Badge className={noneRequired ? 'bg-slate-100 text-slate-500 border-slate-200' : complete ? 'bg-green-100 text-green-700 border-green-200' : r.completed === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}>
+                                {noneRequired ? 'NO CHECKLISTS REQUIRED' : complete ? 'COMPLETE' : r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'}
                               </Badge>
                             </td>
                             <td className="px-5 py-3 text-xs text-slate-500">
