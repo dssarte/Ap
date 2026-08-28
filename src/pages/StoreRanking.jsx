@@ -355,7 +355,7 @@ export default function StoreRanking() {
     <div className="app-page app-page-narrow">
       {/* Header */}
       <div className="app-page-header">
-        <div><p className="app-page-eyebrow">Quality leaderboard</p><h1 className="app-page-heading">Store ranking</h1><p className="app-page-description">Compare audit performance across stores and brands.</p></div>
+        <div><p className="app-page-eyebrow">Quality leaderboard</p><h1 className="app-page-heading">Store Ranking</h1><p className="app-page-description">Compare audit performance across stores and brands.</p></div>
         <div className="flex items-center gap-2">
           <Button onClick={handleExportCsv} variant="outline" className="font-bold gap-2 border-slate-300">
             <Download className="w-4 h-4" /> CSV

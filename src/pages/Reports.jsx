@@ -49,9 +49,10 @@ export default function Reports() {
       if (user.user_type === 'admin') {
         allTickets = await base44.entities.Ticket.list('-created_date', 1000);
       } 
-      // Department Head sees their department tickets
+      // Department Head sees their department tickets — handling_department_id
+      // is the department currently responsible after routing/approval.
       else if (user.user_type === 'department_head' && user.department_id) {
-        allTickets = await base44.entities.Ticket.filter({ department_id: user.department_id }, '-created_date', 1000);
+        allTickets = await base44.entities.Ticket.filter({ handling_department_id: user.department_id }, '-created_date', 1000);
       }
       // Store Manager sees tickets from their assigned stores only
       else if (user.user_type === 'store_manager') {
@@ -66,7 +67,7 @@ export default function Reports() {
       
       // Filter by department
       if (selectedDepartment !== 'all') {
-        filtered = filtered.filter(t => t.department_id === selectedDepartment);
+        filtered = filtered.filter(t => t.handling_department_id === selectedDepartment);
       }
       
       return filtered;

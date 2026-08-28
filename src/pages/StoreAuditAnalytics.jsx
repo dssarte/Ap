@@ -423,7 +423,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
         <div>
           <p className="app-page-eyebrow">Store performance</p>
           <div>
-            <h1 className="app-page-heading">Store analytics</h1>
+            <h1 className="app-page-heading">Store Analytics</h1>
             {/*}
             <p className="text-sm text-slate-500">
               {selectedStore === 'all' ? storeNames.join(', ') : selectedStore} · Audit performance summary

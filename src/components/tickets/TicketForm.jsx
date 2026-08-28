@@ -18,6 +18,9 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
   const [uploading, setUploading] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const isBranchManager = user.user_type === 'store_manager';
+  const managedStores = isBranchManager ? (Array.isArray(user.assigned_stores) ? user.assigned_stores : []) : [];
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -26,7 +29,8 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
     priority: 'medium',
     attachment_url: '',
     image_urls: [],
-    assigned_to: ''
+    assigned_to: '',
+    store_name: managedStores.length === 1 ? managedStores[0] : ''
   });
 
   const isStaff = user.user_type === 'admin' || user.user_type === 'department_head';
@@ -183,6 +187,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
       if (!title || !description) throw new Error('Title and description are required.');
       if (!effectiveDeptId) throw new Error('Please select a department.');
       if (!formData.category_id) throw new Error('Please select a category.');
+      if (isBranchManager && !formData.store_name) throw new Error('Please select which store this ticket is for.');
       const dept = departments.find(d => d.id === effectiveDeptId);
       if (!dept) throw new Error('The selected department is invalid or inactive.');
       
@@ -192,15 +197,27 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
         cat = await base44.entities.Category.get(formData.category_id);
       }
       
-      // Find an approver from the SUBMITTER's department (not the ticket department)
+      // SOD users tied to a specific store route to that store's manager
+      // instead of a department head — the store manager's Approval Queue
+      // already matches pending tickets by store_name (see ApprovalQueue.jsx),
+      // so leaving approver_email unset here is enough to route it there
+      // instead of into a department head's personal queue.
+      const routesToStoreManager = (user.department_name || '').trim().toLowerCase() === 'sod' && !!user.store_name;
+
+      // Store managers and department heads already hold approval authority
+      // themselves, so their own tickets skip the approval step entirely
+      // (handled below, right after creation) — no need to look up an approver.
+      const skipsApproval = isBranchManager || user.user_type === 'department_head';
       let approver = { approver_email: '', approver_name: '' };
-      try {
-        const result = await base44.functions.invoke('findApproverForDepartment', { department_id: user.department_id });
-        approver = result.data;
-      } catch (e) {
-        console.warn('Could not find approver:', e);
+      if (!routesToStoreManager && !skipsApproval) {
+        try {
+          const result = await base44.functions.invoke('findApproverForDepartment', { department_id: user.department_id });
+          approver = result.data;
+        } catch (e) {
+          console.warn('Could not find approver:', e);
+        }
       }
-      
+
       const newTicket = await base44.tickets.createManual({
         title,
         description,
@@ -215,7 +232,7 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
         image_urls: formData.image_urls,
         submitter_email: user.email,
         submitter_name: getUserDisplayName(user),
-        store_name: user.store_name || '',
+        store_name: isBranchManager ? formData.store_name : (user.store_name || ''),
         // The database routes this to an enabled Department Head approver,
         // preserves store-manager approval when applicable, or opens it
         // immediately when no approval path exists.
@@ -230,14 +247,30 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
         sla_resolution_breached: false,
       });
 
+      // Every ticket is created pending approval server-side, no exceptions —
+      // store managers and department heads hold approval authority
+      // themselves, so immediately self-approve here instead of waiting on
+      // someone else's queue. This reuses the same approval RPC a human
+      // approver would trigger, so department routing (via the ticket's
+      // category) stays consistent.
+      let finalTicket = newTicket;
+      if (skipsApproval) {
+        try {
+          const approvalResult = await base44.tickets.processApproval(newTicket.id, 'approve');
+          finalTicket = approvalResult?.ticket || newTicket;
+        } catch (e) {
+          console.warn('Ticket saved, but self-approval failed:', e);
+        }
+      }
+
       // Tickets awaiting approval aren't visible in the normal ticket
       // workspace yet, and the actual approver already sees a live count on
       // their own Approval Queue nav item — so skip the generic "created"
       // notification here. It fires later, once the ticket is approved and
       // actually shows up somewhere the recipient can act on it.
-      if (newTicket.approval_status !== 'pending') {
+      if (finalTicket.approval_status !== 'pending') {
         await base44.functions.invoke('sendTicketNotification', {
-          ticket_id: newTicket.id,
+          ticket_id: finalTicket.id,
           type: 'created',
           message: `New ticket created: ${title}`,
         }).catch((notificationError) => {
@@ -296,6 +329,26 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
               </SelectContent>
             </Select>
           </div>
+
+          {isBranchManager && (
+            <div className="space-y-2">
+              <Label className="text-slate-900 font-semibold text-sm">Store *</Label>
+              <Select
+                value={formData.store_name}
+                onValueChange={(value) => setFormData({ ...formData, store_name: value })}
+                required
+              >
+                <SelectTrigger className="border-slate-300 h-11 focus:border-[#1fd655] focus:ring-[#1fd655]">
+                  <SelectValue placeholder="Select store" />
+                </SelectTrigger>
+                <SelectContent>
+                  {managedStores.map(name => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label className="text-slate-900 font-semibold text-sm">Category *</Label>
