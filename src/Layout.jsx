@@ -147,7 +147,6 @@ export default function Layout({ children, currentPageName }) {
       navItems.push(
         { name: 'Approval Queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null },
         { name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' },
-        { name: 'Store Analytics', icon: BarChart3, page: 'StoreAuditAnalytics' },
         { name: 'Daily Summary', icon: CalendarCheck, page: 'DailySummary' },
         { name: 'Audit Dashboard', icon: ClipboardCheck, page: 'AuditDashboard' },
       );
