@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Building2, Users, Loader2, ShieldAlert, Tags, Clock, Zap, GitBranch, ClipboardList, Store, Download, CalendarCheck, Database, FileDown } from "lucide-react";
+import { Building2, Users, Loader2, ShieldAlert, Tags, Clock, Zap, GitBranch, ClipboardList, Store, CalendarCheck, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import DepartmentManager from "@/components/admin/DepartmentManager";
 import UserManager from "@/components/admin/UserManager";
@@ -18,9 +18,8 @@ import ChecklistCompletionManager from "@/components/admin/ChecklistCompletionMa
 export default function Admin() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState(false);
   const [backupLoading, setBackupLoading] = useState(false);
-  
+
 
   const handleDownloadBackup = async () => {
     setBackupLoading(true);
@@ -35,22 +34,6 @@ export default function Admin() {
       window.URL.revokeObjectURL(url);
     } finally {
       setBackupLoading(false);
-    }
-  };
-
-  const handleDownloadPresentation = async () => {
-    setDownloading(true);
-    try {
-      const response = await base44.functions.invoke('generatePresentation', {}, { responseType: 'arraybuffer' });
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'HelpDesk_Management_Presentation.pdf';
-      link.click();
-      window.URL.revokeObjectURL(url);
-    } finally {
-      setDownloading(false);
     }
   };
 
@@ -104,20 +87,6 @@ export default function Admin() {
               {backupLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
               {backupLoading ? 'Exporting...' : 'Download DB Backup'}
             </Button>
-            <Button
-              onClick={handleDownloadPresentation}
-              disabled={downloading}
-              className="gap-2 bg-slate-900 hover:bg-slate-800 text-white h-11 px-6 font-semibold"
-            >
-              {downloading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-              {downloading ? 'Generating...' : 'Download Presentation'}
-            </Button>
-            <a href="/SqlExport">
-              <Button className="gap-2 bg-white hover:bg-slate-50 text-slate-900 border-2 border-slate-200 h-11 px-6 font-semibold">
-                <FileDown className="w-5 h-5" />
-                Export to Supabase (.sql)
-              </Button>
-            </a>
           </div>
         </div>
 

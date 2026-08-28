@@ -99,10 +99,18 @@ export default function ApprovalQueue() {
   const handleApprove = async (ticket) => {
     setProcessing(true);
     try {
-      await base44.tickets.processApproval(ticket.id, 'approve');
+      const result = await base44.tickets.processApproval(ticket.id, 'approve');
+      const routedTo = result?.ticket?.handling_department_name || result?.ticket?.department_name || 'the responsible department';
+      await base44.functions.invoke('sendTicketNotification', {
+        ticket_id: ticket.id,
+        type: 'approved',
+        message: `Ticket approved and routed to ${routedTo}: ${ticket.title}`,
+      }).catch((notificationError) => {
+        console.warn('Ticket approved, but participant notification delivery failed:', notificationError);
+      });
       await refetch();
       setSelectedTicket(null);
-      toast({ title: 'Ticket approved', description: 'The ticket has been routed to the responsible department.' });
+      toast({ title: 'Ticket approved', description: `The ticket has been routed to ${routedTo}.` });
     } catch (error) {
       toast({ title: 'Approval failed', description: error?.message || 'The ticket could not be approved. Please try again.', variant: 'destructive' });
     } finally {
@@ -221,7 +229,7 @@ export default function ApprovalQueue() {
         <div className="app-page-header">
           <div>
             <p className="app-page-eyebrow">Request governance</p>
-            <h1 className="app-page-heading">Approval queue</h1>
+            <h1 className="app-page-heading">Approval Queue</h1>
             <p className="app-page-description">Review and approve pending ticket requests.</p>
           </div>
           {!isLoading && (
