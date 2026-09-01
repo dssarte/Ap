@@ -44,6 +44,23 @@ export default function NoAnswerTracker({ allowedStores = null, showFilters = tr
     queryFn: () => base44.entities.Brand.list('-created_date', 500),
   });
 
+  const { data: allStores = [] } = useQuery({
+    queryKey: ['audit-stores-no-tracker'],
+    queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 500),
+    enabled: !!allowedStores,
+  });
+
+  // Brands visible in the filter — narrowed to only the brands tied to
+  // allowedStores (e.g. a store manager's assigned stores) when provided;
+  // otherwise every brand stays visible (admin/unrestricted view).
+  const visibleBrands = useMemo(() => {
+    if (!allowedStores) return brands;
+    const ownBrandIds = new Set(
+      allStores.filter(s => allowedStores.includes(s.store_name)).map(s => s.brand_id)
+    );
+    return brands.filter(b => ownBrandIds.has(b.id));
+  }, [brands, allowedStores, allStores]);
+
   // Scope to allowed stores when provided (store managers); otherwise show all stores
   const scopedSubmissions = useMemo(() => {
     if (!allowedStores) return submissions;
@@ -179,7 +196,7 @@ export default function NoAnswerTracker({ allowedStores = null, showFilters = tr
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Brands</SelectItem>
-                  {brands.map(b => <SelectItem key={b.id} value={b.id}>{b.brand_name}</SelectItem>)}
+                  {visibleBrands.map(b => <SelectItem key={b.id} value={b.id}>{b.brand_name}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={selectedStore} onValueChange={setSelectedStore}>
