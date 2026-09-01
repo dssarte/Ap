@@ -7,26 +7,12 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, ClipboardCheck, CheckCircle2, XCircle, Store, CalendarDays } from 'lucide-react';
 import moment from 'moment';
 import { auditBusinessDayKey, formatPHDate } from '@/lib/dateUtils';
+import { templateAppliesToStore } from '@/lib/auditTemplateMatch';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { BarChart, Bar, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const PASS_THRESHOLD = 100; // a store "finished" when 100% of its required checklists are done
-
-// Does this template apply to a given store? Matches by store_id first —
-// the stable link — falling back to store_name only for older restriction
-// entries saved before store_id was tracked. A name-only match would break
-// silently if the store was ever renamed after the restriction was saved.
-function templateAppliesToStore(t, store) {
-  if (!store) return false;
-  const restrictions = t.store_restrictions?.length > 0
-    ? t.store_restrictions
-    : t.store_name ? [{ store_name: t.store_name, store_id: t.store_id }] : [];
-  if (restrictions.length === 0) return false;
-  return restrictions.some(r =>
-    (r.store_id && store.id && r.store_id === store.id) || r.store_name === store.store_name
-  );
-}
 
 export default function DailySummary() {
   const [user, setUser] = useState(null);
@@ -96,6 +82,11 @@ export default function DailySummary() {
     if (filterTemplateId !== 'all') list = list.filter(t => t.id === filterTemplateId);
     return list;
   }, [completionTemplates, requiredIds, filterTemplateId]);
+
+  const selectedChecklistName = useMemo(
+    () => filterTemplateId === 'all' ? null : completionTemplates.find(t => t.id === filterTemplateId)?.title || null,
+    [completionTemplates, filterTemplateId]
+  );
 
   // Submissions for the selected date only
   const daySubs = useMemo(
@@ -214,14 +205,6 @@ export default function DailySummary() {
       };
     });
   }, [scopedStores, requiredTemplates, daySubs]);
-
-  // Distinct required checklists that actually apply to a store in the
-  // current brand/store scope — the "N required checklists" count shown in
-  // the Store Completion header, so it reflects the selected brand instead
-  // of always showing the site-wide required total.
-  const scopedRequiredCount = useMemo(() => {
-    return requiredTemplates.filter(t => scopedStores.some(store => templateAppliesToStore(t, store))).length;
-  }, [requiredTemplates, scopedStores]);
 
   // Stores with at least one required checklist today — used for the KPI
   // cards and aggregate charts, so a brand with nothing configured yet
@@ -505,11 +488,13 @@ export default function DailySummary() {
 
           {/* Store table */}
           <Card className="border border-slate-200 shadow-sm">
-            <CardHeader className="pb-2 pt-5 px-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardHeader className="pb-2 pt-5 px-5">
               <p className="font-bold text-slate-800 flex items-center gap-2">
                 <Store className="w-4 h-4 text-[#1fd655]" /> Store Completion — {formatPHDate(selectedDate)}
               </p>
-              <p className="text-xs text-slate-400 whitespace-nowrap">{scopedRequiredCount} required checklist{scopedRequiredCount !== 1 ? 's' : ''}</p>
+              {selectedChecklistName && (
+                <p className="text-xs text-slate-500">Filtered by checklist: <span className="font-semibold text-slate-700">{selectedChecklistName}</span></p>
+              )}
             </CardHeader>
             <CardContent className="px-0 pb-4">
               <div className="space-y-5 px-4 md:hidden">

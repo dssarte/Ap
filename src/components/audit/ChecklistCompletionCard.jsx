@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { CalendarCheck, Settings2, ChevronDown, ChevronUp, Loader2, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import moment from 'moment';
 import { auditBusinessDayKey } from '@/lib/dateUtils';
+import { templateAppliesToStore } from '@/lib/auditTemplateMatch';
 
 export default function ChecklistCompletionCard({
   templates,
@@ -18,17 +20,38 @@ export default function ChecklistCompletionCard({
   onSelectAll,
   onClearAll,
   saving = false,
+  // Preferred: full store records ({ id, store_name, ... }) — needed to
+  // track completion per store. `storeNames` (plain strings) is accepted
+  // as a fallback for older callers that don't have full records handy.
+  stores = [],
   storeNames = [],
-  selectedStore = 'all',
-  onStoreChange,
 }) {
   const [showManager, setShowManager] = useState(false);
+  const [breakdownDay, setBreakdownDay] = useState('');
+
+  const storeList = useMemo(() => {
+    if (stores?.length) return stores;
+    return (storeNames || []).map(name => ({ id: name, store_name: name }));
+  }, [stores, storeNames]);
 
   const activeTemplates = useMemo(
     () => templates.filter(t => selectedIds.includes(t.id)),
     [templates, selectedIds]
   );
-  const totalTemplates = activeTemplates.length;
+
+  // What's actually required, per store — a checklist only counts against a
+  // store if it's assigned to that store. One store finishing a checklist
+  // doesn't count it as done for every other store that also requires it.
+  const storeRequirements = useMemo(() => {
+    return storeList
+      .map(store => ({ store, templates: activeTemplates.filter(t => templateAppliesToStore(t, store)) }))
+      .filter(r => r.templates.length > 0);
+  }, [storeList, activeTemplates]);
+
+  const totalRequiredPerDay = useMemo(
+    () => storeRequirements.reduce((sum, r) => sum + r.templates.length, 0),
+    [storeRequirements]
+  );
 
   const days = useMemo(() => {
     const result = [];
@@ -45,23 +68,56 @@ export default function ChecklistCompletionCard({
   const dailyStats = useMemo(() => {
     return days.map(day => {
       const daySubs = submissions.filter(s => auditBusinessDayKey(s) === day);
-      const completedIds = new Set(daySubs.map(s => s.template_id));
-      const completed = activeTemplates.filter(t => completedIds.has(t.id)).length;
-      const rate = totalTemplates > 0 ? Math.round((completed / totalTemplates) * 100) : 0;
-      return { day, completed, total: totalTemplates, rate };
+      let completed = 0;
+      const perStore = storeRequirements.map(({ store, templates: required }) => {
+        const storeDaySubs = daySubs.filter(s => s.brand?.includes(store.store_name));
+        const doneIds = new Set(storeDaySubs.map(s => s.template_id));
+        const missing = required.filter(t => !doneIds.has(t.id));
+        const doneCount = required.length - missing.length;
+        completed += doneCount;
+        return { store, required: required.length, completed: doneCount, missing };
+      });
+      const rate = totalRequiredPerDay > 0 ? Math.round((completed / totalRequiredPerDay) * 100) : 0;
+      return { day, completed, total: totalRequiredPerDay, rate, perStore };
     });
-  }, [days, submissions, activeTemplates, totalTemplates]);
+  }, [days, submissions, storeRequirements, totalRequiredPerDay]);
 
   const overallRate = useMemo(() => {
-    if (dailyStats.length === 0 || totalTemplates === 0) return 0;
+    if (dailyStats.length === 0 || totalRequiredPerDay === 0) return 0;
     const totalCompleted = dailyStats.reduce((s, d) => s + d.completed, 0);
-    const totalRequired = totalTemplates * dailyStats.length;
+    const totalRequired = totalRequiredPerDay * dailyStats.length;
     return totalRequired > 0 ? Math.round((totalCompleted / totalRequired) * 100) : 0;
-  }, [dailyStats, totalTemplates]);
+  }, [dailyStats, totalRequiredPerDay]);
+
+  // Default the store-breakdown view to the most recent day in range, and
+  // keep it valid whenever the date range changes.
+  useEffect(() => {
+    if (days.length && !days.includes(breakdownDay)) setBreakdownDay(days[days.length - 1]);
+  }, [days, breakdownDay]);
+
+  const breakdownStats = dailyStats.find(d => d.day === breakdownDay) || dailyStats[dailyStats.length - 1];
+
+  // Grouped by brand so a store manager with many stores gets a collapsed
+  // accordion per brand instead of one long flat list.
+  const breakdownGroups = useMemo(() => {
+    const rows = breakdownStats?.perStore || [];
+    const groups = new Map();
+    rows.forEach(row => {
+      const brandName = row.store.brand_name || 'Stores';
+      if (!groups.has(brandName)) groups.set(brandName, []);
+      groups.get(brandName).push(row);
+    });
+    return Array.from(groups.entries())
+      .map(([brandName, rows]) => ({
+        brandName,
+        rows,
+        completed: rows.reduce((s, r) => s + r.completed, 0),
+        required: rows.reduce((s, r) => s + r.required, 0),
+      }))
+      .sort((a, b) => a.brandName.localeCompare(b.brandName));
+  }, [breakdownStats]);
 
   if (templates.length === 0) return null;
-
-  const showStoreSelector = storeNames.length > 1 && onStoreChange;
 
   return (
     <Card className="border border-slate-200 shadow-sm">
@@ -70,23 +126,6 @@ export default function ChecklistCompletionCard({
           <CalendarCheck className="w-4 h-4 text-[#1fd655]" /> Checklist Completion Rate
         </p>
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-xs text-slate-400">{totalTemplates} checklist{totalTemplates !== 1 ? 's' : ''} required daily</p>
-          {showStoreSelector && (
-            <div className="flex items-center gap-1.5">
-              <Store className="w-3.5 h-3.5 text-slate-400" />
-              <Select value={selectedStore} onValueChange={onStoreChange}>
-                <SelectTrigger className="h-8 w-[140px] text-xs border-slate-300">
-                  <SelectValue placeholder="Store" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Stores</SelectItem>
-                  {storeNames.map(name => (
-                    <SelectItem key={name} value={name}>{name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           {isAdmin && (
             <Button
               variant="outline"
@@ -160,6 +199,70 @@ export default function ChecklistCompletionCard({
             </tbody>
           </table>
         </div>
+
+        {/* Per-store breakdown — which stores haven't completed their
+            required checklists, and exactly which ones they're missing. */}
+        {storeRequirements.length > 0 && (
+          <div className="border-t border-slate-100 pt-4 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
+                <Store className="w-3.5 h-3.5 text-slate-400" /> Store Breakdown
+              </p>
+              {days.length > 1 && (
+                <Select value={breakdownDay} onValueChange={setBreakdownDay}>
+                  <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {days.map(d => (
+                      <SelectItem key={d} value={d}>{moment(d).format('MMM D, YYYY')}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            {breakdownGroups.length === 0 ? (
+              <p className="text-center px-3 py-6 text-sm text-slate-400">No stores to show.</p>
+            ) : (
+              <Accordion type="multiple" className="rounded-lg border border-slate-200 divide-y divide-slate-100">
+                {breakdownGroups.map(group => {
+                  return (
+                    <AccordionItem key={group.brandName} value={group.brandName} className="border-0">
+                      <AccordionTrigger className="px-3 py-2.5 hover:no-underline">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-semibold text-slate-800">{group.brandName}</span>
+                          <span className="text-xs text-slate-400">{group.rows.length} store{group.rows.length !== 1 ? 's' : ''}</span>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="px-0 pt-0 pb-0">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-slate-100 bg-slate-50">
+                                <th className="text-left px-3 py-2 font-semibold text-slate-600 text-xs uppercase tracking-wide">Store</th>
+                                <th className="text-left px-3 py-2 font-semibold text-slate-600 text-xs uppercase tracking-wide">Missing</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.rows.map((row, i) => (
+                                <tr key={row.store.id || row.store.store_name} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}>
+                                  <td className="px-3 py-2 font-medium text-slate-800">{row.store.store_name}</td>
+                                  <td className="px-3 py-2 text-xs text-slate-500">
+                                    {row.missing.length > 0
+                                      ? row.missing.map(t => t.title).join(', ')
+                                      : <span className="text-green-600 font-medium">All done</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  );
+                })}
+              </Accordion>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

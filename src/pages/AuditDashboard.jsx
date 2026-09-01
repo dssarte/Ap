@@ -199,12 +199,10 @@ export default function AuditDashboard() {
   }, [brands, allowedStores, ownStoreRecords]);
 
   // Stores visible under the current brand selection (store managers stay
-  // scoped to their own assigned stores regardless of brand). "QA" isn't a
-  // real brand, so there's no per-store view under it.
+  // scoped to their own assigned stores regardless of brand).
   const visibleStores = useMemo(() => {
     const base = allowedStores ? ownStoreRecords : stores;
     if (selectedBrandId === 'all') return base;
-    if (selectedBrandId === 'qa') return [];
     return base.filter(s => s.brand_id === selectedBrandId);
   }, [stores, ownStoreRecords, allowedStores, selectedBrandId]);
 
@@ -218,42 +216,47 @@ export default function AuditDashboard() {
       const store = stores.find(s => s.id === selectedStoreId);
       return store ? [store.store_name] : (allowedStores || []);
     }
-    if (selectedBrandId !== 'all' && selectedBrandId !== 'qa') {
+    if (selectedBrandId !== 'all') {
       return visibleStores.map(s => s.store_name);
     }
     return allowedStores;
   }, [selectedStoreId, selectedBrandId, stores, visibleStores, allowedStores]);
 
-  // Unrestricted templates (no store_restrictions and no store_name) are the
-  // generic QA checklists shared across every brand — kept as their own "QA"
-  // filter option instead of mixing into a specific brand's template list.
-  const qaTemplateIds = useMemo(() => {
-    return new Set(
-      templates.filter(t => (t.store_restrictions?.length ?? 0) === 0 && !t.store_name).map(t => t.id)
-    );
-  }, [templates]);
-  const hasQaTemplates = qaTemplateIds.size > 0;
+  // Store records (not just names) for the Checklist Completion Rate card —
+  // it needs to track completion per store, not just an allowlist.
+  const checklistCompletionStores = useMemo(() => {
+    if (selectedStoreId !== 'all') {
+      const store = stores.find(s => s.id === selectedStoreId);
+      return store ? [store] : [];
+    }
+    if (selectedBrandId !== 'all') return visibleStores;
+    return allowedStores ? ownStoreRecords : stores;
+  }, [selectedBrandId, selectedStoreId, stores, visibleStores, allowedStores, ownStoreRecords]);
 
   // Templates scoped to the current brand/store selection, for the filter
-  // dropdown.
+  // dropdown. Unrestricted (QA-wide) templates have no store_restrictions
+  // and no store_name, so they always stay visible under "All Brands" but
+  // don't mix into a specific brand's own template list.
   const filterTemplates = useMemo(() => {
-    if (selectedBrandId === 'qa') return templates.filter(t => qaTemplateIds.has(t.id));
     return templates.filter(t => {
-      if (qaTemplateIds.has(t.id)) return false;
-      const restrictions = t.store_restrictions || [];
+      const restrictions = t.store_restrictions?.length > 0
+        ? t.store_restrictions
+        : (t.store_name ? [{ store_name: t.store_name, brand_id: t.brand_id, store_id: t.store_id }] : []);
+      const isUnrestricted = restrictions.length === 0;
       if (selectedStoreId !== 'all') {
         return restrictions.some(r => r.store_id === selectedStoreId) || t.store_id === selectedStoreId;
       }
       if (selectedBrandId !== 'all') {
         return restrictions.some(r => r.brand_id === selectedBrandId) || t.brand_id === selectedBrandId;
       }
+      if (isUnrestricted) return true;
       if (allowedStores) {
         const ownBrandIds = new Set(visibleBrands.map(b => b.id));
-        return restrictions.some(r => ownBrandIds.has(r.brand_id)) || ownBrandIds.has(t.brand_id);
+        return restrictions.some(r => ownBrandIds.has(r.brand_id));
       }
       return true;
     });
-  }, [templates, selectedBrandId, selectedStoreId, allowedStores, visibleBrands, qaTemplateIds]);
+  }, [templates, selectedBrandId, selectedStoreId, allowedStores, visibleBrands]);
 
   // Store-restricted templates scoped to the current brand/store selection —
   // what the Checklist Completion Rate card should actually count as "N
@@ -261,7 +264,6 @@ export default function AuditDashboard() {
   // site-wide total. Templates required for other brands/stores don't
   // apply here, so they're excluded rather than counted in.
   const scopedCompletionTemplates = useMemo(() => {
-    if (selectedBrandId === 'qa') return [];
     if (selectedTemplateId !== 'all') return completionTemplates.filter(t => t.id === selectedTemplateId);
     return completionTemplates.filter(t => {
       const restrictions = t.store_restrictions?.length > 0
@@ -291,9 +293,7 @@ export default function AuditDashboard() {
     if (allowedStores) {
       subs = subs.filter(s => allowedStores.some(name => s.brand?.includes(name)));
     }
-    if (selectedBrandId === 'qa') {
-      subs = subs.filter(s => qaTemplateIds.has(s.template_id));
-    } else if (selectedBrandId !== 'all') {
+    if (selectedBrandId !== 'all') {
       const brand = brands.find(b => b.id === selectedBrandId);
       if (brand) subs = subs.filter(s => s.brand && s.brand.startsWith(brand.brand_name));
     }
@@ -313,7 +313,7 @@ export default function AuditDashboard() {
       });
     }
     return subs;
-  }, [submissions, brands, stores, allowedStores, selectedBrandId, selectedStoreId, selectedTemplateId, dateFrom, dateTo, qaTemplateIds]);
+  }, [submissions, brands, stores, allowedStores, selectedBrandId, selectedStoreId, selectedTemplateId, dateFrom, dateTo]);
 
   const filteredSubmissionIds = useMemo(
     () => new Set(filtered.map(submission => submission.id)),
@@ -619,7 +619,7 @@ export default function AuditDashboard() {
   }, [trendData]);
 
   const handleExportExcel = () => {
-    const brandLabel = selectedBrandId === 'all' ? 'All Brands' : selectedBrandId === 'qa' ? 'QA' : (brands.find(b => b.id === selectedBrandId)?.brand_name || 'All Brands');
+    const brandLabel = selectedBrandId === 'all' ? 'All Brands' : (brands.find(b => b.id === selectedBrandId)?.brand_name || 'All Brands');
     const sheets = [
       {
         name: 'Store Performance',
@@ -720,21 +720,18 @@ export default function AuditDashboard() {
           <SelectContent>
             <SelectItem value="all">All Brands</SelectItem>
             {visibleBrands.map(b => <SelectItem key={b.id} value={b.id}>{b.brand_name}</SelectItem>)}
-            {hasQaTemplates && <SelectItem value="qa">QA</SelectItem>}
           </SelectContent>
         </Select>
 
-        {selectedBrandId !== 'qa' && (
-          <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
-            <SelectTrigger className="w-48 h-9">
-              <SelectValue placeholder="All Stores" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Stores</SelectItem>
-              {visibleStores.map(s => <SelectItem key={s.id} value={s.id}>{s.store_name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        )}
+        <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
+          <SelectTrigger className="w-48 h-9">
+            <SelectValue placeholder="All Stores" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Stores</SelectItem>
+            {visibleStores.map(s => <SelectItem key={s.id} value={s.id}>{s.store_name}</SelectItem>)}
+          </SelectContent>
+        </Select>
 
         <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
           <SelectTrigger className="w-56 h-9">
@@ -863,6 +860,7 @@ export default function AuditDashboard() {
             onSelectAll={handleSelectAll}
             onClearAll={handleClearAll}
             saving={saving}
+            stores={checklistCompletionStores}
           />
 
           {/* NO findings graphs */}
