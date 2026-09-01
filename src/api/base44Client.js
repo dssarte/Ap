@@ -288,12 +288,26 @@ async function currentProfile() {
   if (!profile) {
     const now = new Date().toISOString();
     const payload = {
-      id: crypto.randomUUID(), email, full_name: user.user_metadata?.full_name || email,
+      // Must match auth.uid() — RLS policies and joins elsewhere assume
+      // public.users.id is the same as the authenticated user's id.
+      id: user.id, email, full_name: user.user_metadata?.full_name || email,
       display_name: user.user_metadata?.full_name || email, role: 'user', app_role: 'user',
       user_type: 'user', is_verified: true, verified: true, email_verified: true,
       created_date: now, updated_date: now,
     };
-    profile = unwrap(await supabase.from('users').insert(payload).select().single());
+    // Upsert on the email unique index — two tabs racing to self-heal the
+    // same missing profile would otherwise hit a duplicate-key error.
+    const attemptUpsert = () => supabase.from('users').upsert(payload, { onConflict: 'email' }).select().single();
+    let { data: upserted, error: upsertError } = await attemptUpsert();
+    if (upsertError?.code === '42501') {
+      // RLS denial here almost always means the access token expired
+      // between getUser() and this request — refresh once and retry
+      // before surfacing a raw Postgres error to the user.
+      await supabase.auth.refreshSession();
+      ({ data: upserted, error: upsertError } = await attemptUpsert());
+    }
+    if (upsertError) throw upsertError;
+    profile = upserted;
   }
   if (profile.disabled === true || String(profile.disabled).toLowerCase() === 'true') {
     await supabase.auth.signOut();
