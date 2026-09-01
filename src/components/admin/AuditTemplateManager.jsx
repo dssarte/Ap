@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, ClipboardList, Sparkles } from "lucide-react";
+import { Plus, Pencil, Trash2, ClipboardList, Sparkles, Copy } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -137,6 +137,20 @@ export default function AuditTemplateManager() {
 
   const openNew = () => { setEditing(null); setDialogOpen(true); };
   const openEdit = (t) => { setEditing(t); setDialogOpen(true); };
+  // Duplicate — pre-fills a new template with the source's sections, store
+  // restrictions, and timing, but clears the title (it must be picked fresh
+  // from the Category dropdown, since titles must be unique) and drops the
+  // id so Save creates a new row instead of overwriting the original.
+  const openDuplicate = (t) => {
+    setEditing({
+      ...t,
+      id: undefined,
+      title: '',
+      sections: t.sections ? JSON.parse(JSON.stringify(t.sections)) : [],
+      store_restrictions: t.store_restrictions ? JSON.parse(JSON.stringify(t.store_restrictions)) : [],
+    });
+    setDialogOpen(true);
+  };
 
   const visibleTemplates = templates.filter(t => normalizeGroup(t.template_group) === groupTab);
 
@@ -213,6 +227,9 @@ export default function AuditTemplateManager() {
                   <Button variant="outline" size="icon" onClick={() => openEdit(t)}>
                     <Pencil className="w-4 h-4" />
                   </Button>
+                  <Button variant="outline" size="icon" onClick={() => openDuplicate(t)} title="Duplicate">
+                    <Copy className="w-4 h-4" />
+                  </Button>
                   <Button variant="outline" size="icon" className="text-red-500 hover:text-red-600" onClick={() => deleteMutation.mutate(t.id)}>
                     <Trash2 className="w-4 h-4" />
                   </Button>
@@ -250,12 +267,14 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
   const [availableFromTime, setAvailableFromTime] = useState('06:00');
   const [availableToTime, setAvailableToTime] = useState('17:00');
   const [activeTicket, setActiveTicket] = useState(false);
+  const [templateGroup, setTemplateGroup] = useState(group);
 
   React.useEffect(() => {
     if (open) {
       setTitle(initial?.title || '');
       setDescription(initial?.description || '');
       setSections(initial?.sections ? JSON.parse(JSON.stringify(initial.sections)) : []);
+      setTemplateGroup(initial ? normalizeGroup(initial.template_group) : group);
       setHasTimeRestriction(!!initial?.has_time_restriction);
       setAvailableFromTime(initial?.available_from_time || '06:00');
       setAvailableToTime(initial?.available_to_time || '17:00');
@@ -360,7 +379,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       description: description.trim(),
       sections,
       is_active: initial?.is_active ?? true,
-      template_group: initial ? normalizeGroup(initial.template_group) : group,
+      template_group: initial?.id ? normalizeGroup(initial.template_group) : templateGroup,
       active_ticket: activeTicket,
       has_time_restriction: hasTimeRestriction,
       available_from_time: hasTimeRestriction ? availableFromTime : '',
@@ -410,6 +429,24 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
             <label className="text-sm font-semibold text-slate-700">Description</label>
             <Textarea placeholder="Short description..." value={description} onChange={e => setDescription(e.target.value)} rows={2} />
           </div>
+
+          {/* Brand tab — only changeable for new/duplicated templates; an
+              existing template's tab can't be moved from here. */}
+          {!initial?.id && (
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700">Brand Tab</label>
+              <Select value={templateGroup} onValueChange={setTemplateGroup}>
+                <SelectTrigger className="w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TEMPLATE_GROUPS.map(g => (
+                    <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Store restrictions — optional, multiple */}
           <div className="space-y-2">

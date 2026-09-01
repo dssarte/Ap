@@ -63,6 +63,12 @@ export default function UserManager() {
   const [departments, setDepartments] = useState([]);
   const [brands, setBrands] = useState([]);
   const [stores, setStores] = useState([]);
+  // Unfiltered (including inactive) — only for resolving an existing
+  // assignment's brand grouping in AssignedStoresCell, so a store/brand
+  // deactivated after being assigned doesn't fall into "Other". Assignment
+  // dropdowns still use the active-only `brands`/`stores` above.
+  const [allBrandsEver, setAllBrandsEver] = useState([]);
+  const [allStoresEver, setAllStoresEver] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
@@ -84,18 +90,22 @@ export default function UserManager() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersData, pendingData, deptsData, brandsData, storesData] = await Promise.all([
+      const [usersData, pendingData, deptsData, brandsData, storesData, allBrandsData, allStoresData] = await Promise.all([
         base44.entities.User.list('-created_date'),
         base44.entities.PendingUser.list('-created_date'),
         base44.entities.Department.list('name'),
         base44.entities.Brand.filter({ is_active: true }),
-        base44.entities.Store.filter({ is_active: true })
+        base44.entities.Store.filter({ is_active: true }),
+        base44.entities.Brand.list(),
+        base44.entities.Store.list()
       ]);
       const pendingAsRows = pendingData.map(p => ({ ...p, full_name: p.full_name, _isPending: true }));
       setUsers([...pendingAsRows, ...usersData]);
       setDepartments(deptsData);
       setBrands(brandsData);
       setStores(storesData);
+      setAllBrandsEver(allBrandsData);
+      setAllStoresEver(allStoresData);
     } catch (err) {
       console.error('Failed to load users:', err);
       toast({ title: "Failed to load users", description: err?.message || "Unknown error", variant: "destructive" });
@@ -529,7 +539,7 @@ HelpDesk Support Team`
                 <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   <div><dt className="text-xs text-slate-400">Department</dt><dd className="mt-0.5 text-slate-700">{user.department_name || '-'}</dd></div>
                   <div><dt className="text-xs text-slate-400">Phone</dt><dd className="mt-0.5 text-slate-700">{user.phone || '-'}</dd></div>
-                  <div className="col-span-2"><dt className="text-xs text-slate-400">Store</dt><dd className="mt-0.5 text-slate-700">{user.user_type === 'store_manager' ? <AssignedStoresCell stores={user.assigned_stores} allStores={stores} brands={brands} /> : (user.store_name || '-')}</dd></div>
+                  <div className="col-span-2"><dt className="text-xs text-slate-400">Store</dt><dd className="mt-0.5 text-slate-700">{user.user_type === 'store_manager' ? <AssignedStoresCell stores={user.assigned_stores} allStores={allStoresEver} brands={allBrandsEver} /> : (user.store_name || '-')}</dd></div>
                 </dl>
                 <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
                   {user._isPending
@@ -570,7 +580,7 @@ HelpDesk Support Team`
                   <TableCell className="text-slate-600">{user.department_name || '-'}</TableCell>
                   <TableCell className="text-slate-600">
                     {user.user_type === 'store_manager'
-                      ? <AssignedStoresCell stores={user.assigned_stores} allStores={stores} brands={brands} />
+                      ? <AssignedStoresCell stores={user.assigned_stores} allStores={allStoresEver} brands={allBrandsEver} />
                       : (user.store_name || '-')}
                   </TableCell>
                   <TableCell className="text-slate-600">{user.phone || '-'}</TableCell>
