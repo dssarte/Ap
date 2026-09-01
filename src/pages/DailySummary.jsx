@@ -83,6 +83,11 @@ export default function DailySummary() {
     return list;
   }, [completionTemplates, requiredIds, filterTemplateId]);
 
+  const selectedChecklistName = useMemo(
+    () => filterTemplateId === 'all' ? null : completionTemplates.find(t => t.id === filterTemplateId)?.title || null,
+    [completionTemplates, filterTemplateId]
+  );
+
   // Submissions for the selected date only
   const daySubs = useMemo(
     () => submissions.filter(s => auditBusinessDayKey(s) === selectedDate),
@@ -487,6 +492,9 @@ export default function DailySummary() {
               <p className="font-bold text-slate-800 flex items-center gap-2">
                 <Store className="w-4 h-4 text-[#1fd655]" /> Store Completion — {formatPHDate(selectedDate)}
               </p>
+              {selectedChecklistName && (
+                <p className="text-xs text-slate-500">Filtered by checklist: <span className="font-semibold text-slate-700">{selectedChecklistName}</span></p>
+              )}
             </CardHeader>
             <CardContent className="px-0 pb-4">
               <div className="space-y-5 px-4 md:hidden">
