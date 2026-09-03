@@ -23,6 +23,7 @@ const TEMPLATE_GROUPS = [
   { value: 'tien-ma', label: 'Tien Ma' },
   { value: 'koobideh-kebab', label: 'Koobideh Kebab' },
   { value: 'angels-pizza-express', label: "Angel's Pizza Express" },
+  { value: 'others', label: 'Others' },
 ];
 
 // Templates saved before brand tabs existed have no template_group (or the
@@ -379,7 +380,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       description: description.trim(),
       sections,
       is_active: initial?.is_active ?? true,
-      template_group: initial?.id ? normalizeGroup(initial.template_group) : templateGroup,
+      template_group: templateGroup,
       active_ticket: activeTicket,
       has_time_restriction: hasTimeRestriction,
       available_from_time: hasTimeRestriction ? availableFromTime : '',
@@ -430,23 +431,19 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
             <Textarea placeholder="Short description..." value={description} onChange={e => setDescription(e.target.value)} rows={2} />
           </div>
 
-          {/* Brand tab — only changeable for new/duplicated templates; an
-              existing template's tab can't be moved from here. */}
-          {!initial?.id && (
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700">Brand Tab</label>
-              <Select value={templateGroup} onValueChange={setTemplateGroup}>
-                <SelectTrigger className="w-64">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TEMPLATE_GROUPS.map(g => (
-                    <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-700">Brand Tab</label>
+            <Select value={templateGroup} onValueChange={setTemplateGroup}>
+              <SelectTrigger className="w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TEMPLATE_GROUPS.map(g => (
+                  <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Store restrictions — optional, multiple */}
           <div className="space-y-2">
