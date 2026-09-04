@@ -35,6 +35,7 @@ const LOGO_URL = '/assets/figaro-logo.png';
 
 export default function Layout({ children, currentPageName }) {
   const [user, setUser] = useState(null);
+  const [userStoreBrand, setUserStoreBrand] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [hasAuditAssignments, setHasAuditAssignments] = useState(false);
@@ -43,6 +44,16 @@ export default function Layout({ children, currentPageName }) {
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!user?.store_name) {
+      setUserStoreBrand(null);
+      return;
+    }
+    base44.entities.Store.filter({ store_name: user.store_name })
+      .then((stores) => setUserStoreBrand(stores?.[0]?.brand_name || null))
+      .catch(() => setUserStoreBrand(null));
+  }, [user?.store_name]);
 
   useEffect(() => {
     if (
@@ -214,8 +225,13 @@ export default function Layout({ children, currentPageName }) {
     <div className="min-h-screen bg-slate-50 text-slate-950">
       <a href="#main-content" className="fixed left-4 top-3 z-[100] -translate-y-20 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-lg transition-transform focus:translate-y-0">Skip to main content</a>
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-slate-200 bg-white lg:flex lg:flex-col">
-        <Link to={createPageUrl('Home')} className="flex h-20 items-center border-b border-slate-100 px-6">
+        <Link to={createPageUrl('Home')} className="flex h-20 items-center gap-2 border-b border-slate-100 px-6">
           <img src={LOGO_URL} alt="Figaro Coffee Group" className="h-12 w-auto object-contain" />
+          {user?.store_name && (
+            <span className="truncate text-sm font-semibold text-slate-700">
+              {userStoreBrand ? `${userStoreBrand} ` : ''}{user.store_name}
+            </span>
+          )}
         </Link>
         <div className="flex-1 overflow-y-auto px-4 py-6">
           <p className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Workspace</p>
@@ -236,7 +252,14 @@ export default function Layout({ children, currentPageName }) {
           <button className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} aria-label="Close navigation" />
           <aside className="relative flex h-full w-[min(86vw,320px)] flex-col bg-white shadow-2xl">
             <div className="flex h-20 items-center justify-between border-b border-slate-100 px-5">
-              <img src={LOGO_URL} alt="Figaro Coffee Group" className="h-12 w-auto" />
+              <div className="flex min-w-0 items-center gap-2">
+                <img src={LOGO_URL} alt="Figaro Coffee Group" className="h-12 w-auto" />
+                {user?.store_name && (
+                  <span className="truncate text-sm font-semibold text-slate-700">
+                    {userStoreBrand ? `${userStoreBrand} ` : ''}{user.store_name}
+                  </span>
+                )}
+              </div>
               <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)} aria-label="Close menu"><X className="h-5 w-5" /></Button>
             </div>
             <div className="flex-1 overflow-y-auto p-4"><Navigation mobile /></div>
