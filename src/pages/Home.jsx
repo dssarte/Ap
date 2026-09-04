@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Ticket, Clock, CheckCircle, AlertCircle, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Ticket, Clock, CheckCircle, AlertCircle, Loader2, ChevronLeft, ChevronRight, Store } from "lucide-react";
 import TicketCard from "@/components/tickets/TicketCard";
 import TicketForm from "@/components/tickets/TicketForm";
 import TicketDetails from "@/components/tickets/TicketDetails";
@@ -134,6 +134,15 @@ export default function Home() {
     queryKey: ['audit-templates-for-duplicates'],
     queryFn: () => base44.entities.AuditTemplate.list('-created_date', 200),
     enabled: !!user,
+  });
+
+  const { data: userStoreBrand } = useQuery({
+    queryKey: ['store-brand-for-welcome-card', user?.store_name],
+    queryFn: async () => {
+      const stores = await base44.entities.Store.filter({ store_name: user.store_name });
+      return stores?.[0]?.brand_name || null;
+    },
+    enabled: !!user?.store_name,
   });
 
   const queryClient = useQueryClient();
@@ -296,6 +305,19 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-[1440px] px-4 py-7 sm:px-6 sm:py-9 lg:px-8">
+        {user?.store_name && (
+          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-5 py-4">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-white">
+              <Store className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">Welcome</p>
+              <p className="truncate text-base font-semibold text-slate-900">
+                {userStoreBrand ? `${userStoreBrand} ` : ''}{user.store_name}
+              </p>
+            </div>
+          </div>
+        )}
         {/* Header */}
         <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
           <div>
