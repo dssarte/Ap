@@ -21,12 +21,12 @@ const priorityColors = {
   urgent: "bg-red-50 text-red-600 border border-red-200"
 };
 
-export default function TicketCard({ ticket, onClick, unreadCount = 0 }) {
+export default function TicketCard({ ticket, onClick, unreadCount = 0, overdue = false }) {
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
 
   return (
     <Card
-      className={`group cursor-pointer rounded-2xl bg-white shadow-sm transition-all hover:border-emerald-300 hover:shadow-md ${duplicatesOpen ? '' : 'hover:-translate-y-0.5'} ${unreadCount > 0 ? 'border-emerald-300 ring-1 ring-emerald-100' : 'border-slate-200'}`}
+      className={`group cursor-pointer rounded-2xl bg-white shadow-sm transition-all hover:border-emerald-300 hover:shadow-md ${duplicatesOpen ? '' : 'hover:-translate-y-0.5'} ${overdue ? 'border-red-400 ring-1 ring-red-100' : unreadCount > 0 ? 'border-emerald-300 ring-1 ring-emerald-100' : 'border-slate-200'}`}
       onClick={() => onClick(ticket)}
     >
      <CardContent className="p-4 sm:p-5">

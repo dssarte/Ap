@@ -11,7 +11,7 @@ const jsonResponse = (body: Record<string, unknown>, status = 200) => new Respon
   { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
 )
 
-const allowedUserTypes = new Set(['user', 'department_head', 'store_manager', 'admin'])
+const allowedUserTypes = new Set(['user', 'department_head', 'store_manager', 'director', 'admin'])
 const allowedRoles = new Set(['user', 'admin'])
 
 Deno.serve(async (request) => {

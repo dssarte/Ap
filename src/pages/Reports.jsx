@@ -45,10 +45,10 @@ export default function Reports() {
       
       let allTickets = [];
       
-      // Admin sees all tickets
-      if (user.user_type === 'admin') {
+      // Admin and Director see all tickets
+      if (user.user_type === 'admin' || user.user_type === 'director') {
         allTickets = await base44.entities.Ticket.list('-created_date', 1000);
-      } 
+      }
       // Department Head sees their department tickets — handling_department_id
       // is the department currently responsible after routing/approval.
       else if (user.user_type === 'department_head' && user.department_id) {
@@ -83,14 +83,14 @@ export default function Reports() {
     );
   }
 
-  if (user.user_type !== 'admin' && user.user_type !== 'department_head' && user.user_type !== 'store_manager') {
+  if (!['admin', 'department_head', 'store_manager', 'director'].includes(user.user_type)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-[#1fd655]/5 to-white">
         <Card className="max-w-md border-2 border-slate-200 shadow-lg">
           <CardContent className="p-8 text-center">
             <BarChart3 className="w-16 h-16 text-red-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-slate-900 mb-2">Access Denied</h2>
-            <p className="text-slate-600">Only Admins, Department Heads, and Store Managers can access reports.</p>
+            <p className="text-slate-600">Only Admins, Department Heads, Store Managers, and Directors can access reports.</p>
           </CardContent>
         </Card>
       </div>
