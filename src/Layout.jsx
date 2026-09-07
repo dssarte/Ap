@@ -181,7 +181,20 @@ export default function Layout({ children, currentPageName }) {
         { name: 'Administration', icon: Settings, page: 'Admin' },
       );
     }
-    if (isQA || hasAuditAssignments) navItems.push({ name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' });
+    // Director gets the same workspace tabs as admin, minus Administration
+    // and Store Ranking.
+    if (user?.user_type === 'director') {
+      navItems.push(
+        { name: 'Reports', icon: FileBarChart, page: 'Reports' },
+        { name: 'Analytics', icon: BarChart3, page: 'Analytics' },
+        { name: 'Daily Summary', icon: CalendarCheck, page: 'DailySummary' },
+        { name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' },
+        { name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' },
+      );
+    }
+    if ((isQA || hasAuditAssignments) && user?.user_type !== 'director') {
+      navItems.push({ name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' });
+    }
     if (user?.store_name) navItems.push({ name: 'Store Analytics', icon: BarChart3, page: 'StoreAuditAnalytics' });
     if (isQA) {
       navItems.push(

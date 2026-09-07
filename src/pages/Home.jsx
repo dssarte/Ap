@@ -12,6 +12,7 @@ import StatsCard from "@/components/dashboard/StatsCard";
 import FeedbackModal from "@/components/tickets/FeedbackModal";
 import { SectionLoadingSkeleton, FeedbackBanner } from '@/components/PageState';
 import { groupDuplicateTickets } from '@/lib/duplicateTickets';
+import { safeDate } from '@/lib/dateUtils';
 
 // Caps how many page-number buttons render at once (plus ellipses) so the
 // pagination bar doesn't shrink/wrap when there are dozens of pages —
@@ -31,6 +32,20 @@ function getPageNumbers(current, total, maxVisible = 7) {
   pages.push(total);
 
   return pages;
+}
+
+// Fixed business rule shared by the director-scope filter (15+ days) and the
+// overdue red-border highlight (30+ days) — a ticket only counts as aging if
+// it's still open, not closed/resolved.
+const OPEN_TICKET_STATUSES_EXCLUDED = ['closed', 'resolved'];
+
+function ticketAgeInDays(ticket) {
+  const created = safeDate(ticket.created_date);
+  return created ? (Date.now() - created.getTime()) / (24 * 60 * 60 * 1000) : 0;
+}
+
+function isTicketOverdue(ticket) {
+  return !OPEN_TICKET_STATUSES_EXCLUDED.includes(ticket.status) && ticketAgeInDays(ticket) >= 30;
 }
 
 export default function Home() {
@@ -97,6 +112,13 @@ export default function Home() {
         return allTickets.filter(t => t.approval_status !== 'pending');
       }
       
+      // Director sees all approved tickets — narrowed down to the 15+ day
+      // aging scope below, once role flags are computed for rendering.
+      if (user.user_type === 'director') {
+        const allTickets = await base44.entities.Ticket.list('-created_date');
+        return allTickets.filter(t => t.approval_status !== 'pending');
+      }
+
       // Department Head sees approved department tickets
       if (user.user_type === 'department_head' && user.department_id) {
         const deptTickets = await base44.entities.Ticket.filter({ department_id: user.department_id }, '-created_date');
@@ -211,14 +233,19 @@ export default function Home() {
 
   const closedStatuses = ['closed', 'resolved'];
 
+  // Director scope: only tickets 15+ days old and still not resolved/closed.
+  const scopedTickets = user?.user_type === 'director'
+    ? tickets.filter(t => !closedStatuses.includes(t.status) && ticketAgeInDays(t) >= 15)
+    : tickets;
+
   const templatesById = useMemo(
     () => Object.fromEntries(auditTemplates.map(t => [t.id, t])),
     [auditTemplates]
   );
 
   const displayTickets = useMemo(
-    () => groupDuplicateTickets(tickets, templatesById),
-    [tickets, templatesById]
+    () => groupDuplicateTickets(scopedTickets, templatesById),
+    [scopedTickets, templatesById]
   );
 
   const sortedTickets = [...displayTickets].sort((a, b) => {
@@ -243,10 +270,10 @@ export default function Home() {
   const paginatedTickets = filteredTickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const stats = {
-    total: tickets.length,
-    open: tickets.filter(t => t.status === 'open').length,
-    inProgress: tickets.filter(t => t.status === 'in_progress').length,
-    resolved: tickets.filter(t => t.status === 'resolved' || t.status === 'closed').length
+    total: scopedTickets.length,
+    open: scopedTickets.filter(t => t.status === 'open').length,
+    inProgress: scopedTickets.filter(t => t.status === 'in_progress').length,
+    resolved: scopedTickets.filter(t => t.status === 'resolved' || t.status === 'closed').length
   };
 
   if (!user) {
@@ -260,7 +287,8 @@ export default function Home() {
   const isStaff = user.user_type === 'admin' || user.user_type === 'department_head';
   const isApprover = user.user_type === 'approver';
   const isBranchManager = user.user_type === 'store_manager';
-  const isRegularUser = !isStaff && !isApprover && !isBranchManager;
+  const isDirector = user.user_type === 'director';
+  const isRegularUser = !isStaff && !isApprover && !isBranchManager && !isDirector;
 
   const handleTicketClick = async (ticket) => {
     setSelectedTicket(ticket);
@@ -323,7 +351,7 @@ export default function Home() {
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Ticket workspace</p>
             <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
-              {isStaff ? 'Support overview' : isApprover ? 'Ticket approvals' : isBranchManager ? 'Branch tickets' : 'My support tickets'}
+              {isStaff ? 'Support overview' : isDirector ? 'Aging tickets' : isApprover ? 'Ticket approvals' : isBranchManager ? 'Branch tickets' : 'My support tickets'}
             </h1>
             {!isBranchManager && (
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
@@ -331,7 +359,9 @@ export default function Home() {
                   ? user.user_type === 'admin'
                     ? 'Monitor requests, priorities, and resolution progress across every department.'
                     : `Monitor and coordinate requests assigned to ${user.department_name}.`
-                  : 'Submit requests, follow their progress, and keep every conversation in one place.'}
+                  : isDirector
+                    ? 'Tickets open for 15 days or more without resolution.'
+                    : 'Submit requests, follow their progress, and keep every conversation in one place.'}
               </p>
             )}
           </div>
@@ -419,10 +449,11 @@ export default function Home() {
 
             <div className="grid gap-3">
               {paginatedTickets.map(ticket => (
-                <TicketCard 
-                  key={ticket.id} 
-                  ticket={ticket} 
+                <TicketCard
+                  key={ticket.id}
+                  ticket={ticket}
                   onClick={handleTicketClick}
+                  overdue={isTicketOverdue(ticket)}
                   unreadCount={
                     (unreadByTicket[ticket.id] || 0) +
                     (ticket._duplicateTicketIds || []).reduce((sum, id) => sum + (unreadByTicket[id] || 0), 0)

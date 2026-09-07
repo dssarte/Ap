@@ -65,7 +65,7 @@ export default function Analytics() {
       .finally(() => setAuthLoading(false));
   }, []);
 
-  const hasAccess = user?.user_type === 'admin' || user?.user_type === 'department_head' || user?.user_type === 'store_manager';
+  const hasAccess = user?.user_type === 'admin' || user?.user_type === 'department_head' || user?.user_type === 'store_manager' || user?.user_type === 'director';
 
   const { data: rawTickets = [], isLoading } = useQuery({
     queryKey: ['analytics-all-tickets'],
