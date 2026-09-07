@@ -428,6 +428,7 @@ HelpDesk Support Team`
                       <SelectItem value="user">User</SelectItem>
                       <SelectItem value="department_head">Department Head</SelectItem>
                       <SelectItem value="store_manager">Store Manager</SelectItem>
+                      <SelectItem value="director">Director</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
@@ -677,6 +678,7 @@ HelpDesk Support Team`
                     <SelectItem value="user">User - Can create tickets</SelectItem>
                     <SelectItem value="department_head">Department Head - Process tickets</SelectItem>
                     <SelectItem value="store_manager">Store Manager - Multi-store approvals & analytics</SelectItem>
+                    <SelectItem value="director">Director - Aging ticket oversight</SelectItem>
                     <SelectItem value="admin">Admin - Full access</SelectItem>
                   </SelectContent>
                 </Select>
