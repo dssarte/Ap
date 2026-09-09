@@ -207,7 +207,6 @@ export default function DepartmentDashboard() {
                     <TableHead>Title</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Priority</TableHead>
-                    <TableHead>Assigned To</TableHead>
                     <TableHead>Created</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -215,7 +214,7 @@ export default function DepartmentDashboard() {
                   {recentTickets.map(ticket => (
                     <TableRow
                       key={ticket.id}
-                      onDoubleClick={() => setSelectedTicket(ticket)}
+                      onClick={() => setSelectedTicket(ticket)}
                       className="cursor-pointer hover:bg-slate-50"
                     >
                       <TableCell className="font-medium max-w-[200px] truncate">{ticket.title}</TableCell>
@@ -225,12 +224,11 @@ export default function DepartmentDashboard() {
                         </Badge>
                       </TableCell>
                       <TableCell><Badge variant="outline">{ticket.priority}</Badge></TableCell>
-                      <TableCell className="text-slate-600">{ticket.assigned_to || 'Unassigned'}</TableCell>
                       <TableCell className="text-slate-600">{formatPHDate(ticket.created_date)}</TableCell>
                     </TableRow>
                   ))}
                   {recentTickets.length === 0 && (
-                    <TableRow><TableCell colSpan={5} className="text-center text-slate-500 py-8">No tickets yet</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={4} className="text-center text-slate-500 py-8">No tickets yet</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>

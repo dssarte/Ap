@@ -8,17 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { subDays, differenceInHours } from 'date-fns';
 import VolumeChart from '@/components/dept-analytics/VolumeChart';
-import StaffResolutionChart from '@/components/dept-analytics/StaffResolutionChart';
-import CategoryTrendsChart from '@/components/dept-analytics/CategoryTrendsChart';
-import StaffWorkloadTable from '@/components/dept-analytics/StaffWorkloadTable';
 import TicketsByStatus from '@/components/reports/TicketsByStatus';
 import TicketsByPriority from '@/components/reports/TicketsByPriority';
 import TicketsByDepartment from '@/components/reports/TicketsByDepartment';
-import ResolutionTimeByCategory from '@/components/reports/ResolutionTimeByCategory';
+import { RespondedNoMovementTable, useTicketMovement } from '@/components/reports/TicketMovementReport';
 import ExportButton from '@/components/reports/ExportButton';
 import FeedbackInsights from '@/components/dashboard/FeedbackInsights';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
+import TicketDetails from '@/components/tickets/TicketDetails';
 
 const DATE_RANGE_OPTIONS = [
   { value: '1', label: 'Today' },
@@ -50,6 +48,7 @@ export default function DeptAnalytics() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
+  const [selectedTicket, setSelectedTicket] = useState(null);
 
   useEffect(() => {
     base44.auth.me().then(u => {
@@ -82,7 +81,7 @@ export default function DeptAnalytics() {
 
   // Tickets for the selected department — filtered by handling_department_id,
   // the department currently responsible for the ticket after routing/approval.
-  const { data: rawTickets = [], isLoading } = useQuery({
+  const { data: rawTickets = [], isLoading, refetch: refetchTickets } = useQuery({
     queryKey: ['analytics-tickets', selectedDept],
     queryFn: () =>
       selectedDept
@@ -104,6 +103,8 @@ export default function DeptAnalytics() {
     const cutoff = subDays(new Date(), parseInt(dateRange));
     return rawTickets.filter(t => new Date(t.created_date) >= cutoff);
   }, [rawTickets, dateRange, customFrom, customTo]);
+
+  const { historyByTicket, isLoading: movementLoading } = useTicketMovement(tickets);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -265,12 +266,11 @@ export default function DeptAnalytics() {
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard title="Total Tickets" value={kpis.total} sub="In selected period" color="text-slate-900" />
         <KPICard title="Open / Active" value={kpis.open} sub="Needs attention" color="text-blue-600" />
         <KPICard title="Resolved" value={kpis.resolvedCount} sub={`${kpis.resRate}% resolution rate`} color="text-emerald-600" />
         <KPICard title="Avg Resolution" value={kpis.avgHours > 0 ? `${kpis.avgHours}h` : '—'} sub="Per resolved ticket" color="text-purple-600" />
-        <KPICard title="SLA Breached" value={kpis.slaBreached} sub="Resolution SLA" color={kpis.slaBreached > 0 ? 'text-red-600' : 'text-slate-900'} />
       </div>
 
       {/* Charts */}
@@ -278,14 +278,7 @@ export default function DeptAnalytics() {
         <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-slate-400" /></div>
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <VolumeChart tickets={tickets} dateRange={dateRange} />
-            <StaffResolutionChart tickets={tickets} staffUsers={staffUsers} />
-          </div>
-
-          <CategoryTrendsChart tickets={tickets} />
-
-          <StaffWorkloadTable tickets={tickets} staffUsers={staffUsers} />
+          <VolumeChart tickets={tickets} dateRange={dateRange} />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <TicketsByStatus tickets={tickets} />
@@ -294,10 +287,24 @@ export default function DeptAnalytics() {
 
           {isAdmin && !selectedDept && <TicketsByDepartment tickets={tickets} />}
 
-          <ResolutionTimeByCategory tickets={tickets} />
+          <RespondedNoMovementTable
+            tickets={tickets}
+            historyByTicket={historyByTicket}
+            isLoading={movementLoading}
+            onTicketClick={setSelectedTicket}
+          />
 
           <FeedbackInsights departmentId={selectedDept || user?.department_id} dateRangeDays={dateRange === 'custom' ? '30' : dateRange} />
         </div>
+      )}
+
+      {selectedTicket && (
+        <TicketDetails
+          ticket={selectedTicket}
+          user={user}
+          onClose={() => setSelectedTicket(null)}
+          onUpdate={refetchTickets}
+        />
       )}
     </div>
   );
