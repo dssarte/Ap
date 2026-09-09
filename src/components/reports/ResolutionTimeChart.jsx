@@ -14,9 +14,10 @@ export default function ResolutionTimeChart({ tickets, dateRange }) {
   }
 
   resolvedTickets.forEach(ticket => {
-    const date = format(new Date(ticket.updated_date), 'MMM dd');
+    const resolvedDate = ticket.resolved_at || ticket.updated_date;
+    const date = format(new Date(resolvedDate), 'MMM dd');
     if (dailyData[date]) {
-      const hours = differenceInHours(new Date(ticket.updated_date), new Date(ticket.created_date));
+      const hours = differenceInHours(new Date(resolvedDate), new Date(ticket.created_date));
       dailyData[date].total += hours;
       dailyData[date].count += 1;
     }

@@ -8,7 +8,7 @@ export default function ResolutionTimeByCategory({ tickets }) {
   
   const categoryTimes = resolvedTickets.reduce((acc, ticket) => {
     const category = ticket.category_name || 'Uncategorized';
-    const hours = differenceInHours(new Date(ticket.updated_date), new Date(ticket.created_date));
+    const hours = differenceInHours(new Date(ticket.resolved_at || ticket.updated_date), new Date(ticket.created_date));
     
     if (!acc[category]) {
       acc[category] = { total: 0, count: 0 };

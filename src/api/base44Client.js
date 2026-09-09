@@ -10,6 +10,7 @@ const entityTables = {
   AuditTemplate: 'audit_templates', AuditAssignment: 'audit_assignments', Ticket: 'tickets',
   TicketComment: 'ticket_comments', TicketFeedback: 'ticket_feedback', Notification: 'notifications',
   AuditSubmission: 'audit_submissions',
+  TicketStatusHistory: 'ticket_status_history',
 };
 
 const unwrap = ({ data, error }) => { if (error) throw error; return data; };
@@ -38,19 +39,36 @@ const addIsoDateDays = (isoDate, days) => {
   return date.toISOString().slice(0, 10);
 };
 
+// Supabase's PostgREST layer enforces its own server-side max-rows cap
+// (commonly 1000) regardless of the `.limit()` requested here — a single
+// `.limit(5000)` call silently comes back with only 1000 rows once the
+// table has more than that. Paging with `.range()` in max-rows-sized
+// batches is the only way a client-requested limit above that cap actually
+// gets honored.
+const SERVER_PAGE_SIZE = 1000;
+
+async function fetchPaged(buildQuery, limit) {
+  const rows = [];
+  let offset = 0;
+  while (rows.length < limit) {
+    const pageSize = Math.min(SERVER_PAGE_SIZE, limit - rows.length);
+    const page = unwrap(await buildQuery().range(offset, offset + pageSize - 1)) || [];
+    rows.push(...page);
+    if (page.length < pageSize) break; // fewer rows than asked for = no more data
+    offset += pageSize;
+  }
+  return rows;
+}
+
 function entityApi(name) {
   const table = entityTables[name];
   if (!table) throw new Error(`Unknown entity: ${String(name)}`);
   return {
     async list(sort, limit = 1000) {
-      let q = supabase.from(table).select('*');
-      q = applySort(q, sort).limit(limit);
-      return (unwrap(await q) || []);
+      return fetchPaged(() => applySort(supabase.from(table).select('*'), sort), limit);
     },
     async filter(filters, sort, limit = 1000) {
-      let q = applyFilters(supabase.from(table).select('*'), filters);
-      q = applySort(q, sort).limit(limit);
-      return (unwrap(await q) || []);
+      return fetchPaged(() => applySort(applyFilters(supabase.from(table).select('*'), filters), sort), limit);
     },
     async get(id) {
       if (!id) return null;

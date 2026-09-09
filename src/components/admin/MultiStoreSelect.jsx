@@ -44,7 +44,12 @@ export default function MultiStoreSelect({ stores, brands, selected = [], onChan
         </Button>
       </div>
       <p className="text-xs text-slate-500">Select every store this Store Manager can view, approve tickets for, and see analytics on.</p>
-      <div className="border border-slate-200 rounded-lg max-h-56 overflow-y-auto p-3 space-y-3">
+      {/* Deliberately not its own overflow-y-auto region: nesting a second
+          scroll container inside the dialog's own scrollable area triggers a
+          scrollHeight miscalculation once the list has enough stores to
+          overflow, leaving a large blank scrollable gap below the dialog's
+          content. Scrolls as part of the single outer dialog scroll instead. */}
+      <div className="border border-slate-200 rounded-lg p-3 space-y-3">
         {brands.map(brand => {
           const brandStores = stores.filter(s => s.brand_id === brand.id).sort((a, b) => (a.store_name || '').localeCompare(b.store_name || ''));
           if (brandStores.length === 0) return null;

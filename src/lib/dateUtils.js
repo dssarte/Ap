@@ -57,6 +57,17 @@ export function isTimeWithinWindow(startTime, endTime, now = new Date()) {
   return nowMinutes >= fromMinutes || nowMinutes <= toMinutes;
 }
 
+// Reports display resolution/response times as raw hours, which gets hard
+// to read once a ticket has sat for days — render "2d 4h" past 24h instead.
+export function formatDurationHours(hours) {
+  if (!Number.isFinite(hours) || hours < 0) return '—';
+  const totalHours = Math.round(hours);
+  if (totalHours < 24) return `${totalHours}h`;
+  const days = Math.floor(totalHours / 24);
+  const remainingHours = totalHours % 24;
+  return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
 export function isClosingAudit(templateTitle) {
   return /\bclosing\b/i.test(String(templateTitle || ''));
 }
