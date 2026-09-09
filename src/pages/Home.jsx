@@ -44,8 +44,13 @@ function ticketAgeInDays(ticket) {
   return created ? (Date.now() - created.getTime()) / (24 * 60 * 60 * 1000) : 0;
 }
 
-function isTicketOverdue(ticket) {
-  return !OPEN_TICKET_STATUSES_EXCLUDED.includes(ticket.status) && ticketAgeInDays(ticket) >= 30;
+// null = not aging, 'warning' = 15+ days (yellow), 'overdue' = 30+ days (red).
+function getTicketAgingLevel(ticket) {
+  if (OPEN_TICKET_STATUSES_EXCLUDED.includes(ticket.status)) return null;
+  const age = ticketAgeInDays(ticket);
+  if (age >= 30) return 'overdue';
+  if (age >= 15) return 'warning';
+  return null;
 }
 
 export default function Home() {
@@ -453,7 +458,7 @@ export default function Home() {
                   key={ticket.id}
                   ticket={ticket}
                   onClick={handleTicketClick}
-                  overdue={isTicketOverdue(ticket)}
+                  agingLevel={getTicketAgingLevel(ticket)}
                   unreadCount={
                     (unreadByTicket[ticket.id] || 0) +
                     (ticket._duplicateTicketIds || []).reduce((sum, id) => sum + (unreadByTicket[id] || 0), 0)

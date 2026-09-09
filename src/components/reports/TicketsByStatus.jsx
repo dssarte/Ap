@@ -1,14 +1,14 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const COLORS = {
-  open: '#3b82f6',
-  in_progress: '#f59e0b',
-  pending: '#a855f7',
-  resolved: '#10b981',
-  closed: '#64748b'
-};
+const STATUSES = [
+  { key: 'open', name: 'OPEN', fill: '#3b82f6' },
+  { key: 'in_progress', name: 'IN PROGRESS', fill: '#f59e0b' },
+  { key: 'pending', name: 'PENDING', fill: '#a855f7' },
+  { key: 'resolved', name: 'RESOLVED', fill: '#10b981' },
+  { key: 'closed', name: 'CLOSED', fill: '#64748b' },
+];
 
 export default function TicketsByStatus({ tickets }) {
   const statusCounts = tickets.reduce((acc, ticket) => {
@@ -16,10 +16,10 @@ export default function TicketsByStatus({ tickets }) {
     return acc;
   }, {});
 
-  const data = Object.entries(statusCounts).map(([status, count]) => ({
-    name: status.replace('_', ' ').toUpperCase(),
-    value: count,
-    color: COLORS[status]
+  const data = STATUSES.map(({ key, name, fill }) => ({
+    name,
+    count: statusCounts[key] || 0,
+    fill
   }));
 
   return (
@@ -29,24 +29,17 @@ export default function TicketsByStatus({ tickets }) {
       </CardHeader>
       <CardContent className="p-6">
         <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-              outerRadius={80}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Pie>
+          <BarChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis allowDecimals={false} />
             <Tooltip />
-            <Legend />
-          </PieChart>
+            <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+              {data.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Bar>
+          </BarChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>

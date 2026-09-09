@@ -21,12 +21,20 @@ const priorityColors = {
   urgent: "bg-red-50 text-red-600 border border-red-200"
 };
 
-export default function TicketCard({ ticket, onClick, unreadCount = 0, overdue = false }) {
+export default function TicketCard({ ticket, onClick, unreadCount = 0, agingLevel = null }) {
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+
+  const agingBorderClass = agingLevel === 'overdue'
+    ? 'border-red-400 ring-1 ring-red-100'
+    : agingLevel === 'warning'
+      ? 'border-yellow-400 ring-1 ring-yellow-100'
+      : unreadCount > 0
+        ? 'border-emerald-300 ring-1 ring-emerald-100'
+        : 'border-slate-200';
 
   return (
     <Card
-      className={`group cursor-pointer rounded-2xl bg-white shadow-sm transition-all hover:border-emerald-300 hover:shadow-md ${duplicatesOpen ? '' : 'hover:-translate-y-0.5'} ${overdue ? 'border-red-400 ring-1 ring-red-100' : unreadCount > 0 ? 'border-emerald-300 ring-1 ring-emerald-100' : 'border-slate-200'}`}
+      className={`group cursor-pointer rounded-2xl bg-white shadow-sm transition-all hover:border-emerald-300 hover:shadow-md ${duplicatesOpen ? '' : 'hover:-translate-y-0.5'} ${agingBorderClass}`}
       onClick={() => onClick(ticket)}
     >
      <CardContent className="p-4 sm:p-5">
