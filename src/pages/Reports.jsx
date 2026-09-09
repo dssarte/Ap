@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, BarChart3, TrendingUp, Clock, Users } from "lucide-react";
+import { Loader2, BarChart3, TrendingUp, Clock, Users, ShieldAlert, Timer } from "lucide-react";
 import { format, subDays, differenceInHours } from "date-fns";
 import StatsCard from "@/components/dashboard/StatsCard";
 import TicketsByDepartment from "@/components/reports/TicketsByDepartment";
@@ -16,16 +16,22 @@ import ExportButton from "@/components/reports/ExportButton";
 import FeedbackInsights from "@/components/dashboard/FeedbackInsights";
 import ExcelExportButton from "@/components/ExcelExportButton";
 import { exportSheetsToExcel } from "@/lib/exportExcel";
+import { formatDurationHours } from "@/lib/dateUtils";
+import NoResponseReport, { getNoResponseTickets } from "@/components/reports/NoResponseReport";
+import SpeedInsights from "@/components/reports/SpeedInsights";
+import TicketMovementReport, { useTicketMovement, computeTicketMovement } from "@/components/reports/TicketMovementReport";
 
 export default function Reports() {
   const [user, setUser] = useState(null);
   const [dateRange, setDateRange] = useState('1'); // days (default: today only)
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [departments, setDepartments] = useState([]);
+  const [stores, setStores] = useState([]);
 
   useEffect(() => {
     loadUser();
     loadDepartments();
+    loadStores();
   }, []);
 
   const loadUser = async () => {
@@ -38,6 +44,11 @@ export default function Reports() {
     setDepartments(depts);
   };
 
+  const loadStores = async () => {
+    const activeStores = await base44.entities.Store.filter({ is_active: true });
+    setStores(activeStores);
+  };
+
   const { data: tickets = [], isLoading } = useQuery({
     queryKey: ['reports-tickets', dateRange, selectedDepartment, user?.id],
     queryFn: async () => {
@@ -45,18 +56,22 @@ export default function Reports() {
       
       let allTickets = [];
       
-      // Admin and Director see all tickets
+      // Admin and Director see all tickets. The cap here is a global,
+      // system-wide count (not per-department/store), so it must stay well
+      // above total ticket volume — a cap of 1000 silently dropped older
+      // tickets once the system passed ~1000 total, hiding them from every
+      // report below regardless of department/store filtering.
       if (user.user_type === 'admin' || user.user_type === 'director') {
-        allTickets = await base44.entities.Ticket.list('-created_date', 1000);
+        allTickets = await base44.entities.Ticket.list('-created_date', 5000);
       }
       // Department Head sees their department tickets — handling_department_id
       // is the department currently responsible after routing/approval.
       else if (user.user_type === 'department_head' && user.department_id) {
-        allTickets = await base44.entities.Ticket.filter({ handling_department_id: user.department_id }, '-created_date', 1000);
+        allTickets = await base44.entities.Ticket.filter({ handling_department_id: user.department_id }, '-created_date', 5000);
       }
       // Store Manager sees tickets from their assigned stores only
       else if (user.user_type === 'store_manager') {
-        const all = await base44.entities.Ticket.list('-created_date', 1000);
+        const all = await base44.entities.Ticket.list('-created_date', 5000);
         const stores = user.assigned_stores || [];
         allTickets = all.filter(t => t.store_name && stores.includes(t.store_name));
       }
@@ -74,6 +89,8 @@ export default function Reports() {
     },
     enabled: !!user
   });
+
+  const { historyByTicket, isLoading: movementLoading } = useTicketMovement(tickets);
 
   if (!user) {
     return (
@@ -100,12 +117,23 @@ export default function Reports() {
   // Calculate metrics
   const totalTickets = tickets.length;
   const resolvedTickets = tickets.filter(t => t.status === 'resolved' || t.status === 'closed').length;
+  // resolved_at is the field actually written when a ticket is marked
+  // resolved/closed — updated_date bumps on any edit, so it overstates or
+  // understates resolution time whenever a resolved ticket is touched again.
   const avgResolutionTime = tickets
     .filter(t => t.status === 'resolved' || t.status === 'closed')
     .reduce((acc, t) => {
-      const hours = differenceInHours(new Date(t.updated_date), new Date(t.created_date));
+      const hours = differenceInHours(new Date(t.resolved_at || t.updated_date), new Date(t.created_date));
       return acc + hours;
     }, 0) / (resolvedTickets || 1);
+
+  const respondedTickets = tickets.filter(t => t.first_response_at);
+  const avgResponseTime = respondedTickets.reduce((acc, t) => {
+    return acc + differenceInHours(new Date(t.first_response_at), new Date(t.created_date));
+  }, 0) / (respondedTickets.length || 1);
+
+  const breachedTickets = tickets.filter(t => t.sla_response_breached || t.sla_resolution_breached).length;
+  const slaBreachRate = totalTickets ? Math.round((breachedTickets / totalTickets) * 100) : 0;
 
   const handleExportExcel = () => {
     const deptName = selectedDepartment !== 'all' ? departments.find(d => d.id === selectedDepartment)?.name : 'All Departments';
@@ -119,7 +147,9 @@ export default function Reports() {
           ['Total Tickets', totalTickets],
           ['Resolved', resolvedTickets],
           ['Resolution Rate', `${totalTickets ? Math.round((resolvedTickets / totalTickets) * 100) : 0}%`],
-          ['Avg Resolution Time', `${Math.round(avgResolutionTime)}h`],
+          ['Avg Response Time', formatDurationHours(avgResponseTime)],
+          ['Avg Resolution Time', formatDurationHours(avgResolutionTime)],
+          ['SLA Breach Rate', `${slaBreachRate}%`],
           ['Open Tickets', tickets.filter(t => t.status === 'open').length],
         ],
       },
@@ -137,8 +167,8 @@ export default function Reports() {
           t.submitter_name || t.submitter_email,
           t.store_name || '',
           format(new Date(t.created_date), 'yyyy-MM-dd HH:mm'),
-          (t.status === 'resolved' || t.status === 'closed') ? format(new Date(t.updated_date), 'yyyy-MM-dd HH:mm') : '',
-          (t.status === 'resolved' || t.status === 'closed') ? Math.round(differenceInHours(new Date(t.updated_date), new Date(t.created_date))) : '',
+          (t.status === 'resolved' || t.status === 'closed') ? format(new Date(t.resolved_at || t.updated_date), 'yyyy-MM-dd HH:mm') : '',
+          (t.status === 'resolved' || t.status === 'closed') ? Math.round(differenceInHours(new Date(t.resolved_at || t.updated_date), new Date(t.created_date))) : '',
         ]),
       },
       {
@@ -161,6 +191,35 @@ export default function Reports() {
         name: 'By Priority',
         headers: ['Priority', 'Count'],
         rows: Object.entries(tickets.reduce((acc, t) => { acc[t.priority] = (acc[t.priority] || 0) + 1; return acc; }, {})).map(([p, c]) => [p, c]),
+      },
+      {
+        name: 'No Response (1wk)',
+        headers: ['Ticket ID', 'Title', 'Department', 'Priority', 'Store', 'Created Date', 'Days Waiting'],
+        rows: getNoResponseTickets(tickets, 7).map(t => [
+          t.id, t.title, t.department_name || '', t.priority, t.store_name || '',
+          format(new Date(t.created_date), 'yyyy-MM-dd'),
+          Math.floor((Date.now() - new Date(t.created_date).getTime()) / 86400000),
+        ]),
+      },
+      {
+        name: 'No Response (2wk)',
+        headers: ['Ticket ID', 'Title', 'Department', 'Priority', 'Store', 'Created Date', 'Days Waiting'],
+        rows: getNoResponseTickets(tickets, 14).map(t => [
+          t.id, t.title, t.department_name || '', t.priority, t.store_name || '',
+          format(new Date(t.created_date), 'yyyy-MM-dd'),
+          Math.floor((Date.now() - new Date(t.created_date).getTime()) / 86400000),
+        ]),
+      },
+      {
+        name: 'Movement (Top 10)',
+        headers: ['Type', 'Ticket ID', 'Title', 'Status', 'Status Changes / Days Stuck'],
+        rows: (() => {
+          const { mostMoving, nonMoving } = computeTicketMovement(tickets, historyByTicket);
+          return [
+            ...mostMoving.map(({ ticket, history }) => ['Most Moving', ticket.id, ticket.title, ticket.status, history.length]),
+            ...nonMoving.map(({ ticket }) => ['Non-Moving', ticket.id, ticket.title, ticket.status, Math.floor((Date.now() - new Date(ticket.created_date).getTime()) / 86400000)]),
+          ];
+        })(),
       },
     ];
     exportSheetsToExcel('Reports_Analytics', sheets);
@@ -240,34 +299,51 @@ export default function Reports() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
-              <StatsCard 
-                title="Total Tickets" 
-                value={totalTickets} 
-                icon={BarChart3} 
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+              <StatsCard
+                title="Total Tickets"
+                value={totalTickets}
+                icon={BarChart3}
                 color="bg-[#1fd655]"
                 subtitle={dateRange === '1' ? 'Today' : `Last ${dateRange} days`}
               />
-              <StatsCard 
-                title="Resolved" 
-                value={resolvedTickets} 
-                icon={TrendingUp} 
+              <StatsCard
+                title="Resolved"
+                value={resolvedTickets}
+                icon={TrendingUp}
                 color="bg-emerald-500"
                 subtitle={`${totalTickets ? Math.round((resolvedTickets/totalTickets)*100) : 0}% resolution rate`}
               />
-              <StatsCard 
-                title="Avg Resolution" 
-                value={`${Math.round(avgResolutionTime)}h`}
-                icon={Clock} 
+              <StatsCard
+                title="Avg Resolution"
+                value={formatDurationHours(avgResolutionTime)}
+                icon={Clock}
                 color="bg-blue-500"
-                subtitle="Average time"
+                subtitle="Created to resolved"
               />
-              <StatsCard 
-                title="Open Tickets" 
+              <StatsCard
+                title="Open Tickets"
                 value={tickets.filter(t => t.status === 'open').length}
-                icon={Users} 
+                icon={Users}
                 color="bg-amber-500"
                 subtitle="Awaiting response"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-2 gap-6 mb-10">
+              <StatsCard
+                title="Avg Response Time"
+                value={formatDurationHours(avgResponseTime)}
+                icon={Timer}
+                color="bg-indigo-500"
+                subtitle="Created to first staff reply"
+              />
+              <StatsCard
+                title="SLA Breach Rate"
+                value={`${slaBreachRate}%`}
+                icon={ShieldAlert}
+                color="bg-red-500"
+                subtitle={`${breachedTickets} of ${totalTickets} tickets`}
               />
             </div>
 
@@ -286,8 +362,20 @@ export default function Reports() {
               <ResolutionTimeByCategory tickets={tickets} />
             </div>
 
-            <div className="grid grid-cols-1 gap-6">
+            <div className="grid grid-cols-1 gap-6 mb-6">
               <ResolutionTimeChart tickets={tickets} dateRange={parseInt(dateRange)} />
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 mb-6">
+              <NoResponseReport tickets={tickets} departments={departments} stores={stores} />
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 mb-6">
+              <SpeedInsights tickets={tickets} />
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 mb-6">
+              <TicketMovementReport tickets={tickets} historyByTicket={historyByTicket} isLoading={movementLoading} />
             </div>
 
             <FeedbackInsights
