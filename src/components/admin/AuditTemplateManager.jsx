@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, ClipboardList, Sparkles, Copy } from "lucide-react";
+import { Plus, Pencil, Trash2, ClipboardList, Sparkles, Copy, GripVertical } from "lucide-react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -376,6 +377,36 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
     ));
   };
 
+  // Sections are dragged as a whole list; items are dragged within their own
+  // section's list only — a drop into a different section's droppableId is
+  // ignored rather than moving the item across sections.
+  const onDragEnd = (result) => {
+    const { source, destination, type } = result;
+    if (!destination || source.index === destination.index && source.droppableId === destination.droppableId) return;
+
+    if (type === 'SECTION') {
+      setSections(s => {
+        const arr = [...s];
+        const [moved] = arr.splice(source.index, 1);
+        arr.splice(destination.index, 0, moved);
+        return arr;
+      });
+      return;
+    }
+
+    if (type === 'ITEM') {
+      if (source.droppableId !== destination.droppableId) return;
+      const secId = source.droppableId.replace('items-', '');
+      setSections(s => s.map(sec => {
+        if (sec.id !== secId) return sec;
+        const items = [...(sec.items || [])];
+        const [moved] = items.splice(source.index, 1);
+        items.splice(destination.index, 0, moved);
+        return { ...sec, items };
+      }));
+    }
+  };
+
   const handleSave = () => {
     if (!title.trim()) return;
     // For backward compat: store the first restriction in legacy fields too
@@ -403,7 +434,20 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      {/*
+        The drag handles below rely on @hello-pangea/dnd, which positions the
+        dragged clone with `position: fixed` relative to the viewport. The
+        default DialogContent centers itself with a CSS `transform`
+        (translate-x/y -50%), and a `transform` on an ancestor creates a new
+        containing block for fixed-position descendants — that would offset
+        the dragged item away from the cursor. Overriding the position here
+        (fixed inset + margin: auto, no transform) keeps the same centered
+        look without breaking drag positioning.
+      */}
+      <DialogContent
+        className="max-w-3xl max-h-[90vh] overflow-y-auto !left-0 !top-0 !right-0 !bottom-0 !translate-x-0 !translate-y-0 !m-auto"
+        style={{ transform: 'none' }}
+      >
         <DialogHeader>
           <DialogTitle>{initial?.id ? 'Edit Audit Template' : 'New Audit Template'}</DialogTitle>
         </DialogHeader>
@@ -570,47 +614,75 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
               </div>
             </div>
 
-            {sections.map((sec, secIdx) => (
-              <Card key={sec.id} className="border-2 border-slate-200">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder={`Section title (e.g. A.1 PRODUCT QUALITY)`}
-                      value={sec.title}
-                      onChange={e => updateSection(secIdx, 'title', e.target.value)}
-                      className="font-semibold"
-                    />
-                    <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-600 flex-shrink-0" onClick={() => removeSection(secIdx)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+            <DragDropContext onDragEnd={onDragEnd}>
+              <Droppable droppableId="sections" type="SECTION">
+                {(sectionsDrop) => (
+                  <div ref={sectionsDrop.innerRef} {...sectionsDrop.droppableProps} className="space-y-3">
+                    {sections.map((sec, secIdx) => (
+                      <Draggable key={sec.id} draggableId={sec.id} index={secIdx}>
+                        {(sectionDrag) => (
+                          <Card ref={sectionDrag.innerRef} {...sectionDrag.draggableProps} className="border-2 border-slate-200">
+                            <CardContent className="p-4 space-y-3">
+                              <div className="flex items-center gap-2">
+                                <span {...sectionDrag.dragHandleProps} className="cursor-grab text-slate-300 hover:text-slate-500 flex-shrink-0" title="Drag to reorder section">
+                                  <GripVertical className="w-4 h-4" />
+                                </span>
+                                <Input
+                                  placeholder={`Section title (e.g. A.1 PRODUCT QUALITY)`}
+                                  value={sec.title}
+                                  onChange={e => updateSection(secIdx, 'title', e.target.value)}
+                                  className="font-semibold"
+                                />
+                                <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-600 flex-shrink-0" onClick={() => removeSection(secIdx)}>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
 
-                  <div className="space-y-2 pl-2">
-                    {(sec.items || []).map((item, itemIdx) => (
-                      <div key={item.id} className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400 w-5">{itemIdx + 1}.</span>
-                        <Input
-                          placeholder="Checklist item..."
-                          value={item.label}
-                          onChange={e => updateItem(secIdx, itemIdx, e.target.value)}
-                          className="h-8 text-sm"
-                        />
-                        <label className="flex items-center gap-1.5 flex-shrink-0 cursor-pointer">
-                          <Switch checked={!!item.photo_required} onCheckedChange={() => toggleItemPhoto(secIdx, itemIdx)} className="scale-90" />
-                          <span className="text-xs text-slate-500 whitespace-nowrap">Photo</span>
-                        </label>
-                        <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-600 h-8 w-8 flex-shrink-0" onClick={() => removeItem(secIdx, itemIdx)}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                              <Droppable droppableId={`items-${sec.id}`} type="ITEM">
+                                {(itemsDrop) => (
+                                  <div ref={itemsDrop.innerRef} {...itemsDrop.droppableProps} className="space-y-2 pl-2">
+                                    {(sec.items || []).map((item, itemIdx) => (
+                                      <Draggable key={item.id} draggableId={item.id} index={itemIdx}>
+                                        {(itemDrag) => (
+                                          <div ref={itemDrag.innerRef} {...itemDrag.draggableProps} className="flex items-center gap-2">
+                                            <span {...itemDrag.dragHandleProps} className="cursor-grab text-slate-300 hover:text-slate-500 flex-shrink-0" title="Drag to reorder item">
+                                              <GripVertical className="w-3.5 h-3.5" />
+                                            </span>
+                                            <span className="text-xs text-slate-400 w-5">{itemIdx + 1}.</span>
+                                            <Input
+                                              placeholder="Checklist item..."
+                                              value={item.label}
+                                              onChange={e => updateItem(secIdx, itemIdx, e.target.value)}
+                                              className="h-8 text-sm"
+                                            />
+                                            <label className="flex items-center gap-1.5 flex-shrink-0 cursor-pointer">
+                                              <Switch checked={!!item.photo_required} onCheckedChange={() => toggleItemPhoto(secIdx, itemIdx)} className="scale-90" />
+                                              <span className="text-xs text-slate-500 whitespace-nowrap">Photo</span>
+                                            </label>
+                                            <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-600 h-8 w-8 flex-shrink-0" onClick={() => removeItem(secIdx, itemIdx)}>
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </Button>
+                                          </div>
+                                        )}
+                                      </Draggable>
+                                    ))}
+                                    {itemsDrop.placeholder}
+                                    <Button variant="ghost" size="sm" className="text-[#1fd655] gap-1 h-7 text-xs" onClick={() => addItem(secIdx)}>
+                                      <Plus className="w-3 h-3" /> Add Item
+                                    </Button>
+                                  </div>
+                                )}
+                              </Droppable>
+                            </CardContent>
+                          </Card>
+                        )}
+                      </Draggable>
                     ))}
-                    <Button variant="ghost" size="sm" className="text-[#1fd655] gap-1 h-7 text-xs" onClick={() => addItem(secIdx)}>
-                      <Plus className="w-3 h-3" /> Add Item
-                    </Button>
+                    {sectionsDrop.placeholder}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                )}
+              </Droppable>
+            </DragDropContext>
 
             {sections.length === 0 && (
               <p className="text-sm text-slate-400 text-center py-4 border-2 border-dashed border-slate-200 rounded-lg">
