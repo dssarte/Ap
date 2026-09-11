@@ -135,9 +135,17 @@ export default function Audit() {
   // Admins see all templates
   // Templates with store_restrictions (or legacy store_name): only users from those stores can see them
   // Templates with no restrictions: visible to all QA users
+  // Templates marked "Ask Audit Type" are QA-conducted audits by design (an
+  // outside officer visiting a store, not the store filling something out
+  // about itself) — those stay QA-department/admin-only even when store
+  // restrictions are set for brand/store scoping convenience.
   const templates = isAdmin
     ? allTemplates
     : allTemplates.filter(t => {
+        if (t.requires_audit_type) {
+          return user?.department_name === 'Quality Assurance';
+        }
+
         const restrictions = t.store_restrictions?.length > 0
           ? t.store_restrictions
           : t.store_name ? [{ store_name: t.store_name }] : [];
@@ -489,16 +497,29 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     templateRestrictions.map(restriction => String(restriction.store_name || '').trim().toLowerCase())
   );
 
+  // When every one of a template's restricted stores belongs to the same
+  // single brand, the brand is implied by the template itself — no need to
+  // make whoever's conducting the audit pick it again, they only pick the
+  // store. This applies to any role, not just store managers.
+  const templateRestrictedBrandIds = new Set(
+    templateRestrictions.map(restriction => restriction.brand_id).filter(Boolean)
+  );
+  const isSingleBrandTemplate = templateRestrictedBrandIds.size === 1;
+  const lockedTemplateBrandId = isSingleBrandTemplate ? [...templateRestrictedBrandIds][0] : null;
+
   // Store managers may only audit stores assigned to their account. When the
   // template has store restrictions, use the intersection of both scopes.
-  // Other roles retain the existing unrestricted selector behavior.
+  // Other roles retain the existing unrestricted selector behavior, except
+  // when the template itself is scoped to one brand only (see above).
   const selectableStores = isStoreManager
     ? stores.filter(store => {
         const normalizedName = String(store.store_name || '').trim().toLowerCase();
         return assignedStoreNames.has(normalizedName)
           && (restrictedStoreNames.size === 0 || restrictedStoreNames.has(normalizedName));
       })
-    : stores;
+    : isSingleBrandTemplate
+      ? stores.filter(store => restrictedStoreNames.has(String(store.store_name || '').trim().toLowerCase()))
+      : stores;
   const selectableBrandIds = new Set(selectableStores.map(store => store.brand_id).filter(Boolean));
   const selectableBrands = isStoreManager
     ? brands.filter(brandRecord => selectableBrandIds.has(brandRecord.id))
@@ -506,6 +527,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
   const soleSelectableStore = isStoreManager && selectableStores.length === 1
     ? selectableStores[0]
     : null;
+  const isBrandLockedByTemplate = !isStoreManager && isSingleBrandTemplate;
 
   // If user has a store_name, auto-resolve their brand/store and lock it
   const userStore = !isStoreManager && user?.store_name
@@ -518,6 +540,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
   const [selectedBrandId, setSelectedBrandId] = useState(() => {
     if (userBrandId) return userBrandId;
     if (soleSelectableStore) return soleSelectableStore.brand_id || '';
+    if (isBrandLockedByTemplate) return lockedTemplateBrandId;
     if (!existingSubmission?.brand) return '';
     const found = selectableBrands.find(b => existingSubmission.brand.startsWith(b.brand_name));
     return found?.id || '';
@@ -536,6 +559,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
   const brand = selectedBrand && selectedStore
     ? `${selectedBrand.brand_name} - ${selectedStore.store_name}${selectedStore.location ? `, ${selectedStore.location}` : ''}`
     : '';
+  const [auditType, setAuditType] = useState(existingSubmission?.audit_type || '');
   const [answers, setAnswers] = useState(existingSubmission?.answers || {});
   const [noComments, setNoComments] = useState(existingSubmission?.no_comments || {});
   const [itemPhotos, setItemPhotos] = useState(existingSubmission?.item_photos || {});
@@ -790,6 +814,11 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
       setPhotoError('Please select a brand and store before submitting.');
       return;
     }
+    if (template.requires_audit_type && !auditType) {
+      setErrorItemId(null);
+      setPhotoError('Please select the Audit Type (Unannounced, Follow-up, or Spot).');
+      return;
+    }
     const missingPhotoItem = allItems.find(it => it.photo_required && ['YES', 'NO'].includes(answers[it.id]) && !(itemPhotos[it.id]?.length > 0));
     if (missingPhotoItem) {
       setErrorItemId(missingPhotoItem.id);
@@ -825,6 +854,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
       submitted_by_name: user.display_name || user.full_name,
       brand: brand.trim(),
       location: existingSubmission?.id ? (existingSubmission.location || submitLocation || '') : (submitLocation || ''),
+      audit_type: template.requires_audit_type ? auditType : '',
       answers,
       score,
       total_items: allItems.length,
@@ -988,6 +1018,29 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               <p className="font-semibold text-amber-900">No eligible assigned store</p>
               <p className="mt-1 text-sm text-amber-700">This audit template is not assigned to any store currently linked to your branch manager account. Contact an administrator to update the store assignment.</p>
             </div>
+          ) : isBrandLockedByTemplate ? (
+            // This template is scoped to a single brand — only the store needs picking.
+            <>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-slate-500 mb-0.5">Brand</p>
+                <p className="font-semibold text-slate-900">{selectableBrands.find(b => b.id === lockedTemplateBrandId)?.brand_name || '-'}</p>
+              </div>
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Store:</label>
+                <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
+                  <SelectTrigger className="w-56 h-9">
+                    <SelectValue placeholder="Select store..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredStores.map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.store_name}{s.location ? `, ${s.location}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
           ) : (
             <>
               <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
@@ -1022,6 +1075,25 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
           )}
         </CardContent>
       </Card>
+
+      {/* Audit Type — only for templates that opted in */}
+      {template.requires_audit_type && (
+        <Card className="border-2 border-slate-200">
+          <CardContent className="flex items-center gap-3 p-4">
+            <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Audit Type:</label>
+            <Select value={auditType} onValueChange={setAuditType}>
+              <SelectTrigger className="w-56 h-9">
+                <SelectValue placeholder="Select audit type..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unannounced">Unannounced</SelectItem>
+                <SelectItem value="follow_up">Follow-up</SelectItem>
+                <SelectItem value="spot">Spot</SelectItem>
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Admin-editable audit date */}
       {existingSubmission && isAdmin && (
