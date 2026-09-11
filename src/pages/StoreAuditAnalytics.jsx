@@ -226,6 +226,13 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
     return recentAudits.slice(start, start + pageSize);
   }, [recentAudits, page, pageSize]);
 
+  // QA-conducted audits (Ask Audit Type) get a distinct highlight in Recent
+  // Audits so they stand out from the store's own daily checklists.
+  const qaAuditTemplateIds = useMemo(
+    () => new Set(allTemplates.filter(t => t.requires_audit_type).map(t => t.id)),
+    [allTemplates]
+  );
+
   // KPI stats
   const stats = useMemo(() => {
     if (!storeSubmissions.length) return null;
@@ -641,7 +648,11 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
                       <tr
      key={s.id}
      onClick={() => setSelectedSubmission(s)}
-     className={`cursor-pointer transition-colors hover:bg-emerald-50/60 border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}
+     className={`cursor-pointer transition-colors hover:bg-emerald-50/60 border-b ${
+       qaAuditTemplateIds.has(s.template_id)
+         ? 'border-l-8 border-l-blue-500 border-b-slate-100'
+         : `border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`
+     }`}
    >
                         <td className="px-5 py-3 font-medium text-slate-800">{s.template_title}</td>
                         <td className="px-3 py-3 text-slate-600 text-xs">{s.brand || '—'}</td>

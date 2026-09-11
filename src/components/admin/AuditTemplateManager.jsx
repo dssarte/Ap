@@ -23,6 +23,7 @@ const TEMPLATE_GROUPS = [
   { value: 'tien-ma', label: 'Tien Ma' },
   { value: 'koobideh-kebab', label: 'Koobideh Kebab' },
   { value: 'angels-pizza-express', label: "Angel's Pizza Express" },
+  { value: 'qa', label: 'QA' },
   { value: 'others', label: 'Others' },
 ];
 
@@ -269,6 +270,8 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
   const [availableToTime, setAvailableToTime] = useState('17:00');
   const [activeTicket, setActiveTicket] = useState(false);
   const [templateGroup, setTemplateGroup] = useState(group);
+  const [passThreshold, setPassThreshold] = useState(75);
+  const [requiresAuditType, setRequiresAuditType] = useState(false);
 
   React.useEffect(() => {
     if (open) {
@@ -280,6 +283,8 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       setAvailableFromTime(initial?.available_from_time || '06:00');
       setAvailableToTime(initial?.available_to_time || '17:00');
       setActiveTicket(!!initial?.active_ticket);
+      setPassThreshold(initial?.pass_threshold ?? 75);
+      setRequiresAuditType(!!initial?.requires_audit_type);
       // Load existing restrictions — support both new array format and legacy single store
       if (initial?.store_restrictions?.length) {
         setStoreRestrictions(initial.store_restrictions);
@@ -382,6 +387,8 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       is_active: initial?.is_active ?? true,
       template_group: templateGroup,
       active_ticket: activeTicket,
+      pass_threshold: Number(passThreshold) || 75,
+      requires_audit_type: requiresAuditType,
       has_time_restriction: hasTimeRestriction,
       available_from_time: hasTimeRestriction ? availableFromTime : '',
       available_to_time: hasTimeRestriction ? availableToTime : '',
@@ -523,6 +530,29 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
               <span className="text-sm font-semibold text-slate-700">Active Ticket <span className="text-slate-400 font-normal">(optional)</span></span>
             </label>
             <p className="text-xs text-slate-500">When enabled, submitting this audit with any NO answer automatically creates a ticket routed to the handling department head. YES/N/A-only submissions create no ticket.</p>
+          </div>
+
+          {/* Pass Threshold — used by Store Ranking to decide PASS/FAIL for this checklist */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-700">Pass Threshold (%)</label>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              value={passThreshold}
+              onChange={e => setPassThreshold(e.target.value)}
+              className="w-32"
+            />
+            <p className="text-xs text-slate-500">The minimum average score a store must hit on this checklist to be marked PASS in Store Ranking. Defaults to 75%.</p>
+          </div>
+
+          {/* Audit Type — Unannounced / Follow-up / Spot, recorded per submission */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch checked={requiresAuditType} onCheckedChange={setRequiresAuditType} />
+              <span className="text-sm font-semibold text-slate-700">Ask Audit Type <span className="text-slate-400 font-normal">(optional)</span></span>
+            </label>
+            <p className="text-xs text-slate-500">When enabled, whoever conducts this audit must pick Unannounced, Follow-up, or Spot before submitting.</p>
           </div>
 
           <div className="space-y-3">

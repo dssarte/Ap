@@ -383,6 +383,12 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
               <p className="font-semibold text-slate-900">{submission.brand}</p>
             </div>
           )}
+          {submission.audit_type && (
+            <div>
+              <p className="text-xs text-slate-500">Audit Type</p>
+              <p className="font-semibold text-slate-900 capitalize">{submission.audit_type.replace('_', '-')}</p>
+            </div>
+          )}
           <div>
             <p className="text-xs text-slate-500">Date</p>
             <p className="font-semibold text-slate-900">{formatPHDateTime(submission.submission_date || submission.created_date)}</p>
