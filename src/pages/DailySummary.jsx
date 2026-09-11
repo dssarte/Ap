@@ -26,7 +26,8 @@ export default function DailySummary() {
 
   const isAdmin = user?.user_type === 'admin';
   const isStoreManager = user?.user_type === 'store_manager';
-  const canAccess = isAdmin || isStoreManager;
+  const isDirector = user?.user_type === 'director';
+  const canAccess = isAdmin || isStoreManager || isDirector;
   const assignedStores = user?.assigned_stores || [];
 
   const { data: allTemplates = [], isLoading: loadingTemplates } = useQuery({
@@ -317,7 +318,7 @@ export default function DailySummary() {
   if (!canAccess) return (
     <div className="max-w-2xl mx-auto px-4 py-16 text-center">
       <ClipboardCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-      <p className="text-slate-400">The daily summary is only available to admins and store managers.</p>
+      <p className="text-slate-400">The daily summary is only available to admins, directors, and store managers.</p>
     </div>
   );
 
