@@ -118,6 +118,15 @@ export default function Audit() {
     base44.auth.me().then(setUser).catch(() => {});
   }, []);
 
+  // Switching between list/fill/history/detail is a conditional render swap,
+  // not a route change, so the window keeps whatever scroll position the
+  // previous view was left at (e.g. scrolled partway down the template
+  // list) — reset to top whenever the view changes so a freshly opened
+  // checklist always starts at its own top.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [view]);
+
   const isAdmin = user?.user_type === 'admin';
   // Effective stores: store managers aggregate across all assigned stores; others use their single store
   const effectiveStores = isAdmin
