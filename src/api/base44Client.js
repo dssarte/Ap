@@ -21,7 +21,11 @@ const profileDisplayName = (profile, fallback = '') => (
   || String(profile?.full_name || '').trim()
   || String(profile?.email || fallback || '').trim()
 );
-const applySort = (query, sort) => !sort ? query : query.order(sort.startsWith('-') ? sort.slice(1) : sort, { ascending: !sort.startsWith('-'), nullsFirst: false });
+const parseSortSpec = (sort) => {
+  if (!sort) return null;
+  const descending = sort.startsWith('-');
+  return { column: descending ? sort.slice(1) : sort, ascending: !descending };
+};
 const applyFilters = (query, filters = {}) => {
   for (const [key, value] of Object.entries(filters || {})) {
     if (value === undefined) continue;
@@ -47,16 +51,68 @@ const addIsoDateDays = (isoDate, days) => {
 // gets honored.
 const SERVER_PAGE_SIZE = 1000;
 
-async function fetchPaged(buildQuery, limit) {
+async function fetchPaged(buildBaseQuery, limit, sort) {
+  const sortSpec = parseSortSpec(sort);
+
+  // Fits in a single server-side page — identical to the original
+  // single-call behavior, no cursor logic needed or gained from.
+  if (limit <= SERVER_PAGE_SIZE) {
+    let query = buildBaseQuery();
+    if (sortSpec) query = query.order(sortSpec.column, { ascending: sortSpec.ascending, nullsFirst: false });
+    return unwrap(await query.range(0, limit - 1)) || [];
+  }
+
+  // No sort column to key off of — can't safely cursor-paginate (there's no
+  // stable ordering to seek within), so fall back to the original OFFSET
+  // approach. This should be rare: it only affects unsorted calls that also
+  // request more than one server-side page.
+  if (!sortSpec) {
+    const rows = [];
+    let offset = 0;
+    while (rows.length < limit) {
+      const pageSize = Math.min(SERVER_PAGE_SIZE, limit - rows.length);
+      const page = unwrap(await buildBaseQuery().range(offset, offset + pageSize - 1)) || [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+    return rows;
+  }
+
+  // Keyset (cursor) pagination for the deep multi-page case: each page asks
+  // for rows strictly after the previous page's last (sort column, id)
+  // pair instead of "skip N rows". This matters because every row an
+  // OFFSET skips still costs a full RLS check (see
+  // private.can_access_ticket / private.can_access_audit) — with OFFSET,
+  // that cost is paid again on every subsequent page, so total work across
+  // all pages grows with roughly the square of the page count. Seeking by
+  // an indexed column means each row's RLS check is paid exactly once
+  // across the whole paginated fetch, no matter how many pages it takes.
+  const { column, ascending } = sortSpec;
+  const op = ascending ? 'gt' : 'lt';
   const rows = [];
-  let offset = 0;
+  let cursor = null;
+
   while (rows.length < limit) {
     const pageSize = Math.min(SERVER_PAGE_SIZE, limit - rows.length);
-    const page = unwrap(await buildQuery().range(offset, offset + pageSize - 1)) || [];
+    let query = buildBaseQuery()
+      .order(column, { ascending, nullsFirst: false })
+      .order('id', { ascending });
+
+    if (cursor) {
+      const val = cursor.value === null || cursor.value === undefined ? null : String(cursor.value);
+      query = val === null
+        ? query.gt('id', cursor.id)
+        : query.or(`${column}.${op}.${val},and(${column}.eq.${val},id.${op}.${cursor.id})`);
+    }
+
+    const page = unwrap(await query.limit(pageSize)) || [];
     rows.push(...page);
-    if (page.length < pageSize) break; // fewer rows than asked for = no more data
-    offset += pageSize;
+    if (page.length < pageSize) break;
+    const last = page[page.length - 1];
+    cursor = { value: last[column], id: last.id };
   }
+
   return rows;
 }
 
@@ -65,10 +121,10 @@ function entityApi(name) {
   if (!table) throw new Error(`Unknown entity: ${String(name)}`);
   return {
     async list(sort, limit = 1000) {
-      return fetchPaged(() => applySort(supabase.from(table).select('*'), sort), limit);
+      return fetchPaged(() => supabase.from(table).select('*'), limit, sort);
     },
     async filter(filters, sort, limit = 1000) {
-      return fetchPaged(() => applySort(applyFilters(supabase.from(table).select('*'), filters), sort), limit);
+      return fetchPaged(() => applyFilters(supabase.from(table).select('*'), filters), limit, sort);
     },
     async get(id) {
       if (!id) return null;

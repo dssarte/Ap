@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Ticket, Clock, CheckCircle, AlertCircle, Loader2, ChevronLeft, ChevronRight, Store } from "lucide-react";
+import { Plus, Search, Ticket, Clock, CheckCircle, CheckCircle2, AlertCircle, Loader2, ChevronLeft, ChevronRight, Store } from "lucide-react";
 import TicketCard from "@/components/tickets/TicketCard";
 import TicketForm from "@/components/tickets/TicketForm";
 import TicketDetails from "@/components/tickets/TicketDetails";
@@ -113,26 +113,26 @@ export default function Home() {
       
       // Admin sees all approved tickets
       if (user.user_type === 'admin') {
-        const allTickets = await base44.entities.Ticket.list('-created_date');
+        const allTickets = await base44.entities.Ticket.list('-created_date', 5000);
         return allTickets.filter(t => t.approval_status !== 'pending');
       }
       
       // Director sees all approved tickets — narrowed down to the 15+ day
       // aging scope below, once role flags are computed for rendering.
       if (user.user_type === 'director') {
-        const allTickets = await base44.entities.Ticket.list('-created_date');
+        const allTickets = await base44.entities.Ticket.list('-created_date', 5000);
         return allTickets.filter(t => t.approval_status !== 'pending');
       }
 
       // Department Head sees approved department tickets
       if (user.user_type === 'department_head' && user.department_id) {
-        const deptTickets = await base44.entities.Ticket.filter({ department_id: user.department_id }, '-created_date');
+        const deptTickets = await base44.entities.Ticket.filter({ department_id: user.department_id }, '-created_date', 5000);
         return deptTickets.filter(t => t.approval_status !== 'pending');
       }
       
       // Approver sees tickets they approved (both approved and rejected)
       if (user.user_type === 'approver') {
-        const allTickets = await base44.entities.Ticket.list('-created_date');
+        const allTickets = await base44.entities.Ticket.list('-created_date', 5000);
         return allTickets.filter(t => t.approver_email === user.email);
       }
 
@@ -144,7 +144,7 @@ export default function Home() {
         const stores = Array.isArray(user.assigned_stores) ? user.assigned_stores : [];
         if (stores.length === 0) return [];
         const assigned = new Set(stores.map(name => String(name).trim().toLowerCase()));
-        const visibleTickets = await base44.entities.Ticket.list('-created_date', 2000);
+        const visibleTickets = await base44.entities.Ticket.list('-created_date', 5000);
         return visibleTickets.filter(ticket =>
           assigned.has(String(ticket.store_name || '').trim().toLowerCase())
           && ticket.approval_status !== 'pending'
@@ -152,7 +152,7 @@ export default function Home() {
       }
       
       // Regular user sees all their tickets (including pending approval)
-      return base44.entities.Ticket.filter({ submitter_email: user.email }, '-created_date');
+      return base44.entities.Ticket.filter({ submitter_email: user.email }, '-created_date', 5000);
     },
     enabled: !!user
   });
@@ -278,7 +278,8 @@ export default function Home() {
     total: scopedTickets.length,
     open: scopedTickets.filter(t => t.status === 'open').length,
     inProgress: scopedTickets.filter(t => t.status === 'in_progress').length,
-    resolved: scopedTickets.filter(t => t.status === 'resolved' || t.status === 'closed').length
+    resolved: scopedTickets.filter(t => t.status === 'resolved').length,
+    closed: scopedTickets.filter(t => t.status === 'closed').length
   };
 
   if (!user) {
@@ -377,11 +378,12 @@ export default function Home() {
         </div>
 
         {/* Stats */}
-        <div className="mb-8 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <div className="mb-8 grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4">
           <StatsCard title="Total tickets" value={stats.total} icon={Ticket} color="bg-slate-900" />
           <StatsCard title="Open" value={stats.open} icon={AlertCircle} color="bg-blue-600" />
           <StatsCard title="In progress" value={stats.inProgress} icon={Clock} color="bg-amber-500" />
           <StatsCard title="Resolved" value={stats.resolved} icon={CheckCircle} color="bg-emerald-600" />
+          <StatsCard title="Closed" value={stats.closed} icon={CheckCircle2} color="bg-slate-500" />
         </div>
 
         {/* Actions */}

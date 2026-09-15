@@ -69,7 +69,7 @@ export default function Analytics() {
 
   const { data: rawTickets = [], isLoading } = useQuery({
     queryKey: ['analytics-all-tickets'],
-    queryFn: () => base44.entities.Ticket.list('-created_date', 2000),
+    queryFn: () => base44.entities.Ticket.list('-created_date', 5000),
     enabled: !!user && hasAccess,
   });
 

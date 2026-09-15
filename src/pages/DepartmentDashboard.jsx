@@ -35,7 +35,7 @@ export default function DepartmentDashboard() {
     queryFn: async () => {
       if (!user?.department_id) return [];
       // Get all tickets and filter for those assigned to this department
-      const all = await base44.entities.Ticket.list('-created_date', 2000);
+      const all = await base44.entities.Ticket.list('-created_date', 5000);
       return all.filter(t =>
         // Include tickets where handling_department matches OR department appears in history (for forwarded/returned tickets)
         t.approval_status === 'approved' &&
@@ -59,7 +59,7 @@ export default function DepartmentDashboard() {
     queryKey: ['dept-filed-tickets', user?.department_id],
     queryFn: async () => {
       if (!user?.department_id) return [];
-      const all = await base44.entities.Ticket.list('-created_date', 2000);
+      const all = await base44.entities.Ticket.list('-created_date', 5000);
       return all.filter(t =>
         t.department_id === user.department_id &&
         t.handling_department_id !== user.department_id &&
