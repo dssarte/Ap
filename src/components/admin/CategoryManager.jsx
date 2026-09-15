@@ -57,7 +57,7 @@ export default function CategoryManager() {
       // If department changed, update existing tickets using this category
       if (departmentChanged) {
         try {
-          const tickets = await base44.entities.Ticket.filter({ category_id: editingCategory.id });
+          const tickets = await base44.entities.Ticket.filter({ category_id: editingCategory.id }, '-created_date', 5000);
           
           if (tickets.length > 0) {
             await base44.entities.Ticket.bulkUpdate(
