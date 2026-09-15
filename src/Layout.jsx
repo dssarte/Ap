@@ -91,7 +91,7 @@ export default function Layout({ children, currentPageName }) {
   const loadPendingCount = async () => {
     if (!user?.email) return;
     try {
-      const allTickets = await base44.entities.Ticket.list();
+      const allTickets = await base44.entities.Ticket.list('-created_date', 5000);
       const pending = user.user_type === 'store_manager'
         ? allTickets.filter((ticket) => ticket.approval_status === 'pending' && ticket.store_name && (user.assigned_stores || []).includes(ticket.store_name))
         : allTickets.filter((ticket) => ticket.approval_status === 'pending' && ticket.approver_email === user.email);
