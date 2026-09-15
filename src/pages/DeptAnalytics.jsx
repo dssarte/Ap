@@ -85,8 +85,8 @@ export default function DeptAnalytics() {
     queryKey: ['analytics-tickets', selectedDept],
     queryFn: () =>
       selectedDept
-        ? base44.entities.Ticket.filter({ handling_department_id: selectedDept }, '-created_date', 2000)
-        : base44.entities.Ticket.list('-created_date', 2000),
+        ? base44.entities.Ticket.filter({ handling_department_id: selectedDept }, '-created_date', 5000)
+        : base44.entities.Ticket.list('-created_date', 5000),
     enabled: !!user && hasAccess,
   });
 
