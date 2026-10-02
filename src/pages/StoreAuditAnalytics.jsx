@@ -22,6 +22,13 @@ import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 
 const PASS_THRESHOLD = 75;
+
+// TEMPORARY (ongoing QA checklist testing on the live database): store
+// managers shouldn't see test submissions land on their own store before
+// the real rollout. Flip to false (or just delete the filter it gates)
+// once testing wraps up — Recent Audits is meant to show these eventually
+// (that's why the blue-border styling below exists at all).
+const HIDE_QA_SUBMISSIONS_FOR_TESTING = true;
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100];
 
 function ScoreBadge({ score }) {
@@ -98,13 +105,6 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
     enabled: storeNames.length > 0,
   });
 
-  // Only submissions from this user's store(s), filtered by the selected store when applicable
-  const storeSubmissions = useMemo(() => {
-    if (storeNames.length === 0) return [];
-    const activeStores = selectedStore === 'all' ? storeNames : [selectedStore];
-    return submissions.filter(s => s.brand && activeStores.some(name => s.brand.includes(name)) && s.score != null);
-  }, [submissions, storeNames, selectedStore]);
-
   // All active templates available for checklist completion tracking. Kept
   // as full rows (not column-trimmed) — SubmissionDetail's modal reads
   // template.sections off this same list to render a submission's checklist.
@@ -113,6 +113,25 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
     queryFn: () => base44.entities.AuditTemplate.filter({ is_active: true }, '-created_date', 100),
     enabled: storeNames.length > 0,
   });
+
+  // QA-conducted checklists (Ask Audit Type) — a store's own analytics page
+  // is about that store's own operational performance; a QA officer's visit
+  // record isn't the same thing (see HIDE_QA_SUBMISSIONS_FOR_TESTING above
+  // and the exclusion from completionTemplates below, which is permanent).
+  const qaAuditTemplateIds = useMemo(
+    () => new Set(allTemplates.filter(t => t.requires_audit_type).map(t => t.id)),
+    [allTemplates]
+  );
+
+  // Only submissions from this user's store(s), filtered by the selected store when applicable
+  const storeSubmissions = useMemo(() => {
+    if (storeNames.length === 0) return [];
+    const activeStores = selectedStore === 'all' ? storeNames : [selectedStore];
+    return submissions.filter(s =>
+      s.brand && activeStores.some(name => s.brand.includes(name)) && s.score != null
+      && !(HIDE_QA_SUBMISSIONS_FOR_TESTING && qaAuditTemplateIds.has(s.template_id))
+    );
+  }, [submissions, storeNames, selectedStore, qaAuditTemplateIds]);
 
   // Template definitions for resolving NO-answer item labels — scoped to just
   // the templates this store's submissions actually used, instead of every
@@ -141,9 +160,15 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
   });
   const configRecord = configRecords[0];
 
-  // Exclude QA audit templates (unrestricted) — only store-restricted checklists count toward completion
+  // Exclude QA audit templates — a QA officer's visit isn't a daily
+  // checklist the store itself is responsible for completing. This used to
+  // only check "unrestricted" (no store_restrictions/store_name), but QA
+  // checklists can have store_restrictions too (for brand/store auto-lock
+  // convenience), so requires_audit_type is the real signal, same as
+  // qaAuditTemplateIds above and the equivalent logic in QA Dashboard/Store
+  // Ranking.
   const completionTemplates = useMemo(() => {
-    return allTemplates.filter(t => (t.store_restrictions?.length > 0 || t.store_name));
+    return allTemplates.filter(t => !t.requires_audit_type && (t.store_restrictions?.length > 0 || t.store_name));
   }, [allTemplates]);
 
   // Determine selected IDs: admin config if set, otherwise default to all store-restricted templates
@@ -225,13 +250,6 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
     const start = (page - 1) * pageSize;
     return recentAudits.slice(start, start + pageSize);
   }, [recentAudits, page, pageSize]);
-
-  // QA-conducted audits (Ask Audit Type) get a distinct highlight in Recent
-  // Audits so they stand out from the store's own daily checklists.
-  const qaAuditTemplateIds = useMemo(
-    () => new Set(allTemplates.filter(t => t.requires_audit_type).map(t => t.id)),
-    [allTemplates]
-  );
 
   // KPI stats
   const stats = useMemo(() => {
