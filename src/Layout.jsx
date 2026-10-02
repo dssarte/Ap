@@ -21,6 +21,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   FileBarChart,
+  Gauge,
   Home,
   Inbox,
   LogOut,
@@ -149,7 +150,9 @@ export default function Layout({ children, currentPageName }) {
 
   const displayName = getUserDisplayName(user);
   const initials = displayName.split(' ').map((part) => part[0]).join('').toUpperCase().slice(0, 2);
-  const isQA = user?.department_name === 'Quality Assurance' || user?.user_type === 'admin';
+  const isAdmin = user?.user_type === 'admin';
+  const isQADept = user?.department_name === 'Quality Assurance';
+  const isQA = isQADept || isAdmin;
 
   let navItems = [{ name: 'Overview', icon: Home, page: 'Home', badge: hasUnreadTicketUpdates ? 1 : null }];
 
@@ -198,9 +201,14 @@ export default function Layout({ children, currentPageName }) {
     }
     if (user?.store_name) navItems.push({ name: 'Store Analytics', icon: BarChart3, page: 'StoreAuditAnalytics' });
     if (isQA) {
+      navItems.push({ name: 'Store Ranking', icon: Trophy, page: 'StoreRanking' });
+      // Quality Assurance department gets the new executive QA Dashboard;
+      // admins keep the existing operational Audit Dashboard (used for
+      // managing/reviewing all submissions, not just QA's own view).
       navItems.push(
-        { name: 'Store Ranking', icon: Trophy, page: 'StoreRanking' },
-        { name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' },
+        isAdmin
+          ? { name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' }
+          : { name: 'QA Dashboard', icon: Gauge, page: 'QADashboard' }
       );
     }
   }
