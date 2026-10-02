@@ -98,16 +98,6 @@ export default function StoreRanking() {
     queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 200),
   });
 
-  // Rankings, per-template scores, and the Front Cover export are all built
-  // directly from raw submissions rather than the pre-aggregated summary RPC
-  // — that's what lets us filter/re-average by Audit Type and drill from a
-  // score straight into the submissions behind it.
-  const { data: rawSubmissions = [], isLoading } = useQuery({
-    queryKey: ['audit-store-ranking-raw-submissions', dateFrom, dateTo],
-    queryFn: () => base44.audit.listSubmissions({ dateFrom, dateTo, maxRows: 5000 }),
-    enabled: Boolean(dateFrom && dateTo),
-  });
-
   const { data: templates = [] } = useQuery({
     queryKey: ['audit-templates-all'],
     queryFn: () => base44.entities.AuditTemplate.list('title', 200),
@@ -126,6 +116,23 @@ export default function StoreRanking() {
         .map(t => t.id)
     );
   }, [templates]);
+
+  // Scoped to just the QA checklists server-side — these happen a handful
+  // of times a month per store, while every store's daily operational
+  // checklists (Opening/OD/Mid/Closing) vastly outnumber them. Fetching
+  // those too and discarding them client-side is what made a wide date
+  // range time out.
+  const qaTemplateIdList = useMemo(() => [...qaTemplateIds].sort(), [qaTemplateIds]);
+
+  // Rankings, per-template scores, and the Front Cover export are all built
+  // directly from raw submissions rather than the pre-aggregated summary RPC
+  // — that's what lets us filter/re-average by Audit Type and drill from a
+  // score straight into the submissions behind it.
+  const { data: rawSubmissions = [], isLoading } = useQuery({
+    queryKey: ['audit-store-ranking-raw-submissions', dateFrom, dateTo, qaTemplateIdList.join(',')],
+    queryFn: () => base44.audit.listSubmissions({ dateFrom, dateTo, templateIds: qaTemplateIdList, maxRows: 5000 }),
+    enabled: Boolean(dateFrom && dateTo) && qaTemplateIdList.length > 0,
+  });
 
   // Different checklists can pass at different thresholds (e.g. 93% for the
   // Angel's Pizza Express QA audit vs the app's previous flat 75% for

@@ -17,6 +17,7 @@ const VerifyAccount = lazy(() => import('./pages/VerifyAccount'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const AuditDashboard = lazy(() => import('./pages/AuditDashboard'));
+const QADashboard = lazy(() => import('./pages/QADashboard'));
 const StoreAuditAnalytics = lazy(() => import('./pages/StoreAuditAnalytics'));
 const DailySummary = lazy(() => import('./pages/DailySummary'));
 const SqlExport = lazy(() => import('./pages/SqlExport'));
@@ -94,6 +95,7 @@ function App() {
               ))}
               <Route path="/StoreRanking" element={<LayoutWrapper currentPageName="StoreRanking"><StoreRanking /></LayoutWrapper>} />
               <Route path="/AuditDashboard" element={<LayoutWrapper currentPageName="AuditDashboard"><AuditDashboard /></LayoutWrapper>} />
+              <Route path="/QADashboard" element={<LayoutWrapper currentPageName="QADashboard"><QADashboard /></LayoutWrapper>} />
               <Route path="/StoreAuditAnalytics" element={<LayoutWrapper currentPageName="StoreAuditAnalytics"><StoreAuditAnalytics /></LayoutWrapper>} />
               <Route path="/DailySummary" element={<LayoutWrapper currentPageName="DailySummary"><DailySummary /></LayoutWrapper>} />
               <Route path="/SqlExport" element={<LayoutWrapper currentPageName="SqlExport"><SqlExport /></LayoutWrapper>} />

@@ -214,29 +214,52 @@ const auditData = {
     const rows = [];
     const databaseDateTo = dateTo ? addIsoDateDays(dateTo, 1) : null;
 
-    for (let offset = 0; offset < maxRows; offset += pageSize) {
+    // Keyset (cursor) pagination — same reasoning as listSubmissions above:
+    // tickets are gated by the tickets_scoped_read RLS policy
+    // (private.can_access_ticket per row), so OFFSET would re-pay that cost
+    // for every already-returned row on each subsequent page. Tickets
+    // generated from the same audit submission can share an identical
+    // created_date (same transaction), so the cursor needs the id tiebreak
+    // too, not just the timestamp.
+    let cursor = null;
+
+    while (rows.length < maxRows) {
+      const limit = Math.min(pageSize, maxRows - rows.length);
       let query = supabase
         .from('tickets')
-        .select('id,audit_submission_id,audit_template_id,status,created_date')
+        .select('id,audit_submission_id,audit_template_id,status,created_date,store_name,title')
         .not('audit_submission_id', 'is', null)
         .order('created_date', { ascending: false, nullsFirst: false })
-        .range(offset, offset + Math.min(pageSize, maxRows - offset) - 1);
+        .order('id', { ascending: false })
+        .limit(limit);
       if (dateFrom) {
         query = query.gte('created_date', new Date(`${dateFrom}T00:00:00+08:00`).toISOString());
       }
       if (databaseDateTo) {
         query = query.lt('created_date', new Date(`${databaseDateTo}T05:00:00+08:00`).toISOString());
       }
+      if (cursor) {
+        query = query.or(`created_date.lt.${cursor.date},and(created_date.eq.${cursor.date},id.lt.${cursor.id})`);
+      }
 
       const page = unwrap(await query) || [];
       rows.push(...page);
-      if (page.length < pageSize) break;
+      if (page.length < limit) break;
+
+      const last = page[page.length - 1];
+      cursor = { date: last.created_date, id: last.id };
     }
 
     return rows;
   },
 
-  async listSubmissions({ dateFrom = null, dateTo = null, stores = null, templateId = null, maxRows = 25000 } = {}) {
+  // `templateIds` lets a caller that only cares about a known small set of
+  // templates (e.g. QA Dashboard/Store Ranking scoping to just the QA
+  // checklists) filter at the database boundary instead of fetching every
+  // store's daily operational checklists too and discarding most of them
+  // client-side — those vastly outnumber QA submissions, so skipping them
+  // server-side is what keeps a wide date range from timing out.
+  async listSubmissions({ dateFrom = null, dateTo = null, stores = null, templateId = null, templateIds = null, maxRows = 25000 } = {}) {
     const pageSize = 1000;
     const rows = [];
     // Request one extra calendar day so this source remains compatible with
@@ -244,21 +267,36 @@ const auditData = {
     // business-date filter below removes unrelated next-day records.
     const databaseDateTo = dateTo ? addIsoDateDays(dateTo, 1) : null;
 
-    for (let offset = 0; offset < maxRows; offset += pageSize) {
+    // Keyset (cursor) pagination: each page after the first asks for rows
+    // strictly before the previous page's last (date, id) pair instead of
+    // "skip N rows". A wide date range across every brand/template can be
+    // many thousands of rows — with OFFSET, every page re-pays the access
+    // check for rows already returned by earlier pages, so total cost grows
+    // with roughly the square of the page count. A cursor pays that cost
+    // exactly once per row no matter how many pages it takes.
+    let cursor = null;
+    let fallbackOffset = 0; // only used by the pre-migration fallback below
+
+    while (rows.length < maxRows) {
+      const limit = Math.min(pageSize, maxRows - rows.length);
       const { data, error } = await supabase.rpc('list_audit_submissions', {
         p_date_from: dateFrom || null,
         p_date_to: databaseDateTo,
         p_store_names: stores?.length ? stores : null,
         p_template_id: templateId || null,
-        p_limit: Math.min(pageSize, maxRows - offset),
-        p_offset: offset,
+        p_template_ids: templateIds?.length ? templateIds : null,
+        p_limit: limit,
+        p_offset: 0,
+        p_before_date: cursor?.date || null,
+        p_before_id: cursor?.id || null,
       });
 
       if (error) {
         if (!isMissingRpc(error)) throw error;
 
         // Backward-compatible fallback while the production migration is being
-        // deployed. It still filters and paginates at the database boundary.
+        // deployed. It still filters and paginates at the database boundary
+        // (OFFSET-based — this branch is only hit pre-migration, briefly).
         let query = supabase.from('audit_submissions').select('*');
         if (dateFrom) query = query.gte('submission_date', new Date(`${dateFrom}T00:00:00+08:00`).toISOString());
         if (databaseDateTo) {
@@ -267,20 +305,28 @@ const auditData = {
           query = query.lt('submission_date', exclusiveEnd.toISOString());
         }
         if (templateId) query = query.eq('template_id', templateId);
+        if (templateIds?.length) query = query.in('template_id', templateIds);
         if (stores?.length) {
           query = query.or(stores.map(store => `brand.ilike.%${String(store).replace(/[,%()]/g, '')}%`).join(','));
         }
         const fallback = unwrap(await query
           .order('submission_date', { ascending: false, nullsFirst: false })
-          .range(offset, offset + Math.min(pageSize, maxRows - offset) - 1)) || [];
+          .range(fallbackOffset, fallbackOffset + limit - 1)) || [];
         rows.push(...fallback);
-        if (fallback.length < pageSize) break;
+        fallbackOffset += limit;
+        if (fallback.length < limit) break;
         continue;
       }
 
       const page = data || [];
       rows.push(...page);
-      if (page.length < pageSize) break;
+      if (page.length < limit) break;
+
+      // Cursor matches the RPC's own ORDER BY (business_date, id) exactly —
+      // see list_audit_submissions for why it sorts by business_date rather
+      // than the raw timestamp.
+      const last = page[page.length - 1];
+      cursor = { date: last.business_date, id: last.id };
     }
 
     return rows.filter(row => {
@@ -322,6 +368,27 @@ const auditData = {
       ...group,
       average_score: group.audit_count ? group.total / group.audit_count : 0,
     }));
+  },
+
+  // Computes Audit Dashboard's core numbers (stats, per-template, per-day,
+  // per-month, per-store) server-side via GROUP BY instead of fetching
+  // every raw submission to the browser — see the migration for why that
+  // raw-fetch approach timed out on a month of daily operational checklists.
+  async dashboardSummary({ dateFrom = null, dateTo = null, brandName = null, storeName = null, templateIds = null } = {}) {
+    const { data, error } = await supabase.rpc('audit_dashboard_summary', {
+      p_date_from: dateFrom || null,
+      p_date_to: dateTo || null,
+      p_brand_name: brandName || null,
+      p_store_name: storeName || null,
+      p_template_ids: templateIds?.length ? templateIds : null,
+    });
+    if (error) {
+      if (isMissingRpc(error)) {
+        throw new Error('audit_dashboard_summary is not available yet — run its migration in Supabase, then reload the schema cache (NOTIFY pgrst, \'reload schema\';).');
+      }
+      throw error;
+    }
+    return data || { stats: null, templateRows: [], dailyRows: [], trendData: [], storeRows: [] };
   },
 
   async submitBundle(submission, tickets = []) {

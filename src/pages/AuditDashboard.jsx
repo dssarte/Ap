@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import moment from 'moment';
 import NoAnswerTracker from '@/components/audit/NoAnswerTracker';
+import TemplateMultiSelect from '@/components/audit/TemplateMultiSelect';
 import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
 import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import ExcelExportButton from '@/components/ExcelExportButton';
@@ -23,10 +24,6 @@ import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 const PASS_THRESHOLD = 75;
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100];
 const COLORS = ['#1fd655', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
-
-function isOdChecklist(title) {
-  return (title || '').trim().toUpperCase().includes('OD CHECKLIST');
-}
 
 function ScoreBadge({ score }) {
   if (score == null) return <span className="text-slate-300 text-sm">—</span>;
@@ -80,7 +77,7 @@ export default function AuditDashboard() {
   const [user, setUser] = useState(null);
   const [selectedBrandId, setSelectedBrandId] = useState('all');
   const [selectedStoreId, setSelectedStoreId] = useState('all');
-  const [selectedTemplateId, setSelectedTemplateId] = useState('all');
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState([]); // [] = all templates
   const [dateFrom, setDateFrom] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
   const [dateTo, setDateTo] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
   const [page, setPage] = useState(1);
@@ -115,21 +112,43 @@ export default function AuditDashboard() {
     queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 500),
   });
 
-  const { data: submissions = [], isLoading } = useQuery({
-    queryKey: ['audit-submissions-dashboard', dateFrom, dateTo, selectedTemplateId],
+  const { data: submissions = [] } = useQuery({
+    queryKey: ['audit-submissions-dashboard', dateFrom, dateTo, selectedTemplateIds.join(',')],
     queryFn: () => base44.audit.listSubmissions({
       dateFrom,
       dateTo,
-      templateId: selectedTemplateId === 'all' ? null : selectedTemplateId,
+      templateIds: selectedTemplateIds.length ? selectedTemplateIds : null,
       maxRows: 25000,
     }),
     enabled: !!user,
   });
 
-  const { data: generatedTickets = [], isLoading: loadingGeneratedTickets } = useQuery({
-    queryKey: ['audit-generated-tickets-dashboard', dateFrom, dateTo],
-    queryFn: () => base44.audit.listGeneratedTickets({ dateFrom, dateTo, maxRows: 25000 }),
+  // Resolved name strings (not ids) for the summary RPC's brand/store
+  // narrowing — matches the same brand.startsWith/store.includes semantics
+  // `filtered` below uses for the raw-row views.
+  const brandNameFilter = selectedBrandId === 'all' ? null : (brands.find(b => b.id === selectedBrandId)?.brand_name || null);
+  const storeNameFilter = selectedStoreId === 'all' ? null : (stores.find(s => s.id === selectedStoreId)?.store_name || null);
+
+  // Core dashboard numbers (stats, per-template, per-day, per-month,
+  // per-store), computed server-side via GROUP BY instead of fetching every
+  // raw submission to the browser — see audit_dashboard_summary migration.
+  // allowedStores (store-manager scoping) doesn't need to be passed through:
+  // private.can_access_audit already restricts the underlying rows to what
+  // this user can see, the same way it does for the raw `submissions` fetch.
+  const { data: dashboardSummary, isLoading: loadingSummary, isError: summaryError, error: summaryErrorDetail, refetch: refetchSummary } = useQuery({
+    queryKey: ['audit-dashboard-summary', dateFrom, dateTo, brandNameFilter, storeNameFilter, selectedTemplateIds.join(',')],
+    queryFn: () => base44.audit.dashboardSummary({
+      dateFrom,
+      dateTo,
+      brandName: brandNameFilter,
+      storeName: storeNameFilter,
+      templateIds: selectedTemplateIds.length ? selectedTemplateIds : null,
+    }),
     enabled: !!user,
+    // A timeout is often just a cold cache on the first hit for a given
+    // set of filters — retrying (react-query's default) lets a borderline
+    // query succeed on a warmed second attempt instead of failing outright.
+    retry: 2,
   });
 
   const { data: templates = [] } = useQuery({
@@ -264,7 +283,7 @@ export default function AuditDashboard() {
   // site-wide total. Templates required for other brands/stores don't
   // apply here, so they're excluded rather than counted in.
   const scopedCompletionTemplates = useMemo(() => {
-    if (selectedTemplateId !== 'all') return completionTemplates.filter(t => t.id === selectedTemplateId);
+    if (selectedTemplateIds.length) return completionTemplates.filter(t => selectedTemplateIds.includes(t.id));
     return completionTemplates.filter(t => {
       const restrictions = t.store_restrictions?.length > 0
         ? t.store_restrictions
@@ -281,10 +300,10 @@ export default function AuditDashboard() {
       }
       return true;
     });
-  }, [completionTemplates, selectedBrandId, selectedStoreId, selectedTemplateId, allowedStores, visibleBrands]);
+  }, [completionTemplates, selectedBrandId, selectedStoreId, selectedTemplateIds, allowedStores, visibleBrands]);
 
   useEffect(() => { setSelectedStoreId('all'); }, [selectedBrandId]);
-  useEffect(() => { setSelectedTemplateId('all'); }, [selectedBrandId, selectedStoreId]);
+  useEffect(() => { setSelectedTemplateIds([]); }, [selectedBrandId, selectedStoreId]);
 
   // Filter submissions
   const filtered = useMemo(() => {
@@ -301,8 +320,8 @@ export default function AuditDashboard() {
       const store = stores.find(s => s.id === selectedStoreId);
       if (store) subs = subs.filter(s => s.brand?.includes(store.store_name));
     }
-    if (selectedTemplateId !== 'all') {
-      subs = subs.filter(s => s.template_id === selectedTemplateId);
+    if (selectedTemplateIds.length) {
+      subs = subs.filter(s => selectedTemplateIds.includes(s.template_id));
     }
     if (dateFrom || dateTo) {
       subs = subs.filter(s => {
@@ -313,19 +332,10 @@ export default function AuditDashboard() {
       });
     }
     return subs;
-  }, [submissions, brands, stores, allowedStores, selectedBrandId, selectedStoreId, selectedTemplateId, dateFrom, dateTo]);
+  }, [submissions, brands, stores, allowedStores, selectedBrandId, selectedStoreId, selectedTemplateIds, dateFrom, dateTo]);
 
-  const filteredSubmissionIds = useMemo(
-    () => new Set(filtered.map(submission => submission.id)),
-    [filtered]
-  );
 
-  const filteredAuditTickets = useMemo(
-    () => generatedTickets.filter(ticket => filteredSubmissionIds.has(ticket.audit_submission_id)),
-    [generatedTickets, filteredSubmissionIds]
-  );
-
-  useEffect(() => { setPage(1); }, [filtered.length, pageSize, selectedBrandId, selectedStoreId, selectedTemplateId, dateFrom, dateTo]);
+  useEffect(() => { setPage(1); }, [filtered.length, pageSize, selectedBrandId, selectedStoreId, selectedTemplateIds, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pagedSubmissions = useMemo(() => {
@@ -335,47 +345,11 @@ export default function AuditDashboard() {
       .slice(start, start + pageSize);
   }, [filtered, page, pageSize]);
 
-  // Performance for every audit template represented by the current filters.
-  // Unlike the headline score, this deliberately includes OD checklists so the
-  // template analysis is complete.
-  const templateRows = useMemo(() => {
-    const groups = new Map();
-    filtered.forEach(submission => {
-      const key = submission.template_id || submission.template_title || 'unknown';
-      const group = groups.get(key) || {
-        id: key,
-        title: submission.template_title || 'Untitled template',
-        scores: [],
-        audits: 0,
-        passing: 0,
-        failing: 0,
-        noFindings: 0,
-        tickets: 0,
-      };
-      const score = Number(submission.score);
-      if (Number.isFinite(score)) group.scores.push(score);
-      group.audits += 1;
-      if (score >= PASS_THRESHOLD) group.passing += 1;
-      else group.failing += 1;
-      group.noFindings += Number(submission.no_count || 0);
-      groups.set(key, group);
-    });
-
-    filteredAuditTickets.forEach(ticket => {
-      const group = groups.get(ticket.audit_template_id);
-      if (group) group.tickets += 1;
-    });
-
-    return Array.from(groups.values())
-      .map(group => ({
-        ...group,
-        avg: group.scores.length
-          ? group.scores.reduce((total, score) => total + score, 0) / group.scores.length
-          : null,
-        passRate: group.audits ? (group.passing / group.audits) * 100 : 0,
-      }))
-      .sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1) || b.audits - a.audits || a.title.localeCompare(b.title));
-  }, [filtered, filteredAuditTickets]);
+  // Performance for every audit template represented by the current
+  // filters — computed server-side (see audit_dashboard_summary) instead of
+  // reduced from every raw submission in the browser. Deliberately includes
+  // OD checklists so the template analysis is complete, same as before.
+  const templateRows = dashboardSummary?.templateRows || [];
 
   const topTemplate = templateRows.find(row => row.avg != null) || null;
   const bottomTemplate = [...templateRows].reverse().find(row => row.avg != null) || null;
@@ -460,38 +434,15 @@ export default function AuditDashboard() {
   const topNoItem = noItemRows[0] || null;
   const topNoItemChartRows = noItemRows.slice(0, 15);
 
-  const dailyRows = useMemo(() => {
-    const groups = new Map();
-    filtered.forEach(submission => {
-      const day = auditBusinessDayKey(submission);
-      if (!day) return;
-      const group = groups.get(day) || { day, scores: [], audits: 0, passing: 0, failing: 0, noFindings: 0, tickets: 0 };
-      const score = Number(submission.score);
-      if (Number.isFinite(score)) group.scores.push(score);
-      group.audits += 1;
-      if (score >= PASS_THRESHOLD) group.passing += 1;
-      else group.failing += 1;
-      group.noFindings += Number(submission.no_count || 0);
-      groups.set(day, group);
-    });
-
-    const submissionDay = new Map(filtered.map(submission => [submission.id, auditBusinessDayKey(submission)]));
-    filteredAuditTickets.forEach(ticket => {
-      const day = submissionDay.get(ticket.audit_submission_id);
-      const group = groups.get(day);
-      if (group) group.tickets += 1;
-    });
-
-    return Array.from(groups.values())
-      .map(group => ({
-        ...group,
-        avg: group.scores.length
-          ? group.scores.reduce((total, score) => total + score, 0) / group.scores.length
-          : null,
-        label: moment(group.day, 'YYYY-MM-DD').format('MMM D'),
-      }))
-      .sort((a, b) => a.day.localeCompare(b.day));
-  }, [filtered, filteredAuditTickets]);
+  // Per-day rows arrive pre-aggregated from the summary RPC; just attach
+  // the display label the chart/table expect.
+  const dailyRows = useMemo(
+    () => (dashboardSummary?.dailyRows || []).map(row => ({
+      ...row,
+      label: moment(row.day, 'YYYY-MM-DD').format('MMM D'),
+    })),
+    [dashboardSummary]
+  );
 
   const noTrend = useMemo(() => {
     const total = dailyRows.reduce((sum, row) => sum + row.noFindings, 0);
@@ -519,65 +470,44 @@ export default function AuditDashboard() {
     [templateRows]
   );
 
-  const outcomeDistribution = useMemo(() => [
-    { name: 'Passing', value: filtered.filter(row => Number(row.score) >= PASS_THRESHOLD).length, fill: '#16a34a' },
-    { name: 'Failing', value: filtered.filter(row => Number(row.score) < PASS_THRESHOLD).length, fill: '#ef4444' },
-  ].filter(item => item.value > 0), [filtered]);
+  const outcomeDistribution = useMemo(() => {
+    const s = dashboardSummary?.stats;
+    if (!s) return [];
+    return [
+      { name: 'Passing', value: s.passing || 0, fill: '#16a34a' },
+      { name: 'Failing', value: s.failing || 0, fill: '#ef4444' },
+    ].filter(item => item.value > 0);
+  }, [dashboardSummary]);
 
-  // Summary stats
+  // Summary stats — computed server-side (see audit_dashboard_summary) so a
+  // whole month across every brand doesn't require fetching every raw
+  // submission just to average/count them in the browser.
   const stats = useMemo(() => {
-    if (!filtered.length) return null;
-    // Headline analytics include every audit template represented by the
-    // selected filters. Store comparison below retains its established rule
-    // of excluding the operational OD checklist from quality averages.
-    const avg = filtered.reduce((sum, submission) => sum + Number(submission.score || 0), 0) / filtered.length;
-    const passing = filtered.filter(s => s.score >= PASS_THRESHOLD).length;
-    const stores = new Set(filtered.map(s => s.brand)).size;
-    const templatesUsed = new Set(filtered.map(s => s.template_id)).size;
+    const s = dashboardSummary?.stats;
+    if (!s || !s.total) return null;
     return {
-      avg,
-      passing,
-      failing: filtered.length - passing,
-      total: filtered.length,
-      stores,
-      templatesUsed,
-      tickets: filteredAuditTickets.length,
+      avg: Number(s.avg) || 0,
+      passing: s.passing,
+      failing: s.failing,
+      total: s.total,
+      stores: s.stores,
+      templatesUsed: s.templatesUsed,
+      tickets: s.tickets,
     };
-  }, [filtered, filteredAuditTickets]);
+  }, [dashboardSummary]);
 
-  // Per-store summary table
-  const storeRows = useMemo(() => {
-    const groups = {};
-    filtered.forEach(s => {
-      const key = s.brand;
-      if (!groups[key]) groups[key] = { store: key, scores: [], avgScores: [], byTemplate: {} };
-      groups[key].scores.push(s.score);
-      if (!isOdChecklist(s.template_title)) {
-        groups[key].avgScores.push(s.score);
-      }
-      if (!groups[key].byTemplate[s.template_id]) {
-        groups[key].byTemplate[s.template_id] = { title: s.template_title, scores: [] };
-      }
-      groups[key].byTemplate[s.template_id].scores.push(s.score);
-    });
-    return Object.values(groups)
-      .map(g => {
-        const avg = g.avgScores.length ? g.avgScores.reduce((a, b) => a + b, 0) / g.avgScores.length : null;
-        const sorted = [...g.avgScores];
-        const mid = Math.floor(sorted.length / 2);
-        const early = sorted.slice(0, mid);
-        const late = sorted.slice(mid);
-        const earlyAvg = early.length ? early.reduce((a, b) => a + b, 0) / early.length : avg;
-        const lateAvg = late.length ? late.reduce((a, b) => a + b, 0) / late.length : avg;
-        const trend = (earlyAvg != null && lateAvg != null) ? lateAvg - earlyAvg : 0;
-        const templateScores = Object.values(g.byTemplate).map(t => ({
-          title: t.title,
-          avg: t.scores.reduce((a, b) => a + b, 0) / t.scores.length,
-        }));
-        return { store: g.store, avg, trend, count: g.scores.length, templateScores, isPassing: avg == null ? null : avg >= PASS_THRESHOLD };
-      })
-      .sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1));
-  }, [filtered]);
+  // Per-store summary table — same server-side source; trend is the same
+  // early-half-vs-late-half comparison as before, just computed via a SQL
+  // window function instead of array slicing in JS.
+  const storeRows = useMemo(
+    () => (dashboardSummary?.storeRows || []).map(row => ({
+      ...row,
+      avg: row.avg != null ? Number(row.avg) : null,
+      trend: Number(row.trend) || 0,
+      templateScores: (row.templateScores || []).map(t => ({ title: t.title, avg: Number(t.avg) })),
+    })),
+    [dashboardSummary]
+  );
 
   // All unique template titles visible in current filter
   const visibleTemplates = useMemo(() => {
@@ -589,28 +519,19 @@ export default function AuditDashboard() {
     return out;
   }, [storeRows]);
 
-  // Trend over time (grouped by month)
+  // Trend over time (grouped by month) — reshape the RPC's flat
+  // (month, templateId, title, avg) rows into the { month, Overall, [title]:
+  // avg } row-per-month shape the chart expects. The RPC already orders by
+  // month then title, so insertion order here stays chronological.
   const trendData = useMemo(() => {
-    const byMonth = {};
-    filtered.forEach(s => {
-      const month = moment(auditBusinessDayKey(s), 'YYYY-MM-DD').format('MMM YYYY');
-      if (!byMonth[month]) byMonth[month] = { month, scores: {}, totals: [] };
-      byMonth[month].totals.push(s.score);
-      if (!byMonth[month].scores[s.template_id]) {
-        byMonth[month].scores[s.template_id] = { title: s.template_title, vals: [] };
-      }
-      byMonth[month].scores[s.template_id].vals.push(s.score);
+    const byMonth = new Map();
+    (dashboardSummary?.trendData || []).forEach(r => {
+      if (!byMonth.has(r.month)) byMonth.set(r.month, { month: r.month });
+      const row = byMonth.get(r.month);
+      row[r.title] = r.avg != null ? parseFloat(Number(r.avg).toFixed(1)) : null;
     });
-    return Object.values(byMonth)
-      .sort((a, b) => moment(a.month, 'MMM YYYY') - moment(b.month, 'MMM YYYY'))
-      .map(m => {
-        const row = { month: m.month, Overall: parseFloat((m.totals.reduce((a, b) => a + b, 0) / m.totals.length).toFixed(1)) };
-        Object.values(m.scores).forEach(t => {
-          row[t.title] = parseFloat((t.vals.reduce((a, b) => a + b, 0) / t.vals.length).toFixed(1));
-        });
-        return row;
-      });
-  }, [filtered]);
+    return Array.from(byMonth.values());
+  }, [dashboardSummary]);
 
   const trendKeys = useMemo(() => {
     const keys = new Set();
@@ -733,15 +654,12 @@ export default function AuditDashboard() {
           </SelectContent>
         </Select>
 
-        <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-          <SelectTrigger className="w-56 h-9">
-            <SelectValue placeholder="All Templates" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Templates</SelectItem>
-            {filterTemplates.map(t => <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <TemplateMultiSelect
+          templates={filterTemplates}
+          selected={selectedTemplateIds}
+          onChange={setSelectedTemplateIds}
+          placeholder="All Templates"
+        />
 
         <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:items-center">
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -752,9 +670,24 @@ export default function AuditDashboard() {
         </div>
       </div>
 
-      {isLoading || loadingGeneratedTickets ? (
+      {loadingSummary ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
-      ) : !filtered.length ? (
+      ) : summaryError ? (
+        <Card className="border-2 border-dashed border-red-200">
+          <CardContent className="py-16 text-center">
+            <AlertTriangle className="w-12 h-12 text-red-300 mx-auto mb-3" />
+            <p className="text-red-600 font-semibold">Couldn't load the dashboard for this range.</p>
+            <p className="text-slate-400 text-sm mt-1 max-w-md mx-auto">
+              {summaryErrorDetail?.message?.includes('statement timeout') || summaryErrorDetail?.code === '57014'
+                ? 'The query timed out — try a shorter date range, fewer templates, or a specific brand/store.'
+                : (summaryErrorDetail?.message || 'An unexpected error occurred.')}
+            </p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => refetchSummary()}>
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      ) : !stats ? (
         <Card className="border-2 border-dashed border-slate-200">
           <CardContent className="py-16 text-center">
             <ClipboardCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
