@@ -273,6 +273,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
   const [templateGroup, setTemplateGroup] = useState(group);
   const [passThreshold, setPassThreshold] = useState(75);
   const [requiresAuditType, setRequiresAuditType] = useState(false);
+  const [requiresVisitNumber, setRequiresVisitNumber] = useState(false);
 
   React.useEffect(() => {
     if (open) {
@@ -286,6 +287,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       setActiveTicket(!!initial?.active_ticket);
       setPassThreshold(initial?.pass_threshold ?? 75);
       setRequiresAuditType(!!initial?.requires_audit_type);
+      setRequiresVisitNumber(!!initial?.requires_visit_number);
       // Load existing restrictions — support both new array format and legacy single store
       if (initial?.store_restrictions?.length) {
         setStoreRestrictions(initial.store_restrictions);
@@ -420,6 +422,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       active_ticket: activeTicket,
       pass_threshold: Number(passThreshold) || 75,
       requires_audit_type: requiresAuditType,
+      requires_visit_number: requiresVisitNumber,
       has_time_restriction: hasTimeRestriction,
       available_from_time: hasTimeRestriction ? availableFromTime : '',
       available_to_time: hasTimeRestriction ? availableToTime : '',
@@ -597,6 +600,15 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
               <span className="text-sm font-semibold text-slate-700">Ask Audit Type <span className="text-slate-400 font-normal">(optional)</span></span>
             </label>
             <p className="text-xs text-slate-500">When enabled, whoever conducts this audit must pick Unannounced, Follow-up, or Spot before submitting.</p>
+          </div>
+
+          {/* Visits — First / Second visit, recorded per submission */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch checked={requiresVisitNumber} onCheckedChange={setRequiresVisitNumber} />
+              <span className="text-sm font-semibold text-slate-700">Ask Visit Number <span className="text-slate-400 font-normal">(optional)</span></span>
+            </label>
+            <p className="text-xs text-slate-500">When enabled, whoever conducts this audit must pick First Visit or Second Visit before submitting.</p>
           </div>
 
           <div className="space-y-3">

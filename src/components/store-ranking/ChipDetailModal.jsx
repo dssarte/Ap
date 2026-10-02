@@ -95,7 +95,7 @@ export default function ChipDetailModal({ label, submissions, templatesById, pas
                 <p className={`text-sm font-bold uppercase tracking-wide ${isPassing ? 'text-emerald-700' : 'text-red-700'}`}>
                   {isPassing ? 'PASSED' : 'FAILED'} the audit
                 </p>
-                <p className="text-xs text-slate-500 mt-0.5">Pass threshold: {passThreshold.toFixed(0)}%</p>
+                <p className="text-xs text-slate-500 mt-0.5">Pass threshold: {Math.round(passThreshold * 10) / 10}%</p>
               </div>
               <span className={`text-2xl font-extrabold ${isPassing ? 'text-emerald-700' : 'text-red-700'}`}>
                 {averageRating.toFixed(2)}%
