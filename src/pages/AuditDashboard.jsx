@@ -172,7 +172,7 @@ export default function AuditDashboard() {
 
   // Exclude QA audit templates (unrestricted) — only store-restricted checklists count toward completion
   const completionTemplates = useMemo(() => {
-    return templates.filter(t => (t.store_restrictions?.length > 0 || t.store_name));
+    return templates.filter(t => !t.requires_audit_type && (t.store_restrictions?.length > 0 || t.store_name));
   }, [templates]);
 
   // Determine selected IDs: admin config if set, otherwise default to all store-restricted templates

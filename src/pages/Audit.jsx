@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ClipboardList, CheckCircle2, Eye, ChevronLeft, ChevronDown, Trash2, Pencil, Camera, History, ListChecks } from "lucide-react";
+import { Loader2, ClipboardList, CheckCircle2, Eye, ChevronLeft, ChevronDown, Trash2, Pencil, Camera, History, ListChecks, FileEdit } from "lucide-react";
 import moment from 'moment';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { getLocation } from '@/lib/getLocation';
@@ -198,11 +198,12 @@ export default function Audit() {
   // Admins see all submissions
   // Store managers see submissions from all their assigned stores (aggregated as one)
   // Everyone else only sees their own submissions
-  const submissions = isAdmin
+  const submissions = (isAdmin
     ? allSubmissions
     : user?.user_type === 'store_manager'
       ? allSubmissions.filter(sub => effectiveStores.some(name => sub.brand?.includes(name)))
-      : allSubmissions.filter(sub => sub.submitted_by_email === user?.email);
+      : allSubmissions.filter(sub => sub.submitted_by_email === user?.email)
+  ).filter(sub => !sub.is_draft);
 
   // History tab: the newest-200 batch above can't reliably cover an
   // arbitrary picked date range once daily volume grows past 200 (an admin's
@@ -219,15 +220,24 @@ export default function Audit() {
     },
     enabled: historyRangeSelected,
   });
-  const historySubmissionsScoped = isAdmin
+  const historySubmissionsScoped = (isAdmin
     ? historySubmissions
     : user?.user_type === 'store_manager'
       ? historySubmissions.filter(sub => effectiveStores.some(name => sub.brand?.includes(name)))
-      : historySubmissions.filter(sub => sub.submitted_by_email === user?.email);
+      : historySubmissions.filter(sub => sub.submitted_by_email === user?.email)
+  ).filter(sub => !sub.is_draft);
+
+  // Drafts are per-user regardless of role — a QA officer resumes their own
+  // in-progress checklist, not their store's or department's.
+  const { data: myDrafts = [], isLoading: loadingDrafts } = useQuery({
+    queryKey: ['audit-submission-drafts', user?.email],
+    queryFn: () => base44.entities.AuditSubmission.filter({ submitted_by_email: user.email, is_draft: true }, '-updated_date', 100),
+    enabled: !!user,
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => base44.entities.AuditSubmission.delete(id),
-    onSuccess: () => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); },
+    onSuccess: () => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); qc.invalidateQueries(['audit-submission-drafts']); },
   });
 
   // For store-locked users, a template is "done for today" if their store already has a submission
@@ -270,6 +280,21 @@ export default function Audit() {
     setView('edit');
   };
 
+  // Resuming a draft reuses the exact same edit-form plumbing as admin-edit
+  // — AuditFillForm branches internally on existingSubmission.is_draft to
+  // decide whether Save-as-Draft stays available and whether finalizing
+  // should run ticket generation.
+  const resumeDraft = (sub) => {
+    setSelectedSubmission(sub);
+    setSelectedTemplate(templates.find(t => t.id === sub.template_id) || { id: sub.template_id, title: sub.template_title, sections: [] });
+    setView('edit');
+  };
+
+  const discardDraft = (e, id) => {
+    e.stopPropagation();
+    if (confirm('Discard this draft? This cannot be undone.')) deleteMutation.mutate(id);
+  };
+
   const deleteSubmission = (e, id) => {
     e.stopPropagation();
     if (confirm('Delete this audit submission?')) deleteMutation.mutate(id);
@@ -277,22 +302,26 @@ export default function Audit() {
 
   if (!user) return <div className="flex justify-center items-center min-h-screen"><Loader2 className="w-8 h-8 animate-spin text-[#1fd655]" /></div>;
 
-  const titleMap = { list: 'Audit', history: 'Audit History', fill: selectedTemplate?.title, edit: selectedSubmission?.template_title, detail: selectedSubmission?.template_title };
+  const titleMap = { list: 'Audit', history: 'Audit History', drafts: 'My Drafts', fill: selectedTemplate?.title, edit: selectedSubmission?.template_title, detail: selectedSubmission?.template_title };
+  // Resuming a draft and admin-editing a finalized submission share the same
+  // 'edit' view — Back/Cancel should return to wherever that session came
+  // from (Drafts vs History) rather than always History.
+  const editCameFromDrafts = view === 'edit' && !!selectedSubmission?.is_draft;
 
   return (
     <div className="app-page app-page-narrow">
       {/* Header */}
       <div className="app-page-header">
         <div>
-          {view !== 'list' && view !== 'history' && (
+          {view !== 'list' && view !== 'history' && view !== 'drafts' && (
             <Button variant="ghost" size="sm" className="mb-2 -ml-2 gap-1 text-slate-500" onClick={() => {
               if (!window.confirm('Leave this audit? Your current progress is saved automatically as a draft.')) return;
-              setView(view === 'fill' ? 'list' : 'history');
+              setView(view === 'fill' ? 'list' : editCameFromDrafts ? 'drafts' : 'history');
             }}>
               <ChevronLeft className="w-4 h-4" /> Back
             </Button>
           )}
-          {(view === 'history') && (
+          {(view === 'history' || view === 'drafts') && (
             <Button variant="ghost" size="sm" className="mb-2 -ml-2 gap-1 text-slate-500" onClick={() => setView('list')}>
               <ChevronLeft className="w-4 h-4" /> Back
             </Button>
@@ -302,9 +331,14 @@ export default function Audit() {
           {view === 'list' && <p className="app-page-description">Select a checklist to start an audit.</p>}
         </div>
         {view === 'list' && (
-          <Button variant="outline" onClick={() => setView('history')} className="gap-2">
-            <Eye className="w-4 h-4" /> History
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setView('drafts')} className="gap-2">
+              <FileEdit className="w-4 h-4" /> Drafts{myDrafts.length > 0 ? ` (${myDrafts.length})` : ''}
+            </Button>
+            <Button variant="outline" onClick={() => setView('history')} className="gap-2">
+              <Eye className="w-4 h-4" /> History
+            </Button>
+          </div>
         )}
       </div>
 
@@ -459,6 +493,47 @@ export default function Audit() {
         </>
       )}
 
+      {/* DRAFTS */}
+      {view === 'drafts' && (
+        loadingDrafts ? (
+          <SectionLoadingSkeleton rows={3} label="Loading drafts" />
+        ) : myDrafts.length === 0 ? (
+          <Card className="border-2 border-dashed border-slate-200">
+            <CardContent className="py-16 text-center">
+              <FileEdit className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-400">No saved drafts. Progress you save mid-checklist shows up here.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {myDrafts.map(sub => (
+              <Card key={sub.id} className="border-2 border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => resumeDraft(sub)}>
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900">{sub.template_title}</p>
+                    <p className="text-xs text-slate-500">
+                      {sub.brand && <span className="mr-2">📍 {sub.brand}</span>}
+                      Last saved {formatPHDateTime(sub.updated_date || sub.created_date)}
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 flex-shrink-0">
+                    {Object.keys(sub.answers || {}).length} answered
+                  </span>
+                  <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                    <Button variant="ghost" size="sm" className="gap-1.5 text-slate-600 hover:text-[#1fd655]" onClick={() => resumeDraft(sub)}>
+                      <Pencil className="w-4 h-4" /> Resume
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-600" onClick={(e) => discardDraft(e, sub.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )
+      )}
+
       {/* FILL FORM (new) */}
       {view === 'fill' && selectedTemplate && (
         <AuditFillForm
@@ -466,12 +541,13 @@ export default function Audit() {
           user={user}
           brands={brands}
           stores={stores}
-          onDone={() => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); qc.invalidateQueries(['audit-submissions-all']); setView('history'); }}
+          onDone={() => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); qc.invalidateQueries(['audit-submissions-all']); qc.invalidateQueries(['audit-submission-drafts']); setView('history'); }}
           onCancel={() => setView('list')}
+          onDraftSaved={() => { qc.invalidateQueries(['audit-submission-drafts']); setView('drafts'); }}
         />
       )}
 
-      {/* EDIT FORM (existing submission) */}
+      {/* EDIT FORM (existing submission, or a draft being resumed) */}
       {view === 'edit' && selectedSubmission && selectedTemplate && (
         <AuditFillForm
           template={selectedTemplate}
@@ -479,8 +555,18 @@ export default function Audit() {
           brands={brands}
           stores={stores}
           existingSubmission={selectedSubmission}
-          onDone={() => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); qc.invalidateQueries(['audit-submissions-all']); setView('history'); }}
-          onCancel={() => setView('history')}
+          onDone={() => {
+            // Finalizing turns a draft into a real history entry either way,
+            // so this always lands on History regardless of where it was
+            // opened from — only Cancel needs to go back to Drafts.
+            qc.invalidateQueries(['audit-submissions']);
+            qc.invalidateQueries(['audit-submissions-history']);
+            qc.invalidateQueries(['audit-submissions-all']);
+            qc.invalidateQueries(['audit-submission-drafts']);
+            setView('history');
+          }}
+          onCancel={() => setView(editCameFromDrafts ? 'drafts' : 'history')}
+          onDraftSaved={() => { qc.invalidateQueries(['audit-submission-drafts']); setView('drafts'); }}
         />
       )}
 
@@ -492,7 +578,12 @@ export default function Audit() {
   );
 }
 
-function AuditFillForm({ template, user, brands, stores, existingSubmission, onDone, onCancel }) {
+function AuditFillForm({ template, user, brands, stores, existingSubmission, onDone, onCancel, onDraftSaved }) {
+  // Save-to-draft only applies to QA checklists (the ones that ask for an
+  // Audit Type) — the daily operational checklists are meant to be quick
+  // and one-shot, so they don't get a draft option.
+  const isDraftEligible = !!template.requires_audit_type;
+  const [savingDraft, setSavingDraft] = useState(false);
   const { toast } = useToast();
   const isStoreManager = user?.user_type === 'store_manager';
   const assignedStoreNames = new Set(
@@ -569,6 +660,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     ? `${selectedBrand.brand_name} - ${selectedStore.store_name}${selectedStore.location ? `, ${selectedStore.location}` : ''}`
     : '';
   const [auditType, setAuditType] = useState(existingSubmission?.audit_type || '');
+  const [visitNumber, setVisitNumber] = useState(existingSubmission?.visit_number || '');
   const [answers, setAnswers] = useState(existingSubmission?.answers || {});
   const [noComments, setNoComments] = useState(existingSubmission?.no_comments || {});
   const [itemPhotos, setItemPhotos] = useState(existingSubmission?.item_photos || {});
@@ -828,6 +920,11 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
       setPhotoError('Please select the Audit Type (Unannounced, Follow-up, or Spot).');
       return;
     }
+    if (template.requires_visit_number && !visitNumber) {
+      setErrorItemId(null);
+      setPhotoError('Please select the Visit (First Visit or Second Visit).');
+      return;
+    }
     const missingPhotoItem = allItems.find(it => it.photo_required && ['YES', 'NO'].includes(answers[it.id]) && !(itemPhotos[it.id]?.length > 0));
     if (missingPhotoItem) {
       setErrorItemId(missingPhotoItem.id);
@@ -864,6 +961,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
       brand: brand.trim(),
       location: existingSubmission?.id ? (existingSubmission.location || submitLocation || '') : (submitLocation || ''),
       audit_type: template.requires_audit_type ? auditType : '',
+      visit_number: template.requires_visit_number ? visitNumber : '',
       answers,
       score,
       total_items: allItems.length,
@@ -894,7 +992,9 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
         setSaving(false);
         return;
       }
-      if (existingSubmission?.id) {
+      if (existingSubmission?.id && !existingSubmission.is_draft) {
+        // Admin editing an already-finalized submission — unchanged: no
+        // ticket generation, since any concern tickets for it already exist.
         const storedSig1 = await persistSignature(sig1Photo, 'audit_signature_1');
         const storedSig2 = await persistSignature(sig2Photo, 'audit_signature_2');
         await base44.entities.AuditSubmission.update(existingSubmission.id, {
@@ -903,13 +1003,16 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
           signature2_photo_url: storedSig2,
         });
       } else {
+        // Either a brand-new submission, or finalizing a draft — both are
+        // "the audit is happening for real now", so both run full ticket
+        // generation and go through the same validated finalize path.
         const storedSig1 = await persistSignature(sig1Photo, 'audit_signature_1');
         const storedSig2 = await persistSignature(sig2Photo, 'audit_signature_2');
         const submissionPayload = {
           ...payload,
           signature1_photo_url: storedSig1,
           signature2_photo_url: storedSig2,
-          submission_date: new Date().toISOString(),
+          submission_date: payload.submission_date || new Date().toISOString(),
           created_by: user.email,
         };
         const generatedTickets = [];
@@ -954,7 +1057,9 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
           }
         }
 
-        const bundle = await base44.audit.submitBundle(submissionPayload, generatedTickets);
+        const bundle = existingSubmission?.id
+          ? await base44.audit.finalizeDraft(existingSubmission.id, submissionPayload, generatedTickets)
+          : await base44.audit.submitBundle(submissionPayload, generatedTickets);
 
         // Notification delivery happens after the database transaction. It may
         // be retried independently without duplicating the audit or tickets.
@@ -970,7 +1075,9 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
         }
       }
       toast({
-        title: existingSubmission ? 'Audit updated successfully' : 'Audit submitted successfully',
+        title: existingSubmission?.is_draft
+          ? 'Draft finalized and submitted successfully'
+          : existingSubmission ? 'Audit updated successfully' : 'Audit submitted successfully',
       });
       clearDraft();
       onDone();
@@ -979,6 +1086,79 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
       setPhotoError(`Failed to save audit: ${err?.message || 'Unknown error'}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Lightweight save: only brand/store is required, everything else can be
+  // incomplete — photo/reason/signature/audit-type checks only apply at
+  // real submit time. No tickets are generated for a draft; that only
+  // happens when it's finalized (see handleSubmit's existingSubmission
+  // branch, which calls finalize_audit_draft instead of a plain update
+  // once the row is_draft).
+  const handleSaveDraft = async () => {
+    if (!isDraftEligible) return;
+    if (!isStoreLocked && !brand) {
+      setErrorItemId(null);
+      setPhotoError('Please select a brand and store before saving a draft.');
+      return;
+    }
+    setSavingDraft(true);
+    try {
+      const yes = allItems.filter(it => answers[it.id] === 'YES').length;
+      const no = allItems.filter(it => answers[it.id] === 'NO').length;
+      const na = allItems.filter(it => answers[it.id] === 'NA').length;
+      const answeredCount = yes + no;
+      const score = answeredCount > 0 ? Math.round((yes / answeredCount) * 100) : 0;
+
+      const draftPayload = {
+        template_id: template.id,
+        template_title: template.title,
+        submitted_by_email: user.email,
+        submitted_by_name: user.display_name || user.full_name,
+        brand: brand.trim(),
+        location: existingSubmission?.location || '',
+        audit_type: template.requires_audit_type ? auditType : '',
+        visit_number: template.requires_visit_number ? visitNumber : '',
+        answers,
+        score,
+        total_items: allItems.length,
+        yes_count: yes,
+        no_count: no,
+        na_count: na,
+        others: others.trim(),
+        no_comments: noComments,
+        item_photos: itemPhotos,
+        concerns_recommendations: concernsRecs.trim(),
+        deviations_photo_urls: deviationsPhotos,
+        updates: updates.trim(),
+        updates_attachment_urls: updatesAttachments,
+        signature1_photo_url: sig1Photo,
+        signature1_name: sig1Name.trim(),
+        signature1_position: sig1Position.trim(),
+        signature2_photo_url: sig2Photo,
+        signature2_name: sig2Name.trim(),
+        signature2_position: sig2Position.trim(),
+        is_draft: true,
+      };
+
+      if (existingSubmission?.id && existingSubmission.is_draft) {
+        await base44.entities.AuditSubmission.update(existingSubmission.id, draftPayload);
+      } else {
+        await base44.entities.AuditSubmission.create({
+          ...draftPayload,
+          submission_date: new Date().toISOString(),
+          created_by: user.email,
+        });
+      }
+
+      toast({ title: 'Draft saved — resume it anytime from Drafts.' });
+      clearDraft();
+      onDraftSaved?.();
+    } catch (err) {
+      console.error('Draft save failed:', err);
+      setPhotoError(`Failed to save draft: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setSavingDraft(false);
     }
   };
 
@@ -1086,20 +1266,38 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
       </Card>
 
       {/* Audit Type — only for templates that opted in */}
-      {template.requires_audit_type && (
+      {(template.requires_audit_type || template.requires_visit_number) && (
         <Card className="border-2 border-slate-200">
-          <CardContent className="flex items-center gap-3 p-4">
-            <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Audit Type:</label>
-            <Select value={auditType} onValueChange={setAuditType}>
-              <SelectTrigger className="w-56 h-9">
-                <SelectValue placeholder="Select audit type..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unannounced">Unannounced</SelectItem>
-                <SelectItem value="follow_up">Follow-up</SelectItem>
-                <SelectItem value="spot">Spot</SelectItem>
-              </SelectContent>
-            </Select>
+          <CardContent className="flex flex-wrap items-center gap-6 p-4">
+            {template.requires_audit_type && (
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Audit Type:</label>
+                <Select value={auditType} onValueChange={setAuditType}>
+                  <SelectTrigger className="w-56 h-9">
+                    <SelectValue placeholder="Select audit type..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unannounced">Unannounced</SelectItem>
+                    <SelectItem value="follow_up">Follow-up</SelectItem>
+                    <SelectItem value="spot">Spot</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {template.requires_visit_number && (
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Visits:</label>
+                <Select value={visitNumber} onValueChange={setVisitNumber}>
+                  <SelectTrigger className="w-56 h-9">
+                    <SelectValue placeholder="Select visit..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="first">First Visit</SelectItem>
+                    <SelectItem value="second">Second Visit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1372,13 +1570,24 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
       )}
       <div className="sticky bottom-0 z-20 -mx-4 flex justify-end gap-3 border-t border-slate-200 bg-white/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-4">
         <Button variant="outline" onClick={handleCancel}>Cancel</Button>
+        {isDraftEligible && !(existingSubmission && !existingSubmission.is_draft) && (
+          <Button
+            variant="outline"
+            onClick={handleSaveDraft}
+            disabled={savingDraft || saving || (!isStoreLocked && !brand)}
+            className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+          >
+            {savingDraft ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileEdit className="w-4 h-4" />}
+            Save as Draft
+          </Button>
+        )}
         <Button
           onClick={handleSubmit}
-          disabled={saving || answered === 0 || (!isStoreLocked && !brand) || submissionWindowClosed}
+          disabled={saving || savingDraft || answered === 0 || (!isStoreLocked && !brand) || submissionWindowClosed}
           className="bg-[#1fd655] hover:bg-[#1bc14c] text-slate-900 font-semibold gap-2"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-          {existingSubmission ? 'Update Audit' : 'Submit Audit'}
+          {existingSubmission && !existingSubmission.is_draft ? 'Update Audit' : 'Submit Audit'}
         </Button>
       </div>
 

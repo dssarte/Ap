@@ -93,6 +93,7 @@ function buildAuditHistory(submissions, passThreshold) {
       score: Number(s.score) || 0,
       pass: (Number(s.score) || 0) >= passThreshold,
       auditType: s.audit_type ? AUDIT_TYPE_LABELS[s.audit_type] || s.audit_type : null,
+      templateTitle: s.template_title || null,
     }));
 }
 
@@ -486,7 +487,7 @@ export default function QADashboard() {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(30, 30, 30);
-      doc.text(`${store.passThreshold.toFixed(0)}%`, margin + 65, y + 6);
+      doc.text(`${Math.round(store.passThreshold * 10) / 10}%`, margin + 65, y + 6);
       doc.text(store.lastAuditDate ? formatPHDate(store.lastAuditDate) : '—', margin + 65, y + 13);
       doc.text(String(store.count), margin + 140, y + 6);
       doc.setTextColor(...(store.openTickets.length ? [220, 38, 38] : [30, 30, 30]));
@@ -1100,7 +1101,7 @@ export default function QADashboard() {
                           <Tooltip
                             formatter={(value, name, props) => [`${value}%${props.payload.auditType ? ` · ${props.payload.auditType}` : ''}`, props.payload.pass ? 'Passed' : 'Failed']}
                           />
-                          <ReferenceLine y={detailStore.passThreshold} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: `Pass ≥ ${detailStore.passThreshold.toFixed(0)}%`, fontSize: 10, fill: '#94a3b8', position: 'insideTopRight' }} />
+                          <ReferenceLine y={detailStore.passThreshold} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: `Pass ≥ ${Math.round(detailStore.passThreshold * 10) / 10}%`, fontSize: 10, fill: '#94a3b8', position: 'insideTopRight' }} />
                           <Line
                             type="monotone"
                             dataKey="score"
@@ -1112,10 +1113,15 @@ export default function QADashboard() {
                           />
                         </LineChart>
                       </ResponsiveContainer>
-                      <ul className="flex flex-wrap gap-2 mt-2">
+                      <ul className="flex flex-wrap gap-x-2 gap-y-2 mt-2">
                         {history.map(h => (
-                          <li key={h.id} className={`text-xs px-2 py-1 rounded-full border font-semibold ${h.pass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                            {h.dateLabel} · {h.score.toFixed(0)}%{h.auditType ? ` · ${h.auditType}` : ''}
+                          <li key={h.id} className="flex flex-col items-center gap-1">
+                            <span className={`text-xs px-2 py-1 rounded-full border font-semibold ${h.pass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                              {h.dateLabel} · {h.score.toFixed(0)}%{h.auditType ? ` · ${h.auditType}` : ''}
+                            </span>
+                            {h.templateTitle && (
+                              <span className="text-[10px] text-slate-400 text-center max-w-[140px] leading-tight">{h.templateTitle}</span>
+                            )}
                           </li>
                         ))}
                       </ul>

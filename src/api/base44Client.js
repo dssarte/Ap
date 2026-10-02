@@ -417,6 +417,22 @@ const auditData = {
     await Promise.all(savedTickets.map(maybeSendAutoResponse));
     return { submission: savedSubmission, tickets: savedTickets, atomic: false };
   },
+
+  // Converts an existing draft row (is_draft=true) into a real submission in
+  // place — same validation/ticket-generation as submitBundle, but UPDATEs
+  // the draft's own row instead of inserting a new one. No pre-migration
+  // fallback: drafts don't exist until this migration is applied, so there's
+  // nothing to fall back to.
+  async finalizeDraft(submissionId, submission, tickets = []) {
+    const { data, error } = await supabase.rpc('finalize_audit_draft', {
+      p_submission_id: submissionId,
+      p_submission: cleanPayload(submission),
+      p_tickets: tickets.map(cleanPayload),
+    });
+    if (error) throw error;
+    await Promise.all((data?.tickets || []).map(maybeSendAutoResponse));
+    return { ...data, atomic: true };
+  },
 };
 
 async function currentProfile() {
