@@ -66,9 +66,12 @@ export default function DailySummary() {
   });
   const configRecord = configRecords[0];
 
-  // Only store-restricted templates count toward daily completion (QA audits excluded)
+  // Only store-restricted templates count toward daily completion (QA
+  // audits excluded). QA checklists can carry store_restrictions too (for
+  // brand/store auto-lock convenience), so requires_audit_type is the real
+  // "this is a QA visit, not the store's own daily checklist" signal.
   const completionTemplates = useMemo(
-    () => allTemplates.filter(t => t.store_restrictions?.length > 0 || t.store_name),
+    () => allTemplates.filter(t => !t.requires_audit_type && (t.store_restrictions?.length > 0 || t.store_name)),
     [allTemplates]
   );
   const requiredIds = useMemo(

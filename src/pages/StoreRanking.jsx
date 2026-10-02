@@ -582,7 +582,7 @@ export default function StoreRanking() {
                     <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded mb-1 ${item.isPassing ? 'bg-[#1fd655] text-slate-900' : 'bg-red-500 text-white'}`}>
                       {item.isPassing ? 'PASS' : 'FAIL'}
                     </span>
-                    <span className="ml-2 text-xs text-slate-400">(pass ≥ {item.passThreshold.toFixed(0)}%)</span>
+                    <span className="ml-2 text-xs text-slate-400">(pass ≥ {Math.round(item.passThreshold * 10) / 10}%)</span>
                     <p className="text-lg font-bold text-slate-900">{item.brand}</p>
                   </div>
                 </div>
