@@ -274,6 +274,9 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
   const [passThreshold, setPassThreshold] = useState(75);
   const [requiresAuditType, setRequiresAuditType] = useState(false);
   const [requiresVisitNumber, setRequiresVisitNumber] = useState(false);
+  const [requiresCommitmentDate, setRequiresCommitmentDate] = useState(false);
+  const [requiresDepartment, setRequiresDepartment] = useState(false);
+  const [supportsExcelImport, setSupportsExcelImport] = useState(false);
 
   React.useEffect(() => {
     if (open) {
@@ -288,6 +291,9 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       setPassThreshold(initial?.pass_threshold ?? 75);
       setRequiresAuditType(!!initial?.requires_audit_type);
       setRequiresVisitNumber(!!initial?.requires_visit_number);
+      setRequiresCommitmentDate(!!initial?.requires_commitment_date);
+      setRequiresDepartment(!!initial?.requires_department);
+      setSupportsExcelImport(!!initial?.supports_excel_import);
       // Load existing restrictions — support both new array format and legacy single store
       if (initial?.store_restrictions?.length) {
         setStoreRestrictions(initial.store_restrictions);
@@ -373,6 +379,18 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
     ));
   };
 
+  // Point-weighted checklists (e.g. Mayon's housekeeping walkthrough) score
+  // by summing each item's pts instead of counting items equally. Blank/1
+  // behaves exactly like every other checklist, so this is opt-in per item.
+  const updateItemPts = (secIdx, itemIdx, val) => {
+    const pts = val === '' ? undefined : Number(val);
+    setSections(s => s.map((sec, i) =>
+      i === secIdx
+        ? { ...sec, items: sec.items.map((it, j) => j === itemIdx ? { ...it, pts } : it) }
+        : sec
+    ));
+  };
+
   const removeItem = (secIdx, itemIdx) => {
     setSections(s => s.map((sec, i) =>
       i === secIdx ? { ...sec, items: sec.items.filter((_, j) => j !== itemIdx) } : sec
@@ -423,6 +441,9 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       pass_threshold: Number(passThreshold) || 75,
       requires_audit_type: requiresAuditType,
       requires_visit_number: requiresVisitNumber,
+      requires_commitment_date: requiresCommitmentDate,
+      requires_department: requiresDepartment,
+      supports_excel_import: supportsExcelImport,
       has_time_restriction: hasTimeRestriction,
       available_from_time: hasTimeRestriction ? availableFromTime : '',
       available_to_time: hasTimeRestriction ? availableToTime : '',
@@ -611,6 +632,33 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
             <p className="text-xs text-slate-500">When enabled, whoever conducts this audit must pick First Visit or Second Visit before submitting.</p>
           </div>
 
+          {/* Commitment Date — resolution-by date for any nonconformities, recorded per submission */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch checked={requiresCommitmentDate} onCheckedChange={setRequiresCommitmentDate} />
+              <span className="text-sm font-semibold text-slate-700">Ask Commitment Date <span className="text-slate-400 font-normal">(optional)</span></span>
+            </label>
+            <p className="text-xs text-slate-500">When enabled, a date field is shown for committing to a fix-by date — not required to submit.</p>
+          </div>
+
+          {/* Department — a flat Department picker in place of the brand/store cascade */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch checked={requiresDepartment} onCheckedChange={setRequiresDepartment} />
+              <span className="text-sm font-semibold text-slate-700">Ask Department <span className="text-slate-400 font-normal">(optional)</span></span>
+            </label>
+            <p className="text-xs text-slate-500">For checklists that audit a department rather than a store (e.g. 5S Housekeeping) — replaces the Brand/Store picker with a Department dropdown, and leave Store Restrictions empty.</p>
+          </div>
+
+          {/* Excel import — for externally-completed reports (e.g. Mystery Shopper) that get transcribed in rather than filled out live */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch checked={supportsExcelImport} onCheckedChange={setSupportsExcelImport} />
+              <span className="text-sm font-semibold text-slate-700">Allow Excel Import <span className="text-slate-400 font-normal">(optional)</span></span>
+            </label>
+            <p className="text-xs text-slate-500">Adds an "Import" option in Conduct Audit to pre-fill answers from an already-completed copy of this checklist, matched by item text — for reports filled out outside the system (e.g. a Mystery Shopper who doesn't get a login).</p>
+          </div>
+
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-sm font-semibold text-slate-700">Sections</label>
@@ -649,6 +697,12 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                               </div>
+                              <Input
+                                placeholder="Persons in charge (optional)"
+                                value={sec.persons_in_charge || ''}
+                                onChange={e => updateSection(secIdx, 'persons_in_charge', e.target.value)}
+                                className="text-xs text-slate-500 h-8"
+                              />
 
                               <Droppable droppableId={`items-${sec.id}`} type="ITEM">
                                 {(itemsDrop) => (
@@ -666,6 +720,15 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
                                               value={item.label}
                                               onChange={e => updateItem(secIdx, itemIdx, e.target.value)}
                                               className="h-8 text-sm"
+                                            />
+                                            <Input
+                                              type="number"
+                                              min="1"
+                                              placeholder="pts"
+                                              value={item.pts ?? ''}
+                                              onChange={e => updateItemPts(secIdx, itemIdx, e.target.value)}
+                                              title="Points this item is worth (blank = 1, equal-weight)"
+                                              className="h-8 w-14 text-xs text-center flex-shrink-0"
                                             />
                                             <label className="flex items-center gap-1.5 flex-shrink-0 cursor-pointer">
                                               <Switch checked={!!item.photo_required} onCheckedChange={() => toggleItemPhoto(secIdx, itemIdx)} className="scale-90" />
