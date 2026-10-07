@@ -395,6 +395,12 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
               <p className="font-semibold text-slate-900 capitalize">{submission.visit_number} Visit</p>
             </div>
           )}
+          {submission.commitment_date && (
+            <div>
+              <p className="text-xs text-slate-500">Commitment Date</p>
+              <p className="font-semibold text-slate-900">{formatPHDateShort(submission.commitment_date)}</p>
+            </div>
+          )}
           <div>
             <p className="text-xs text-slate-500">Date</p>
             <p className="font-semibold text-slate-900">{formatPHDateTime(submission.submission_date || submission.created_date)}</p>

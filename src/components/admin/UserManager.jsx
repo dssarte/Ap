@@ -95,7 +95,7 @@ export default function UserManager() {
         base44.entities.PendingUser.list('-created_date'),
         base44.entities.Department.list('name'),
         base44.entities.Brand.filter({ is_active: true }),
-        base44.entities.Store.filter({ is_active: true }),
+        base44.entities.Store.filter({ is_active: true, kind: 'store' }),
         base44.entities.Brand.list(),
         base44.entities.Store.list()
       ]);

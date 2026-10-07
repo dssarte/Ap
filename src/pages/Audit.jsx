@@ -11,14 +11,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ClipboardList, CheckCircle2, Eye, ChevronLeft, ChevronDown, Trash2, Pencil, Camera, History, ListChecks, FileEdit } from "lucide-react";
+import { Loader2, ClipboardList, CheckCircle2, Eye, ChevronLeft, ChevronDown, Trash2, Pencil, Camera, History, ListChecks, FileEdit, Upload, Search } from "lucide-react";
 import moment from 'moment';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { getLocation } from '@/lib/getLocation';
 import { compressImage } from '@/lib/compressImage';
 import { SectionLoadingSkeleton } from '@/components/PageState';
 import { useToast } from '@/components/ui/use-toast';
+import { parseMysteryShopperFile } from '@/lib/excelImport';
 
 function formatTimeLabel(hhmm) {
   if (!hhmm) return '';
@@ -108,6 +110,7 @@ export default function Audit() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('list'); // 'list' | 'fill' | 'history' | 'detail'
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templateSearch, setTemplateSearch] = useState('');
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [historyDateFrom, setHistoryDateFrom] = useState('');
   const [historyDateTo, setHistoryDateTo] = useState('');
@@ -177,6 +180,15 @@ export default function Audit() {
   const { data: stores = [] } = useQuery({
     queryKey: ['stores-active'],
     queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 200),
+    enabled: !!user,
+  });
+
+  // Only needed by templates with requires_department (e.g. the 5S
+  // Housekeeping checklist) — a flat dropdown instead of the brand/store
+  // picker, since a department audit has no brand and no fixed location.
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments-active'],
+    queryFn: () => base44.entities.Department.filter({ is_active: true }, 'name', 200),
     enabled: !!user,
   });
 
@@ -268,6 +280,54 @@ export default function Audit() {
     setView('fill');
   };
 
+  // Mystery Shopper-style templates: the shopper never gets a system
+  // login, so instead of clicking through every item, whoever transcribes
+  // their already-completed report can upload it here — it's parsed into
+  // the same answers shape and pre-fills the normal fill form below, which
+  // still has to be reviewed and submitted like any other audit. One
+  // global "Import" entry point (beside Drafts/History) rather than a
+  // button on every template card — pick the checklist first, then upload.
+  const [showImportPicker, setShowImportPicker] = useState(false);
+  const [importingTemplate, setImportingTemplate] = useState(null);
+  const [pendingImport, setPendingImport] = useState(null);
+  const [importError, setImportError] = useState('');
+  const importFileInputRef = React.useRef(null);
+  const importableTemplates = useMemo(() => templates.filter(t => t.supports_excel_import), [templates]);
+
+  const searchedTemplates = useMemo(() => {
+    const q = templateSearch.trim().toLowerCase();
+    if (!q) return templates;
+    return templates.filter(t => t.title.toLowerCase().includes(q));
+  }, [templates, templateSearch]);
+
+  const pickImportTemplate = (template) => {
+    if (!isTemplateAvailableNow(template) || isDoneForCycle(template)) return;
+    setImportError('');
+    setImportingTemplate(template);
+    setShowImportPicker(false);
+    importFileInputRef.current?.click();
+  };
+
+  const handleImportFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    const template = importingTemplate;
+    e.target.value = ''; // allow re-selecting the same file name later
+    setImportingTemplate(null); // always clear, even if the file dialog was cancelled or nothing was picked
+    if (!file || !template) return;
+    try {
+      const result = await parseMysteryShopperFile(file, template);
+      if (result.matchedCount === 0) {
+        setImportError(`Couldn't match any items in "${file.name}" against this checklist — check it's the right file, then try again.`);
+        return;
+      }
+      setPendingImport(result);
+      setSelectedTemplate(template);
+      setView('fill');
+    } catch (err) {
+      setImportError(`Couldn't read "${file.name}": ${err?.message || 'unknown error'}`);
+    }
+  };
+
   const viewSubmission = (sub) => {
     setSelectedSubmission(sub);
     setView('detail');
@@ -332,6 +392,11 @@ export default function Audit() {
         </div>
         {view === 'list' && (
           <div className="flex items-center gap-2">
+            {importableTemplates.length > 0 && (
+              <Button variant="outline" onClick={() => setShowImportPicker(true)} className="gap-2">
+                <Upload className="w-4 h-4" /> Import
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setView('drafts')} className="gap-2">
               <FileEdit className="w-4 h-4" /> Drafts{myDrafts.length > 0 ? ` (${myDrafts.length})` : ''}
             </Button>
@@ -343,6 +408,46 @@ export default function Audit() {
       </div>
 
       {/* TEMPLATE LIST */}
+      <input
+        type="file"
+        accept=".xlsx"
+        ref={importFileInputRef}
+        onChange={handleImportFileChange}
+        className="hidden"
+      />
+      <Dialog open={showImportPicker} onOpenChange={setShowImportPicker}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Which checklist is this for?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {importableTemplates.map(t => {
+              const doneForCycle = isDoneForCycle(t);
+              const templateAvailable = isTemplateAvailableNow(t) && !doneForCycle;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  disabled={!templateAvailable}
+                  onClick={() => pickImportTemplate(t)}
+                  className={`w-full text-left rounded-lg border-2 p-3 transition-colors ${templateAvailable ? 'border-slate-200 hover:border-[#1fd655]/50 hover:bg-slate-50' : 'border-slate-100 opacity-50 cursor-not-allowed'}`}
+                >
+                  <p className="font-semibold text-slate-900">{t.title}</p>
+                  {doneForCycle && <p className="text-xs text-green-600 mt-0.5">Done for today</p>}
+                </button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {view === 'list' && importError && (
+        <Card className="border-2 border-red-200 bg-red-50">
+          <CardContent className="p-4 flex items-start justify-between gap-3">
+            <p className="text-sm text-red-700">{importError}</p>
+            <Button variant="ghost" size="sm" onClick={() => setImportError('')} className="text-red-600 hover:text-red-700 flex-shrink-0">Dismiss</Button>
+          </CardContent>
+        </Card>
+      )}
       {view === 'list' && (
         loadingTemplates ? (
           <SectionLoadingSkeleton rows={4} label="Loading audit checklists" />
@@ -357,8 +462,27 @@ export default function Audit() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid sm:grid-cols-2 gap-4">
-            {templates.map(t => {
+          <>
+            <div className="relative mb-4">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={templateSearch}
+                onChange={e => setTemplateSearch(e.target.value)}
+                placeholder="Search checklists..."
+                className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-[#1fd655]"
+              />
+            </div>
+            {searchedTemplates.length === 0 ? (
+              <Card className="border-2 border-dashed border-slate-200">
+                <CardContent className="py-12 text-center">
+                  <Search className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-slate-400 font-medium">No checklists match "{templateSearch}"</p>
+                </CardContent>
+              </Card>
+            ) : (
+            <div className="grid sm:grid-cols-2 gap-4">
+            {searchedTemplates.map(t => {
               const doneForCycle = isDoneForCycle(t);
               const available = isTemplateAvailableNow(t) && !doneForCycle;
               return (
@@ -394,7 +518,9 @@ export default function Audit() {
                 </Card>
               );
             })}
-          </div>
+            </div>
+            )}
+          </>
         )
       )}
 
@@ -541,9 +667,11 @@ export default function Audit() {
           user={user}
           brands={brands}
           stores={stores}
-          onDone={() => { qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); qc.invalidateQueries(['audit-submissions-all']); qc.invalidateQueries(['audit-submission-drafts']); setView('history'); }}
-          onCancel={() => setView('list')}
-          onDraftSaved={() => { qc.invalidateQueries(['audit-submission-drafts']); setView('drafts'); }}
+          departments={departments}
+          initialImport={pendingImport}
+          onDone={() => { setPendingImport(null); qc.invalidateQueries(['audit-submissions']); qc.invalidateQueries(['audit-submissions-history']); qc.invalidateQueries(['audit-submissions-all']); qc.invalidateQueries(['audit-submission-drafts']); setView('history'); }}
+          onCancel={() => { setPendingImport(null); setView('list'); }}
+          onDraftSaved={() => { setPendingImport(null); qc.invalidateQueries(['audit-submission-drafts']); setView('drafts'); }}
         />
       )}
 
@@ -554,6 +682,7 @@ export default function Audit() {
           user={user}
           brands={brands}
           stores={stores}
+          departments={departments}
           existingSubmission={selectedSubmission}
           onDone={() => {
             // Finalizing turns a draft into a real history entry either way,
@@ -578,7 +707,7 @@ export default function Audit() {
   );
 }
 
-function AuditFillForm({ template, user, brands, stores, existingSubmission, onDone, onCancel, onDraftSaved }) {
+function AuditFillForm({ template, user, brands, stores, departments = [], existingSubmission, initialImport, onDone, onCancel, onDraftSaved }) {
   // Save-to-draft only applies to QA checklists (the ones that ask for an
   // Audit Type) — the daily operational checklists are meant to be quick
   // and one-shot, so they don't get a draft option.
@@ -619,7 +748,12 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
       })
     : isSingleBrandTemplate
       ? stores.filter(store => restrictedStoreNames.has(String(store.store_name || '').trim().toLowerCase()))
-      : stores;
+      // Unrestricted/multi-brand templates fall through to the full roster —
+      // excluding non-'store' kinds here (warehouses, head office, etc.) so
+      // a facility only ever shows up for the one template restricted to it
+      // above, never as a pickable "store" for a generic/network-wide
+      // checklist.
+      : stores.filter(store => (store.kind || 'store') === 'store');
   const selectableBrandIds = new Set(selectableStores.map(store => store.brand_id).filter(Boolean));
   const selectableBrands = isStoreManager
     ? brands.filter(brandRecord => selectableBrandIds.has(brandRecord.id))
@@ -656,13 +790,27 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
   const filteredStores = selectableStores.filter(s => s.brand_id === selectedBrandId);
   const selectedBrand = selectableBrands.find(b => b.id === selectedBrandId);
   const selectedStore = selectableStores.find(s => s.id === selectedStoreId);
-  const brand = selectedBrand && selectedStore
-    ? `${selectedBrand.brand_name} - ${selectedStore.store_name}${selectedStore.location ? `, ${selectedStore.location}` : ''}`
-    : '';
+
+  // Department checklists (e.g. 5S Housekeeping) have no brand/store at
+  // all — a flat Department picker replaces the brand/store cascade
+  // entirely, and the chosen department's name becomes `brand` the same
+  // way "Brand - Store" does for everything else.
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState(() => {
+    if (!template.requires_department || !existingSubmission?.brand) return '';
+    return departments.find(d => d.name === existingSubmission.brand)?.id || '';
+  });
+  const selectedDepartment = departments.find(d => d.id === selectedDepartmentId);
+
+  const brand = template.requires_department
+    ? (selectedDepartment?.name || '')
+    : (selectedBrand && selectedStore
+        ? `${selectedBrand.brand_name} - ${selectedStore.store_name}${selectedStore.location ? `, ${selectedStore.location}` : ''}`
+        : '');
   const [auditType, setAuditType] = useState(existingSubmission?.audit_type || '');
   const [visitNumber, setVisitNumber] = useState(existingSubmission?.visit_number || '');
-  const [answers, setAnswers] = useState(existingSubmission?.answers || {});
-  const [noComments, setNoComments] = useState(existingSubmission?.no_comments || {});
+  const [commitmentDate, setCommitmentDate] = useState(existingSubmission?.commitment_date || '');
+  const [answers, setAnswers] = useState(initialImport?.answers || existingSubmission?.answers || {});
+  const [noComments, setNoComments] = useState(initialImport?.noComments || existingSubmission?.no_comments || {});
   const [itemPhotos, setItemPhotos] = useState(existingSubmission?.item_photos || {});
   const [uploadingItemPhoto, setUploadingItemPhoto] = useState(null);
   const [others, setOthers] = useState(existingSubmission?.others || '');
@@ -696,6 +844,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
 
   useEffect(() => {
     if (existingSubmission) return; // editing saved submission — don't override
+    if (initialImport) return; // a fresh import already reflects current intent — an old local draft would only confuse/overwrite it
     const draft = loadDraft();
     if (!draft) return;
     const hasContent =
@@ -857,6 +1006,15 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
   };
 
   const allItems = useMemo(() => template.sections?.flatMap(s => s.items || []) || [], [template.sections]);
+  // Most checklists are equal-weight (every item worth 1), but point-based
+  // ones (e.g. Mayon's housekeeping walkthrough: 1pt minor / 5pt major) set
+  // item.pts — summing that instead of counting items makes yes/no/na (and
+  // the score derived from them) weighted automatically, while defaulting
+  // to 1 keeps every existing checklist's math identical to before.
+  const itemPoints = (item) => { const n = Number(item?.pts); return n > 0 ? n : 1; };
+  const weightedCount = (list, value) => list
+    .filter(it => answers[it.id] === value)
+    .reduce((sum, it) => sum + itemPoints(it), 0);
   const [collapsedSections, setCollapsedSections] = useState(() => new Set());
 
   const toggleSection = (sectionId) => {
@@ -912,7 +1070,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     }
     if (!isStoreLocked && !brand) {
       setErrorItemId(null);
-      setPhotoError('Please select a brand and store before submitting.');
+      setPhotoError(template.requires_department ? 'Please select a Department before submitting.' : 'Please select a brand and store before submitting.');
       return;
     }
     if (template.requires_audit_type && !auditType) {
@@ -947,9 +1105,9 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     setSaving(true);
     // Capture the submitter's location (reverse-geocoded to an address)
     const submitLocation = await getLocation().catch(() => null);
-    const yes = allItems.filter(it => answers[it.id] === 'YES').length;
-    const no = allItems.filter(it => answers[it.id] === 'NO').length;
-    const na = allItems.filter(it => answers[it.id] === 'NA').length;
+    const yes = weightedCount(allItems, 'YES');
+    const no = weightedCount(allItems, 'NO');
+    const na = weightedCount(allItems, 'NA');
     const answered = yes + no;
     const score = answered > 0 ? Math.round((yes / answered) * 100) : 0;
 
@@ -962,6 +1120,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
       location: existingSubmission?.id ? (existingSubmission.location || submitLocation || '') : (submitLocation || ''),
       audit_type: template.requires_audit_type ? auditType : '',
       visit_number: template.requires_visit_number ? visitNumber : '',
+      commitment_date: template.requires_commitment_date ? (commitmentDate || null) : null,
       answers,
       score,
       total_items: allItems.length,
@@ -1099,14 +1258,14 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
     if (!isDraftEligible) return;
     if (!isStoreLocked && !brand) {
       setErrorItemId(null);
-      setPhotoError('Please select a brand and store before saving a draft.');
+      setPhotoError(template.requires_department ? 'Please select a Department before saving a draft.' : 'Please select a brand and store before saving a draft.');
       return;
     }
     setSavingDraft(true);
     try {
-      const yes = allItems.filter(it => answers[it.id] === 'YES').length;
-      const no = allItems.filter(it => answers[it.id] === 'NO').length;
-      const na = allItems.filter(it => answers[it.id] === 'NA').length;
+      const yes = weightedCount(allItems, 'YES');
+      const no = weightedCount(allItems, 'NO');
+      const na = weightedCount(allItems, 'NA');
       const answeredCount = yes + no;
       const score = answeredCount > 0 ? Math.round((yes / answeredCount) * 100) : 0;
 
@@ -1119,6 +1278,7 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
         location: existingSubmission?.location || '',
         audit_type: template.requires_audit_type ? auditType : '',
         visit_number: template.requires_visit_number ? visitNumber : '',
+        commitment_date: template.requires_commitment_date ? (commitmentDate || null) : null,
         answers,
         score,
         total_items: allItems.length,
@@ -1186,10 +1346,25 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
         </div>
       )}
 
-      {/* Brand / Store selector */}
+      {/* Brand / Store selector (or a flat Department picker, for
+          department checklists — no brand/store concept applies there) */}
       <Card className="border-2 border-slate-200">
         <CardContent className="flex flex-col items-stretch gap-4 p-4 sm:flex-row sm:flex-wrap sm:items-center">
-          {isStoreLocked ? (
+          {template.requires_department ? (
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+              <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Department:</label>
+              <Select value={selectedDepartmentId} onValueChange={setSelectedDepartmentId}>
+                <SelectTrigger className="w-64 h-9">
+                  <SelectValue placeholder="Select department..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map(d => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : isStoreLocked ? (
             // User has a fixed store — show it as read-only
             <div className="flex items-center gap-3">
               <div>
@@ -1265,8 +1440,31 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
         </CardContent>
       </Card>
 
+      {/* Imported-from-Excel summary — everything below is still the normal
+          fill form, pre-filled rather than blank, so whatever got matched
+          (or didn't) is visible and editable before submitting, same as
+          clicking through by hand. */}
+      {initialImport && (
+        <Card className={`border-2 ${initialImport.unmatchedItems.length ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+          <CardContent className="p-4">
+            <p className={`text-sm font-semibold ${initialImport.unmatchedItems.length ? 'text-amber-800' : 'text-emerald-800'}`}>
+              Imported {initialImport.matchedCount} of {initialImport.totalItems} answers from the uploaded file.
+            </p>
+            {initialImport.unmatchedItems.length > 0 && (
+              <div className="mt-2 text-xs text-amber-700">
+                <p className="font-medium">These {initialImport.unmatchedItems.length} item{initialImport.unmatchedItems.length === 1 ? '' : 's'} couldn't be matched — fill them in below:</p>
+                <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                  {initialImport.unmatchedItems.slice(0, 8).map(it => <li key={it.id}>{it.label}</li>)}
+                  {initialImport.unmatchedItems.length > 8 && <li>…and {initialImport.unmatchedItems.length - 8} more</li>}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Audit Type — only for templates that opted in */}
-      {(template.requires_audit_type || template.requires_visit_number) && (
+      {(template.requires_audit_type || template.requires_visit_number || template.requires_commitment_date) && (
         <Card className="border-2 border-slate-200">
           <CardContent className="flex flex-wrap items-center gap-6 p-4">
             {template.requires_audit_type && (
@@ -1296,6 +1494,17 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
                     <SelectItem value="second">Second Visit</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {template.requires_commitment_date && (
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Commitment Date:</label>
+                <input
+                  type="date"
+                  value={commitmentDate}
+                  onChange={e => setCommitmentDate(e.target.value)}
+                  className="border border-slate-300 rounded-md px-2 py-1.5 h-9 text-sm text-slate-700 focus:outline-none focus:border-[#1fd655]"
+                />
               </div>
             )}
           </CardContent>
@@ -1356,6 +1565,9 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               <div className="min-w-0">
                 <CardTitle className="truncate text-sm font-bold uppercase tracking-wide text-emerald-700">{sec.title}</CardTitle>
                 <p className="mt-1 text-xs font-medium text-slate-500">{sectionAnswered} of {sectionItems.length} answered</p>
+                {sec.persons_in_charge && (
+                  <p className="mt-0.5 truncate text-[11px] text-slate-400">Persons in charge: {sec.persons_in_charge}</p>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {complete && <Badge className="border-0 bg-emerald-100 text-emerald-700">Complete</Badge>}
@@ -1368,7 +1580,12 @@ function AuditFillForm({ template, user, brands, stores, existingSubmission, onD
               <div key={item.id} id={`audit-item-${item.id}`} className={`rounded-lg border-b border-slate-100 py-2 transition-colors last:border-0 ${errorItemId === item.id ? 'bg-rose-50 px-2 ring-1 ring-rose-200' : ''}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm leading-6 text-slate-800">{idx + 1}. {item.label}</p>
+                    <p className="text-sm leading-6 text-slate-800">
+                      {idx + 1}. {item.label}
+                      {item.pts != null && item.pts !== 1 && (
+                        <span className="ml-1.5 inline-block rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 align-middle text-[10px] font-bold text-slate-500">{item.pts} pt{item.pts === 1 ? '' : 's'}</span>
+                      )}
+                    </p>
                     {item.photo_required && (
                       <span className={`mt-1 inline-flex items-center gap-1 text-[11px] font-semibold ${['YES', 'NO'].includes(answers[item.id]) && !(itemPhotos[item.id]?.length > 0) ? 'text-rose-600' : 'text-slate-400'}`}>
                         <Camera className="h-3 w-3" /> Photo required for Yes or No

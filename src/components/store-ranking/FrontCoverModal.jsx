@@ -113,9 +113,13 @@ export function computeFrontCover(relevantSubmissions, templatesById) {
       if (!sectionTotals[label]) sectionTotals[label] = { yes: 0, no: 0, na: 0 };
       (section.items || []).forEach(item => {
         const answer = sub.answers?.[item.id];
-        if (answer === 'YES') { sectionTotals[label].yes += 1; totalYes += 1; }
-        else if (answer === 'NO') { sectionTotals[label].no += 1; totalNo += 1; }
-        else if (answer === 'NA') { sectionTotals[label].na += 1; totalNa += 1; }
+        // Equal-weight for every existing checklist (pts defaults to 1);
+        // point-based ones (e.g. Mayon's housekeeping walkthrough) weight
+        // each answer by the item's own pts instead of counting it as 1.
+        const weight = Number(item.pts) > 0 ? Number(item.pts) : 1;
+        if (answer === 'YES') { sectionTotals[label].yes += weight; totalYes += weight; }
+        else if (answer === 'NO') { sectionTotals[label].no += weight; totalNo += weight; }
+        else if (answer === 'NA') { sectionTotals[label].na += weight; totalNa += weight; }
       });
     });
   });

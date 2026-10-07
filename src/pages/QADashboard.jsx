@@ -15,6 +15,13 @@ import jsPDF from 'jspdf';
 import { auditBusinessDayKey, formatPHDate, formatPHDateTime } from '@/lib/dateUtils';
 import { computeFrontCover } from '@/components/store-ranking/FrontCoverModal';
 import ChipDetailModal from '@/components/store-ranking/ChipDetailModal';
+import TemplateMultiSelect from '@/components/audit/TemplateMultiSelect';
+
+const VISIT_OPTIONS = [
+  { value: 'all', label: 'All Visits' },
+  { value: 'first', label: 'First Visit' },
+  { value: 'second', label: 'Second Visit' },
+];
 
 const LOGO_URL = '/assets/figaro-logo.png';
 
@@ -37,33 +44,28 @@ const DEFAULT_PASS_THRESHOLD = 75;
 const OPEN_TICKET_STATUSES = new Set(['open', 'in_progress', 'pending']);
 const AUDIT_TYPE_LABELS = { unannounced: 'Unannounced', follow_up: 'Follow-up', spot: 'Spot' };
 
-// There's no existing "quality health" classification anywhere else in the
-// app, so these bands are a new, intentionally simple heuristic relative to
-// each store's own (possibly blended) pass threshold — comfortably above it
-// is Healthy, right around it is Watchlist, a bit under is At Risk, well
-// under is Critical. Adjust the gaps here if QA wants different cutoffs.
+// Fixed, absolute score bands (not relative to each store's own pass
+// threshold) — QA wants one consistent network-wide cutoff everyone can
+// recognize at a glance, instead of a bar that moves with each checklist's
+// own threshold. Adjust the cutoffs here if QA wants different ranges.
 const STATUS_BANDS = [
-  { key: 'critical', label: 'Critical', icon: ShieldAlert, text: 'text-red-600', badge: 'bg-red-100 text-red-700 border-red-200', solid: 'bg-red-600', ring: '#dc2626', test: (gap) => gap < -10, hint: 'Score is more than 10% below the pass threshold' },
-  { key: 'at_risk', label: 'At Risk', icon: AlertTriangle, text: 'text-orange-600', badge: 'bg-orange-100 text-orange-700 border-orange-200', solid: 'bg-orange-500', ring: '#f97316', test: (gap) => gap < 0, hint: 'Score is below the pass threshold (by up to 10%)' },
-  { key: 'watchlist', label: 'Watchlist', icon: Clock, text: 'text-amber-600', badge: 'bg-amber-100 text-amber-700 border-amber-200', solid: 'bg-amber-500', ring: '#f59e0b', test: (gap) => gap < 5, hint: 'Score just barely passes (within 5% of threshold)' },
-  { key: 'healthy', label: 'Healthy', icon: CheckCircle2, text: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', solid: 'bg-emerald-500', ring: '#10b981', test: () => true, hint: 'Score comfortably clears the pass threshold (5%+ to spare)' },
+  { key: 'critical', label: 'Critical', icon: ShieldAlert, text: 'text-red-600', badge: 'bg-red-100 text-red-700 border-red-200', solid: 'bg-red-600', ring: '#dc2626', test: (score) => score < 92.5, hint: 'Score is below 92.5%' },
+  { key: 'watchlist', label: 'Watchlist', icon: Clock, text: 'text-amber-600', badge: 'bg-amber-100 text-amber-700 border-amber-200', solid: 'bg-amber-500', ring: '#f59e0b', test: (score) => score < 94, hint: 'Score is 92.5% to 93.99%' },
+  { key: 'healthy', label: 'Healthy', icon: CheckCircle2, text: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', solid: 'bg-emerald-500', ring: '#10b981', test: () => true, hint: 'Score is 94% or above' },
 ];
 
-function classifyStatus(avgScore, passThreshold) {
-  const gap = avgScore - passThreshold;
-  return STATUS_BANDS.find(b => b.test(gap));
+function classifyStatus(avgScore) {
+  return STATUS_BANDS.find(b => b.test(avgScore));
 }
 
 const ACTION_BY_STATUS = {
   critical: 'Audit + Training',
-  at_risk: 'Product Validation',
   watchlist: 'Coaching',
   healthy: 'Maintain',
 };
 
 const PRIORITY_BY_STATUS = {
   critical: { label: 'Critical', badge: 'bg-red-100 text-red-700 border-red-200' },
-  at_risk: { label: 'High', badge: 'bg-orange-100 text-orange-700 border-orange-200' },
   watchlist: { label: 'Medium', badge: 'bg-amber-100 text-amber-700 border-amber-200' },
   healthy: { label: 'Low', badge: 'bg-slate-100 text-slate-600 border-slate-200' },
 };
@@ -121,6 +123,8 @@ function ScoreRing({ score, color, size = 110, strokeWidth = 11 }) {
 export default function QADashboard() {
   const [user, setUser] = useState(null);
   const [selectedBrandId, setSelectedBrandId] = useState('all');
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState([]); // [] = all QA templates
+  const [selectedVisitNumber, setSelectedVisitNumber] = useState('all');
   const [dateFrom, setDateFrom] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
   const [dateTo, setDateTo] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
   const [detailStore, setDetailStore] = useState(null);
@@ -137,7 +141,7 @@ export default function QADashboard() {
 
   const { data: stores = [] } = useQuery({
     queryKey: ['stores-active-qa-dashboard'],
-    queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 500),
+    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 500),
   });
 
   const { data: templates = [] } = useQuery({
@@ -190,14 +194,39 @@ export default function QADashboard() {
     return stores.filter(s => s.brand_id === selectedBrandId);
   }, [stores, selectedBrandId]);
 
+  // Template options for the filter — just the QA checklists this
+  // dashboard already scopes to, not every template in the system.
+  const qaTemplatesList = useMemo(
+    () => templates.filter(t => qaTemplateIds.has(t.id)),
+    [templates, qaTemplateIds]
+  );
+
+  // The Visit filter only makes sense once a checklist that actually asks
+  // for one is in play — shown whenever that's true of the current
+  // Template selection (or of any QA checklist at all, when nothing's
+  // narrowed down yet), and ignored otherwise so a stale pick can't
+  // silently filter out everything.
+  const templatesInPlayHaveVisit = useMemo(() => {
+    const pool = selectedTemplateIds.length
+      ? qaTemplatesList.filter(t => selectedTemplateIds.includes(t.id))
+      : qaTemplatesList;
+    return pool.some(t => t.requires_visit_number);
+  }, [qaTemplatesList, selectedTemplateIds]);
+
   const filtered = useMemo(() => {
     let subs = submissions.filter(s => s.brand && qaTemplateIds.has(s.template_id) && s.score != null);
     if (selectedBrandId !== 'all') {
       const brand = brands.find(b => b.id === selectedBrandId);
       if (brand) subs = subs.filter(s => s.brand.startsWith(brand.brand_name));
     }
+    if (selectedTemplateIds.length) {
+      subs = subs.filter(s => selectedTemplateIds.includes(s.template_id));
+    }
+    if (templatesInPlayHaveVisit && selectedVisitNumber !== 'all') {
+      subs = subs.filter(s => (s.visit_number || '') === selectedVisitNumber);
+    }
     return subs;
-  }, [submissions, qaTemplateIds, brands, selectedBrandId]);
+  }, [submissions, qaTemplateIds, brands, selectedBrandId, selectedTemplateIds, templatesInPlayHaveVisit, selectedVisitNumber]);
 
   const ticketsBySubmissionId = useMemo(() => {
     const map = new Map();
@@ -248,7 +277,7 @@ export default function QADashboard() {
       const lateAvg = scoreAverage(sorted.slice(mid)) ?? avgScore;
       const trend = lateAvg - earlyAvg;
 
-      const status = classifyStatus(avgScore, passThreshold);
+      const status = classifyStatus(avgScore);
 
       const { sectionRows } = computeFrontCover(subs, templatesById);
       const worstSection = sectionRows.length ? [...sectionRows].sort((a, b) => b.no - a.no)[0] : null;
@@ -280,7 +309,7 @@ export default function QADashboard() {
   }, [filtered, templateThresholds, templatesById, ticketsBySubmissionId, stores]);
 
   const networkOverview = useMemo(() => {
-    const counts = { critical: 0, at_risk: 0, watchlist: 0, healthy: 0 };
+    const counts = { critical: 0, watchlist: 0, healthy: 0 };
     storeRows.forEach(r => { counts[r.status.key] += 1; });
     return { total: storeRows.length, ...counts };
   }, [storeRows]);
@@ -397,13 +426,10 @@ export default function QADashboard() {
       alerts.push({ key: 'open-tickets', level: 'info', text: `${totalOpenTickets} open audit concern ticket${totalOpenTickets === 1 ? '' : 's'} across all stores` });
     }
     if (storesNotAudited.length > 0) {
-      alerts.push({ key: 'not-audited', level: 'at_risk', text: `${storesNotAudited.length} store${storesNotAudited.length === 1 ? '' : 's'} with no QA audit in this range` });
+      alerts.push({ key: 'not-audited', level: 'not_audited', text: `${storesNotAudited.length} store${storesNotAudited.length === 1 ? '' : 's'} with no QA audit in this range` });
     }
     storeRows.filter(r => r.status.key === 'critical').forEach(r => {
       alerts.push({ key: `critical-${r.store}`, level: 'critical', text: `${r.store} is Critical (${r.avgScore.toFixed(0)}% — ${r.mainIssue})` });
-    });
-    storeRows.filter(r => r.status.key === 'at_risk').forEach(r => {
-      alerts.push({ key: `at_risk-${r.store}`, level: 'at_risk', text: `${r.store} is At Risk (${r.avgScore.toFixed(0)}% — ${r.mainIssue})` });
     });
     storeRows.filter(r => r.trend < -5).forEach(r => {
       alerts.push({ key: `decline-${r.store}`, level: 'decline', text: `${r.store} is declining (${r.trend.toFixed(1)} pts this range)` });
@@ -465,7 +491,7 @@ export default function QADashboard() {
       doc.roundedRect(margin, y, contentW, 22, 2, 2, 'FD');
 
       const statusRgb = {
-        critical: [220, 38, 38], at_risk: [249, 115, 22], watchlist: [245, 158, 11], healthy: [16, 185, 129],
+        critical: [220, 38, 38], watchlist: [245, 158, 11], healthy: [16, 185, 129],
       }[store.status.key];
       doc.setFillColor(...statusRgb);
       doc.roundedRect(margin + 3, y + 3, 28, 16, 2, 2, 'F');
@@ -665,6 +691,27 @@ export default function QADashboard() {
           </SelectContent>
         </Select>
 
+        <TemplateMultiSelect
+          templates={qaTemplatesList}
+          selected={selectedTemplateIds}
+          onChange={setSelectedTemplateIds}
+          maxSelected={null}
+          placeholder="All Checklists"
+        />
+
+        {templatesInPlayHaveVisit && (
+          <Select value={selectedVisitNumber} onValueChange={setSelectedVisitNumber}>
+            <SelectTrigger className="w-44 h-9">
+              <SelectValue placeholder="All Visits" />
+            </SelectTrigger>
+            <SelectContent>
+              {VISIT_OPTIONS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <input
             type="date"
@@ -694,7 +741,7 @@ export default function QADashboard() {
       ) : (
         <div className="space-y-5">
           {/* Network Overview */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Card className="border-2 border-slate-200">
               <CardContent className="p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-slate-900/5 flex items-center justify-center flex-shrink-0">
@@ -782,7 +829,7 @@ export default function QADashboard() {
                       <li key={alert.key} className="flex items-start gap-2 text-sm">
                         <span className={`mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                           alert.level === 'critical' ? 'bg-red-500'
-                            : alert.level === 'at_risk' ? 'bg-orange-500'
+                            : alert.level === 'not_audited' ? 'bg-orange-500'
                             : alert.level === 'decline' ? 'bg-amber-500'
                             : 'bg-slate-400'
                         }`} />

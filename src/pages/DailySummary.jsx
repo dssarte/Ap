@@ -38,7 +38,7 @@ export default function DailySummary() {
 
   const { data: stores = [], isLoading: loadingStores } = useQuery({
     queryKey: ['stores-active-daily'],
-    queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 500),
+    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 500),
     enabled: !!user && canAccess && (!isStoreManager || assignedStores.length > 0),
   });
 

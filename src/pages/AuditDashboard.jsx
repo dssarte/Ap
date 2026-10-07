@@ -109,7 +109,7 @@ export default function AuditDashboard() {
 
   const { data: stores = [] } = useQuery({
     queryKey: ['stores-active'],
-    queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 500),
+    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 500),
   });
 
   const { data: submissions = [] } = useQuery({
@@ -151,7 +151,7 @@ export default function AuditDashboard() {
     retry: 2,
   });
 
-  const { data: templates = [] } = useQuery({
+  const { data: templates = [], isLoading: loadingTemplates } = useQuery({
     queryKey: ['audit-templates-all'],
     queryFn: () => base44.entities.AuditTemplate.filter({ is_active: true }, 'title', 200),
   });
@@ -269,7 +269,14 @@ export default function AuditDashboard() {
         return restrictions.some(r => r.brand_id === selectedBrandId) || t.brand_id === selectedBrandId;
       }
       if (isUnrestricted) return true;
-      if (allowedStores) {
+      // visibleBrands depends on the separate stores/brands queries, which
+      // can still be loading the first time this runs. Falling through to
+      // "show everything" until they're ready avoids a false-empty dropdown
+      // for store managers (restricted templates would otherwise all fail
+      // the ownBrandIds check against an empty set) — this list is only a UI
+      // filter, not a security boundary, so briefly showing more than a
+      // store manager's own templates here is harmless.
+      if (allowedStores && visibleBrands.length > 0) {
         const ownBrandIds = new Set(visibleBrands.map(b => b.id));
         return restrictions.some(r => ownBrandIds.has(r.brand_id));
       }
@@ -658,7 +665,8 @@ export default function AuditDashboard() {
           templates={filterTemplates}
           selected={selectedTemplateIds}
           onChange={setSelectedTemplateIds}
-          placeholder="All Templates"
+          disabled={loadingTemplates}
+          placeholder={loadingTemplates ? 'Loading templates…' : 'All Templates'}
         />
 
         <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:items-center">
