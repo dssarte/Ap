@@ -11,6 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Plus, Edit, Trash2, Clock } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
+
+const matchesSLA = (sla, q) =>
+  sla.name?.toLowerCase().includes(q) || sla.description?.toLowerCase().includes(q) || sla.priority?.toLowerCase().includes(q);
 
 export default function SLAManager() {
   const [showDialog, setShowDialog] = useState(false);
@@ -34,6 +39,8 @@ export default function SLAManager() {
     queryKey: ['slas'],
     queryFn: () => base44.entities.SLA.list('-created_date')
   });
+
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount, totalCount } = useSearchAndPaginate(slas, matchesSLA);
 
   useEffect(() => {
     loadDepartments();
@@ -135,9 +142,9 @@ export default function SLAManager() {
       <CardContent>
         {isLoading ? (
           <p className="text-center py-8 text-slate-500">Loading...</p>
-        ) : slas.length === 0 ? (
-          <p className="text-center py-8 text-slate-500">No SLA policies yet</p>
         ) : (
+          <>
+          <AdminSearchBar value={search} onChange={setSearch} placeholder="Search SLA policies..." />
           <Table>
             <TableHeader>
               <TableRow>
@@ -151,7 +158,7 @@ export default function SLAManager() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {slas.map(sla => (
+              {pageItems.map(sla => (
                 <TableRow key={sla.id}>
                   <TableCell>
                     <div>
@@ -198,8 +205,25 @@ export default function SLAManager() {
                   </TableCell>
                 </TableRow>
               ))}
+              {filteredCount === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-slate-500 py-8">
+                    {totalCount === 0 ? 'No SLA policies yet' : `No SLA policies match "${search}"`}
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </CardContent>
 

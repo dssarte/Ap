@@ -10,6 +10,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Plus, Pencil, Trash2, Building2, Clock } from "lucide-react";
 import { isTimeWithinWindow } from '@/lib/dateUtils';
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 const EMPTY_FORM = { department_id: '', department_name: '', message: '', start_time: '00:00', end_time: '23:59' };
 
@@ -20,6 +22,9 @@ function formatTimeLabel(hhmm) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
+
+const matchesAutoResponse = (r, q) =>
+  r.department_name?.toLowerCase().includes(q) || r.message?.toLowerCase().includes(q);
 
 export default function AutoResponseManager() {
   const [responses, setResponses] = useState([]);
@@ -116,6 +121,7 @@ export default function AutoResponseManager() {
   };
 
   const filtered = responses.filter(r => filterDept === 'all' || r.department_id === filterDept);
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(filtered, matchesAutoResponse);
 
   return (
     <div className="space-y-6">
@@ -136,16 +142,23 @@ export default function AutoResponseManager() {
       </div>
 
       {/* List */}
-      {filtered.length === 0 ? (
+      <AdminSearchBar value={search} onChange={setSearch} placeholder="Search auto responses..." />
+      {filteredCount === 0 ? (
         <Card className="border-dashed border-2">
           <CardContent className="p-12 text-center text-slate-500">
-            <p className="font-medium">No auto responses found.</p>
-            <p className="text-sm mt-1">Click "Add Auto Response" to set one up for a department.</p>
+            {filtered.length === 0 ? (
+              <>
+                <p className="font-medium">No auto responses found.</p>
+                <p className="text-sm mt-1">Click "Add Auto Response" to set one up for a department.</p>
+              </>
+            ) : (
+              <p className="font-medium">No auto responses match "{search}"</p>
+            )}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {filtered.map(r => {
+          {pageItems.map(r => {
             const activeNow = r.is_active && isTimeWithinWindow(r.start_time, r.end_time);
             return (
               <Card key={r.id} className={`border-2 ${r.is_active ? 'border-slate-200' : 'border-slate-100'} hover:border-[#1fd655]/40 transition-colors`}>
@@ -186,6 +199,15 @@ export default function AutoResponseManager() {
               </Card>
             );
           })}
+        </div>
+      )}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+          </div>
         </div>
       )}
 

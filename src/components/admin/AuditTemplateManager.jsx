@@ -7,11 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Pencil, Trash2, ClipboardList, Sparkles, Copy, GripVertical } from "lucide-react";
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StoreMultiSelect from "@/components/admin/StoreMultiSelect";
+import { CHECKLIST_CATEGORIES, normalizeChecklistCategory } from '@/lib/checklistCategories';
 
 // Presets are looked up by their exact matching Category title, not by
 // brand tab — a tab can hold multiple different checklists, so the preset
@@ -91,6 +94,8 @@ function formatTimeLabel(hhmm) {
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
+const matchesTemplate = (t, q) => t.title?.toLowerCase().includes(q);
+
 export default function AuditTemplateManager() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -156,6 +161,7 @@ export default function AuditTemplateManager() {
   };
 
   const visibleTemplates = templates.filter(t => normalizeGroup(t.template_group) === groupTab);
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(visibleTemplates, matchesTemplate);
 
   return (
     <div className="space-y-6">
@@ -189,8 +195,13 @@ export default function AuditTemplateManager() {
           </CardContent>
         </Card>
       ) : (
+        <>
+        <AdminSearchBar value={search} onChange={setSearch} placeholder="Search templates..." wrapperClassName="relative" />
+        {filteredCount === 0 && (
+          <p className="text-slate-400 text-sm text-center py-8">No templates match "{search}"</p>
+        )}
         <div className="grid gap-4">
-          {visibleTemplates.map(t => (
+          {pageItems.map(t => (
             <Card key={t.id} className="border-2 border-slate-200 shadow-sm">
               <CardContent className="p-5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -241,6 +252,16 @@ export default function AuditTemplateManager() {
             </Card>
           ))}
         </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       <TemplateDialog
@@ -271,6 +292,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
   const [availableToTime, setAvailableToTime] = useState('17:00');
   const [activeTicket, setActiveTicket] = useState(false);
   const [templateGroup, setTemplateGroup] = useState(group);
+  const [checklistCategory, setChecklistCategory] = useState('store_audit');
   const [passThreshold, setPassThreshold] = useState(75);
   const [requiresAuditType, setRequiresAuditType] = useState(false);
   const [requiresVisitNumber, setRequiresVisitNumber] = useState(false);
@@ -284,6 +306,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       setDescription(initial?.description || '');
       setSections(initial?.sections ? JSON.parse(JSON.stringify(initial.sections)) : []);
       setTemplateGroup(initial ? normalizeGroup(initial.template_group) : group);
+      setChecklistCategory(normalizeChecklistCategory(initial?.checklist_category));
       setHasTimeRestriction(!!initial?.has_time_restriction);
       setAvailableFromTime(initial?.available_from_time || '06:00');
       setAvailableToTime(initial?.available_to_time || '17:00');
@@ -437,6 +460,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       sections,
       is_active: initial?.is_active ?? true,
       template_group: templateGroup,
+      checklist_category: checklistCategory,
       active_ticket: activeTicket,
       pass_threshold: Number(passThreshold) || 75,
       requires_audit_type: requiresAuditType,
@@ -515,6 +539,21 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
               <SelectContent>
                 {TEMPLATE_GROUPS.map(g => (
                   <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-700">Checklist Category</label>
+            <p className="text-xs text-slate-500">Which Conduct Audit tab this checklist appears under — separate from Brand Tab above, which only organizes this admin screen.</p>
+            <Select value={checklistCategory} onValueChange={setChecklistCategory}>
+              <SelectTrigger className="w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CHECKLIST_CATEGORIES.map(c => (
+                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -620,7 +659,10 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
               <Switch checked={requiresAuditType} onCheckedChange={setRequiresAuditType} />
               <span className="text-sm font-semibold text-slate-700">Ask Audit Type <span className="text-slate-400 font-normal">(optional)</span></span>
             </label>
-            <p className="text-xs text-slate-500">When enabled, whoever conducts this audit must pick Unannounced, Follow-up, or Spot before submitting.</p>
+            <p className="text-xs text-slate-500">
+              When enabled, whoever conducts this audit must pick an Audit Type before submitting —
+              {checklistCategory === 'mystery_shopper' ? ' Re-assessment or Unannounced for Mystery Shopper checklists.' : ' Unannounced, Follow-up, or Spot.'}
+            </p>
           </div>
 
           {/* Visits — First / Second visit, recorded per submission */}

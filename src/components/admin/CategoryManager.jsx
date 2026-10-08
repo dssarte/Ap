@@ -11,6 +11,11 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Pencil, Trash2 } from "lucide-react";
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
+
+const matchesCategory = (category, q) =>
+  category.name?.toLowerCase().includes(q) || category.department_name?.toLowerCase().includes(q);
 
 export default function CategoryManager() {
   const [categories, setCategories] = useState([]);
@@ -26,6 +31,7 @@ export default function CategoryManager() {
     is_active: true,
     is_audit_only: false
   });
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(categories, matchesCategory);
 
   useEffect(() => {
     loadCategories();
@@ -201,9 +207,9 @@ export default function CategoryManager() {
       <CardContent>
         {loading ? (
           <p className="text-center py-8 text-slate-500">Loading categories...</p>
-        ) : categories.length === 0 ? (
-          <p className="text-center py-8 text-slate-500">No categories yet</p>
         ) : (
+          <>
+          <AdminSearchBar value={search} onChange={setSearch} placeholder="Search categories..." />
           <Table>
             <TableHeader>
               <TableRow>
@@ -214,7 +220,7 @@ export default function CategoryManager() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {categories.map((category) => (
+              {pageItems.map((category) => (
                 <TableRow key={category.id}>
                   <TableCell className="font-medium">
                     {category.name}
@@ -258,8 +264,25 @@ export default function CategoryManager() {
                   </TableCell>
                 </TableRow>
               ))}
+              {filteredCount === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-slate-500 py-8">
+                    {categories.length === 0 ? 'No categories yet' : `No categories match "${search}"`}
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </CardContent>
     </Card>

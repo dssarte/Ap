@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Pencil, Trash2, Loader2, Store, Tag } from "lucide-react";
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 // ─── Brand CRUD ────────────────────────────────────────────────────────────────
 function BrandsTab() {
@@ -38,6 +40,10 @@ function BrandsTab() {
 
   const startEdit = (b) => { setForm({ brand_name: b.brand_name, is_active: b.is_active }); setEditingId(b.id); setShowForm(true); };
   const cancel = () => { setForm({ brand_name: '', is_active: true }); setEditingId(null); setShowForm(false); };
+
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(
+    brands, (b, q) => b.brand_name?.toLowerCase().includes(q)
+  );
 
   return (
     <div className="space-y-4">
@@ -80,8 +86,13 @@ function BrandsTab() {
           </CardContent>
         </Card>
       ) : (
+        <>
+        <AdminSearchBar value={search} onChange={setSearch} placeholder="Search brands..." wrapperClassName="relative" />
+        {filteredCount === 0 ? (
+          <p className="text-center text-slate-400 py-8">No brands match "{search}"</p>
+        ) : (
         <div className="space-y-2">
-          {brands.map(b => (
+          {pageItems.map(b => (
             <Card key={b.id} className="border border-slate-200">
               <CardContent className="p-3 flex items-center gap-3">
                 <div className="flex-1 font-semibold text-slate-900">{b.brand_name}</div>
@@ -102,6 +113,17 @@ function BrandsTab() {
             </Card>
           ))}
         </div>
+        )}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+            </div>
+          </div>
+        )}
+        </>
       )}
     </div>
   );
@@ -122,7 +144,10 @@ function StoresTab() {
 
   const { data: stores = [], isLoading } = useQuery({
     queryKey: ['stores-admin'],
-    queryFn: () => base44.entities.Store.list('brand_name', 200),
+    // Was capped at 200 — this session alone added 150+ stores across new
+    // brands/facilities, putting the real count close enough to that cap
+    // that it would start silently truncating the list.
+    queryFn: () => base44.entities.Store.list('brand_name', 3000),
   });
 
   const saveMutation = useMutation({
@@ -157,13 +182,16 @@ function StoresTab() {
     saveMutation.mutate(form);
   };
 
-  // Group stores by brand for display
-  const grouped = stores.reduce((acc, s) => {
-    const key = s.brand_name || 'Unknown';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(s);
-    return acc;
-  }, {});
+  // Sorted flat (not grouped) so search + 10-per-page pagination behave
+  // like every other admin tab — brand headers are still inserted inline
+  // below wherever the brand changes within a given page, so it still
+  // reads the same as the old grouped view.
+  const sortedStores = [...stores].sort((a, b) =>
+    (a.brand_name || '').localeCompare(b.brand_name || '') || (a.store_name || '').localeCompare(b.store_name || '')
+  );
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(
+    sortedStores, (s, q) => s.store_name?.toLowerCase().includes(q) || s.brand_name?.toLowerCase().includes(q) || s.location?.toLowerCase().includes(q)
+  );
 
   return (
     <div className="space-y-4">
@@ -221,38 +249,52 @@ function StoresTab() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {Object.entries(grouped).map(([brandName, brandStores]) => (
-            <div key={brandName}>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 px-1">{brandName}</p>
-              <div className="space-y-2">
-                {brandStores.map(s => (
-                  <Card key={s.id} className="border border-slate-200">
-                    <CardContent className="p-3 flex items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-slate-900">{s.store_name}</p>
-                        {s.location && <p className="text-xs text-slate-500">{s.location}</p>}
-                      </div>
-                      <Badge
-                        className={`cursor-pointer text-xs ${s.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}
-                        onClick={() => toggleMutation.mutate({ id: s.id, is_active: !s.is_active })}
-                      >
-                        {s.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" onClick={() => startEdit(s)}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-600"
-                        onClick={() => confirm('Delete this store?') && deleteMutation.mutate(s.id)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
+        <>
+        <AdminSearchBar value={search} onChange={setSearch} placeholder="Search stores by name, brand, or location..." wrapperClassName="relative" />
+        {filteredCount === 0 ? (
+          <p className="text-center text-slate-400 py-8">No stores match "{search}"</p>
+        ) : (
+        <div className="space-y-2">
+          {pageItems.map((s, idx) => (
+            <React.Fragment key={s.id}>
+              {(idx === 0 || pageItems[idx - 1].brand_name !== s.brand_name) && (
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mt-3 first:mt-0 px-1">{s.brand_name || 'Unknown'}</p>
+              )}
+              <Card className="border border-slate-200">
+                <CardContent className="p-3 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900">{s.store_name}</p>
+                    {s.location && <p className="text-xs text-slate-500">{s.location}</p>}
+                  </div>
+                  <Badge
+                    className={`cursor-pointer text-xs ${s.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}
+                    onClick={() => toggleMutation.mutate({ id: s.id, is_active: !s.is_active })}
+                  >
+                    {s.is_active ? 'Active' : 'Inactive'}
+                  </Badge>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" onClick={() => startEdit(s)}>
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-600"
+                    onClick={() => confirm('Delete this store?') && deleteMutation.mutate(s.id)}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+            </React.Fragment>
           ))}
         </div>
+        )}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+            </div>
+          </div>
+        )}
+        </>
       )}
     </div>
   );
