@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StoreMultiSelect from "@/components/admin/StoreMultiSelect";
-import { CHECKLIST_CATEGORIES } from '@/lib/checklistCategories';
+import { CHECKLIST_CATEGORIES, normalizeChecklistCategory } from '@/lib/checklistCategories';
 
 // Presets are looked up by their exact matching Category title, not by
 // brand tab — a tab can hold multiple different checklists, so the preset
@@ -306,7 +306,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       setDescription(initial?.description || '');
       setSections(initial?.sections ? JSON.parse(JSON.stringify(initial.sections)) : []);
       setTemplateGroup(initial ? normalizeGroup(initial.template_group) : group);
-      setChecklistCategory(initial?.checklist_category || 'store_audit');
+      setChecklistCategory(normalizeChecklistCategory(initial?.checklist_category));
       setHasTimeRestriction(!!initial?.has_time_restriction);
       setAvailableFromTime(initial?.available_from_time || '06:00');
       setAvailableToTime(initial?.available_to_time || '17:00');

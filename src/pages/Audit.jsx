@@ -22,7 +22,7 @@ import { compressImage } from '@/lib/compressImage';
 import { SectionLoadingSkeleton } from '@/components/PageState';
 import { useToast } from '@/components/ui/use-toast';
 import { parseMysteryShopperFile } from '@/lib/excelImport';
-import { CHECKLIST_CATEGORIES } from '@/lib/checklistCategories';
+import { CHECKLIST_CATEGORIES, normalizeChecklistCategory } from '@/lib/checklistCategories';
 
 function formatTimeLabel(hhmm) {
   if (!hhmm) return '';
@@ -303,7 +303,7 @@ export default function Audit() {
   // ever see 'store_audit' templates.
   const [categoryTab, setCategoryTab] = useState('store_audit');
   const categoriesPresent = useMemo(() => {
-    const present = new Set(templates.map(t => t.checklist_category || 'store_audit'));
+    const present = new Set(templates.map(t => normalizeChecklistCategory(t.checklist_category)));
     return CHECKLIST_CATEGORIES.filter(c => present.has(c.value));
   }, [templates]);
   useEffect(() => {
@@ -314,7 +314,7 @@ export default function Audit() {
   }, [categoriesPresent, categoryTab]);
 
   const categoryTemplates = useMemo(
-    () => templates.filter(t => (t.checklist_category || 'store_audit') === categoryTab),
+    () => templates.filter(t => normalizeChecklistCategory(t.checklist_category) === categoryTab),
     [templates, categoryTab]
   );
   const searchedTemplates = useMemo(() => {
@@ -489,9 +489,15 @@ export default function Audit() {
             {categoriesPresent.length > 1 && (
               <Tabs value={categoryTab} onValueChange={setCategoryTab} className="mb-4">
                 <div className="overflow-x-auto">
-                  <TabsList className="w-max">
+                  <TabsList className="flex h-auto w-max gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
                     {categoriesPresent.map(c => (
-                      <TabsTrigger key={c.value} value={c.value}>{c.label}</TabsTrigger>
+                      <TabsTrigger
+                        key={c.value}
+                        value={c.value}
+                        className="rounded-lg px-4 h-9 text-slate-600 transition-all hover:text-slate-900 data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold data-[state=active]:shadow-sm"
+                      >
+                        {c.label}
+                      </TabsTrigger>
                     ))}
                   </TabsList>
                 </div>
