@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { ClipboardList, Plus, Trash2, Loader2, Search } from "lucide-react";
+import { ClipboardList, Plus, Trash2, Loader2 } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 const matchesAssignment = (a, q) =>
   a.user_name?.toLowerCase().includes(q) ||
@@ -102,15 +103,7 @@ export default function AuditAssignmentManager() {
         ) : (
           <>
           <div className="pt-4 px-6 mb-4">
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search assignments..."
-                className="pl-9"
-              />
-            </div>
+            <AdminSearchBar value={search} onChange={setSearch} placeholder="Search assignments..." wrapperClassName="relative" />
           </div>
           <Table>
             <TableHeader>

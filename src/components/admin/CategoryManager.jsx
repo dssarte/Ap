@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 const matchesCategory = (category, q) =>
   category.name?.toLowerCase().includes(q) || category.department_name?.toLowerCase().includes(q);
@@ -208,15 +209,7 @@ export default function CategoryManager() {
           <p className="text-center py-8 text-slate-500">Loading categories...</p>
         ) : (
           <>
-          <div className="relative mt-4 mb-4">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search categories..."
-              className="pl-9"
-            />
-          </div>
+          <AdminSearchBar value={search} onChange={setSearch} placeholder="Search categories..." />
           <Table>
             <TableHeader>
               <TableRow>

@@ -8,12 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Users, Loader2, UserPlus, Trash2, MailCheck, Eye, EyeOff, Search } from "lucide-react";
+import { Pencil, Users, Loader2, UserPlus, Trash2, MailCheck, Eye, EyeOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/use-toast";
 import MultiStoreSelect from "@/components/admin/MultiStoreSelect";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 // Store managers can have dozens of assigned stores — showing the raw
 // comma-joined list breaks table/card layouts, so collapse it to a count
@@ -535,15 +536,7 @@ HelpDesk Support Team`
           </div>
         ) : (
           <>
-          <div className="relative mt-4 mb-4">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search users..."
-              className="pl-9"
-            />
-          </div>
+          <AdminSearchBar value={search} onChange={setSearch} placeholder="Search users..." />
           <div className="space-y-3 md:hidden">
             {pageItems.map(user => (
               <article key={user.id} className={`rounded-xl border border-slate-200 p-4 shadow-sm ${isDisabled(user) ? 'bg-slate-50 opacity-75' : 'bg-white'}`}>

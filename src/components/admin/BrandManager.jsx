@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Loader2, Store, Tag, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Store, Tag } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 // ─── Brand CRUD ────────────────────────────────────────────────────────────────
 function BrandsTab() {
@@ -86,10 +87,7 @@ function BrandsTab() {
         </Card>
       ) : (
         <>
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search brands..." className="pl-9" />
-        </div>
+        <AdminSearchBar value={search} onChange={setSearch} placeholder="Search brands..." wrapperClassName="relative" />
         {filteredCount === 0 ? (
           <p className="text-center text-slate-400 py-8">No brands match "{search}"</p>
         ) : (
@@ -252,10 +250,7 @@ function StoresTab() {
         </Card>
       ) : (
         <>
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search stores by name, brand, or location..." className="pl-9" />
-        </div>
+        <AdminSearchBar value={search} onChange={setSearch} placeholder="Search stores by name, brand, or location..." wrapperClassName="relative" />
         {filteredCount === 0 ? (
           <p className="text-center text-slate-400 py-8">No stores match "{search}"</p>
         ) : (

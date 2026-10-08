@@ -4,9 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Loader2, CalendarCheck, Search } from "lucide-react";
+import { Loader2, CalendarCheck } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 export default function ChecklistCompletionManager() {
   const queryClient = useQueryClient();
@@ -102,15 +102,7 @@ export default function ChecklistCompletionManager() {
           </div>
         </div>
 
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search checklists..."
-            className="pl-9"
-          />
-        </div>
+        <AdminSearchBar value={search} onChange={setSearch} placeholder="Search checklists..." wrapperClassName="relative" />
 
         {filteredCount === 0 ? (
           <p className="text-sm text-slate-400 py-8 text-center">

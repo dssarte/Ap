@@ -8,8 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Pencil, Building2, Loader2, Search } from "lucide-react";
+import { Plus, Pencil, Building2, Loader2 } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 const matchesDepartment = (dept, q) =>
   dept.name?.toLowerCase().includes(q) || dept.description?.toLowerCase().includes(q);
@@ -121,15 +122,7 @@ export default function DepartmentManager() {
           </div>
         ) : (
           <>
-          <div className="relative mt-4 mb-4">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search departments..."
-              className="pl-9"
-            />
-          </div>
+          <AdminSearchBar value={search} onChange={setSearch} placeholder="Search departments..." />
           <Table>
             <TableHeader>
               <TableRow>

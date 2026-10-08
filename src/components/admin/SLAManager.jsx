@@ -9,9 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Plus, Edit, Trash2, Clock, Search } from "lucide-react";
+import { Plus, Edit, Trash2, Clock } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 const matchesSLA = (sla, q) =>
   sla.name?.toLowerCase().includes(q) || sla.description?.toLowerCase().includes(q) || sla.priority?.toLowerCase().includes(q);
@@ -143,15 +144,7 @@ export default function SLAManager() {
           <p className="text-center py-8 text-slate-500">Loading...</p>
         ) : (
           <>
-          <div className="relative mt-4 mb-4">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search SLA policies..."
-              className="pl-9"
-            />
-          </div>
+          <AdminSearchBar value={search} onChange={setSearch} placeholder="Search SLA policies..." />
           <Table>
             <TableHeader>
               <TableRow>
