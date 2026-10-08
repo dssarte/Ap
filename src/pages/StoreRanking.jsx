@@ -23,6 +23,12 @@ const AUDIT_TYPE_OPTIONS = [
 
 const AUDIT_TYPE_LABELS = { unannounced: 'Unannounced', follow_up: 'Follow-up', spot: 'Spot' };
 
+const VISIT_OPTIONS = [
+  { value: 'all', label: 'All Visits' },
+  { value: 'first', label: 'First Visit' },
+  { value: 'second', label: 'Second Visit' },
+];
+
 function getRankColor(rank) {
   if (rank === 1) return 'bg-yellow-400 text-yellow-900';
   if (rank === 2) return 'bg-slate-400 text-slate-900';
@@ -83,6 +89,7 @@ export default function StoreRanking() {
   const [selectedBrandId, setSelectedBrandId] = useState('all');
   const [selectedStoreId, setSelectedStoreId] = useState('all');
   const [selectedAuditType, setSelectedAuditType] = useState('all');
+  const [selectedVisitNumber, setSelectedVisitNumber] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -95,7 +102,7 @@ export default function StoreRanking() {
 
   const { data: stores = [] } = useQuery({
     queryKey: ['stores-active'],
-    queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 200),
+    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 200),
   });
 
   const { data: templates = [] } = useQuery({
@@ -158,6 +165,10 @@ export default function StoreRanking() {
 
     if (selectedAuditType !== 'all') {
       filtered = filtered.filter(s => (s.audit_type || '') === selectedAuditType);
+    }
+
+    if (selectedVisitNumber !== 'all') {
+      filtered = filtered.filter(s => (s.visit_number || '') === selectedVisitNumber);
     }
 
     if (selectedBrandId !== 'all') {
@@ -239,7 +250,7 @@ export default function StoreRanking() {
       })
       .sort((a, b) => b.avgScore - a.avgScore)
       .map((item, idx) => ({ ...item, rank: idx + 1 }));
-  }, [rawSubmissions, brands, stores, selectedBrandId, selectedStoreId, selectedAuditType, qaTemplateIds, templateThresholds]);
+  }, [rawSubmissions, brands, stores, selectedBrandId, selectedStoreId, selectedAuditType, selectedVisitNumber, qaTemplateIds, templateThresholds]);
 
   // Get selected brand name for display
   const selectedBrand = brands.find(b => b.id === selectedBrandId);
@@ -527,7 +538,10 @@ export default function StoreRanking() {
           </SelectContent>
         </Select>
 
-        <Select value={selectedAuditType} onValueChange={setSelectedAuditType}>
+        <Select
+          value={selectedAuditType}
+          onValueChange={(val) => { setSelectedAuditType(val); if (val === 'all') setSelectedVisitNumber('all'); }}
+        >
           <SelectTrigger className="w-52 h-9">
             <SelectValue placeholder="All Audit Types" />
           </SelectTrigger>
@@ -537,6 +551,19 @@ export default function StoreRanking() {
             ))}
           </SelectContent>
         </Select>
+
+        {selectedAuditType !== 'all' && (
+          <Select value={selectedVisitNumber} onValueChange={setSelectedVisitNumber}>
+            <SelectTrigger className="w-52 h-9">
+              <SelectValue placeholder="All Visits" />
+            </SelectTrigger>
+            <SelectContent>
+              {VISIT_OPTIONS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <input
