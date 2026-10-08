@@ -8,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
 import { ClipboardList, Plus, Trash2, Loader2 } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
 import AdminSearchBar from './AdminSearchBar';
