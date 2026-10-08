@@ -52,7 +52,7 @@ export default function TemplateMultiSelect({ templates, selected, onChange, dis
           variant="outline"
           role="combobox"
           disabled={disabled}
-          className="w-56 h-9 justify-between font-normal"
+          className="w-56 h-9 justify-between font-normal bg-transparent"
         >
           <span className="truncate">{label}</span>
           <ChevronDown className="w-4 h-4 opacity-50 flex-shrink-0" />

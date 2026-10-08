@@ -4,7 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, CalendarCheck } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Loader2, CalendarCheck, Search } from "lucide-react";
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
 
 export default function ChecklistCompletionManager() {
   const queryClient = useQueryClient();
@@ -25,6 +27,9 @@ export default function ChecklistCompletionManager() {
     () => allTemplates.filter(t => t.store_restrictions?.length > 0 || t.store_name),
     [allTemplates]
   );
+
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } =
+    useSearchAndPaginate(completionTemplates, (t, q) => t.title?.toLowerCase().includes(q));
 
   const configRecord = configRecords[0];
   const selectedIds = useMemo(() => {
@@ -97,11 +102,25 @@ export default function ChecklistCompletionManager() {
           </div>
         </div>
 
-        {completionTemplates.length === 0 ? (
-          <p className="text-sm text-slate-400 py-8 text-center">No store-restricted checklists found. QA audit templates are not listed here.</p>
+        <div className="relative">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search checklists..."
+            className="pl-9"
+          />
+        </div>
+
+        {filteredCount === 0 ? (
+          <p className="text-sm text-slate-400 py-8 text-center">
+            {completionTemplates.length === 0
+              ? "No store-restricted checklists found. QA audit templates are not listed here."
+              : `No checklists match "${search}"`}
+          </p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {completionTemplates.map(t => (
+            {pageItems.map(t => (
               <label
                 key={t.id}
                 className="flex items-center gap-2.5 p-3 rounded-md bg-white border border-slate-200 hover:border-[#1fd655] cursor-pointer transition-colors"
@@ -114,6 +133,16 @@ export default function ChecklistCompletionManager() {
                 <span className="text-sm text-slate-700 font-medium truncate">{t.title}</span>
               </label>
             ))}
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+            </div>
           </div>
         )}
 

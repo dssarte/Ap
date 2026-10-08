@@ -8,11 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Users, Loader2, UserPlus, Trash2, MailCheck, Eye, EyeOff } from "lucide-react";
+import { Pencil, Users, Loader2, UserPlus, Trash2, MailCheck, Eye, EyeOff, Search } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/use-toast";
 import MultiStoreSelect from "@/components/admin/MultiStoreSelect";
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
 
 // Store managers can have dozens of assigned stores — showing the raw
 // comma-joined list breaks table/card layouts, so collapse it to a count
@@ -58,6 +59,9 @@ function AssignedStoresCell({ stores, allStores, brands }) {
   );
 }
 
+const matchesUser = (user, q) =>
+  user.display_name?.toLowerCase().includes(q) || user.full_name?.toLowerCase().includes(q) || user.email?.toLowerCase().includes(q);
+
 export default function UserManager() {
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -82,6 +86,7 @@ export default function UserManager() {
   const [deleting, setDeleting] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(null);
   const { toast } = useToast();
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(users, matchesUser);
 
   useEffect(() => {
     loadData();
@@ -530,8 +535,17 @@ HelpDesk Support Team`
           </div>
         ) : (
           <>
+          <div className="relative mt-4 mb-4">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search users..."
+              className="pl-9"
+            />
+          </div>
           <div className="space-y-3 md:hidden">
-            {users.map(user => (
+            {pageItems.map(user => (
               <article key={user.id} className={`rounded-xl border border-slate-200 p-4 shadow-sm ${isDisabled(user) ? 'bg-slate-50 opacity-75' : 'bg-white'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0"><h3 className="truncate font-semibold text-slate-900">{user.display_name || user.full_name || '-'}</h3><p className="mt-0.5 break-all text-xs text-slate-500">{user.email}</p></div>
@@ -556,7 +570,7 @@ HelpDesk Support Team`
                 </div>
               </article>
             ))}
-            {users.length === 0 && <p className="py-8 text-center text-sm text-slate-500">No users yet</p>}
+            {filteredCount === 0 && <p className="py-8 text-center text-sm text-slate-500">{users.length === 0 ? 'No users yet' : `No users match "${search}"`}</p>}
           </div>
           <div className="hidden md:block">
           <Table>
@@ -573,7 +587,7 @@ HelpDesk Support Team`
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map(user => (
+              {pageItems.map(user => (
                 <TableRow key={user.id} className={isDisabled(user) ? 'bg-slate-50 opacity-75' : ''}>
                   <TableCell className="font-medium">{user.display_name || user.full_name || '-'}</TableCell>
                   <TableCell className="text-slate-600">{user.email}</TableCell>
@@ -622,16 +636,25 @@ HelpDesk Support Team`
                   </TableCell>
                 </TableRow>
               ))}
-              {users.length === 0 && (
+              {filteredCount === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-slate-500 py-8">
-                    No users yet
+                    {users.length === 0 ? 'No users yet' : `No users match "${search}"`}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+              </div>
+            </div>
+          )}
           </>
         )}
       </CardContent>
