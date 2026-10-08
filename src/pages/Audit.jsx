@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, ClipboardList, CheckCircle2, Eye, ChevronLeft, ChevronDown, Trash2, Pencil, Camera, History, ListChecks, FileEdit, Upload, Search } from "lucide-react";
 import moment from 'moment';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
@@ -21,6 +22,7 @@ import { compressImage } from '@/lib/compressImage';
 import { SectionLoadingSkeleton } from '@/components/PageState';
 import { useToast } from '@/components/ui/use-toast';
 import { parseMysteryShopperFile } from '@/lib/excelImport';
+import { CHECKLIST_CATEGORIES, normalizeChecklistCategory } from '@/lib/checklistCategories';
 
 function formatTimeLabel(hhmm) {
   if (!hhmm) return '';
@@ -294,11 +296,32 @@ export default function Audit() {
   const importFileInputRef = React.useRef(null);
   const importableTemplates = useMemo(() => templates.filter(t => t.supports_excel_import), [templates]);
 
+  // Conduct Audit groups checklists into top-level category tabs (QA,
+  // Mystery Shopper, Store Audit, Store Punchlist, Commissary, Warehouse,
+  // Mayon) instead of one long searchable list — only tabs that actually
+  // have a visible template show up, since a store-locked user may only
+  // ever see 'store_audit' templates.
+  const [categoryTab, setCategoryTab] = useState('store_audit');
+  const categoriesPresent = useMemo(() => {
+    const present = new Set(templates.map(t => normalizeChecklistCategory(t.checklist_category)));
+    return CHECKLIST_CATEGORIES.filter(c => present.has(c.value));
+  }, [templates]);
+  useEffect(() => {
+    if (categoriesPresent.length === 0) return;
+    if (!categoriesPresent.some(c => c.value === categoryTab)) {
+      setCategoryTab(categoriesPresent[0].value);
+    }
+  }, [categoriesPresent, categoryTab]);
+
+  const categoryTemplates = useMemo(
+    () => templates.filter(t => normalizeChecklistCategory(t.checklist_category) === categoryTab),
+    [templates, categoryTab]
+  );
   const searchedTemplates = useMemo(() => {
     const q = templateSearch.trim().toLowerCase();
-    if (!q) return templates;
-    return templates.filter(t => t.title.toLowerCase().includes(q));
-  }, [templates, templateSearch]);
+    if (!q) return categoryTemplates;
+    return categoryTemplates.filter(t => t.title.toLowerCase().includes(q));
+  }, [categoryTemplates, templateSearch]);
 
   const pickImportTemplate = (template) => {
     if (!isTemplateAvailableNow(template) || isDoneForCycle(template)) return;
@@ -463,6 +486,23 @@ export default function Audit() {
           </Card>
         ) : (
           <>
+            {categoriesPresent.length > 1 && (
+              <Tabs value={categoryTab} onValueChange={setCategoryTab} className="mb-4">
+                <div className="overflow-x-auto">
+                  <TabsList className="flex h-auto w-max gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                    {categoriesPresent.map(c => (
+                      <TabsTrigger
+                        key={c.value}
+                        value={c.value}
+                        className="rounded-lg px-4 h-9 text-slate-600 transition-all hover:text-slate-900 data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold data-[state=active]:shadow-sm"
+                      >
+                        {c.label}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
+              </Tabs>
+            )}
             <div className="relative mb-4">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -477,7 +517,9 @@ export default function Audit() {
               <Card className="border-2 border-dashed border-slate-200">
                 <CardContent className="py-12 text-center">
                   <Search className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                  <p className="text-slate-400 font-medium">No checklists match "{templateSearch}"</p>
+                  <p className="text-slate-400 font-medium">
+                    {templateSearch ? `No checklists match "${templateSearch}"` : 'No checklists in this category yet.'}
+                  </p>
                 </CardContent>
               </Card>
             ) : (
@@ -712,6 +754,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
   // Audit Type) — the daily operational checklists are meant to be quick
   // and one-shot, so they don't get a draft option.
   const isDraftEligible = !!template.requires_audit_type;
+  const isMysteryShopper = template.checklist_category === 'mystery_shopper';
   const [savingDraft, setSavingDraft] = useState(false);
   const { toast } = useToast();
   const isStoreManager = user?.user_type === 'store_manager';
@@ -1075,7 +1118,9 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
     }
     if (template.requires_audit_type && !auditType) {
       setErrorItemId(null);
-      setPhotoError('Please select the Audit Type (Unannounced, Follow-up, or Spot).');
+      setPhotoError(isMysteryShopper
+        ? 'Please select the Audit Type (Re-assessment or Unannounced).'
+        : 'Please select the Audit Type (Unannounced, Follow-up, or Spot).');
       return;
     }
     if (template.requires_visit_number && !visitNumber) {
@@ -1100,6 +1145,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
       setPhotoError('Signature 1 name and position are required.');
       return;
     }
+    if (!window.confirm('Are you sure you want to continue?')) return;
     setPhotoError('');
     setErrorItemId(null);
     setSaving(true);
@@ -1261,6 +1307,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
       setPhotoError(template.requires_department ? 'Please select a Department before saving a draft.' : 'Please select a brand and store before saving a draft.');
       return;
     }
+    if (!window.confirm('Are you sure you want to continue?')) return;
     setSavingDraft(true);
     try {
       const yes = weightedCount(allItems, 'YES');
@@ -1344,6 +1391,30 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
             <Button size="sm" onClick={restoreDraft} className="bg-amber-500 hover:bg-amber-600 text-white">Restore</Button>
           </div>
         </div>
+      )}
+
+      {/* Imported-from-Excel summary — shown first, before brand/store, so
+          you see what got matched (or didn't) before reviewing the rest.
+          Everything below is still the normal fill form, pre-filled rather
+          than blank, so it's all visible and editable before submitting,
+          same as clicking through by hand. */}
+      {initialImport && (
+        <Card className={`border-2 ${initialImport.unmatchedItems.length ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+          <CardContent className="p-4">
+            <p className={`text-sm font-semibold ${initialImport.unmatchedItems.length ? 'text-amber-800' : 'text-emerald-800'}`}>
+              Imported {initialImport.matchedCount} of {initialImport.totalItems} answers from the uploaded file.
+            </p>
+            {initialImport.unmatchedItems.length > 0 && (
+              <div className="mt-2 text-xs text-amber-700">
+                <p className="font-medium">These {initialImport.unmatchedItems.length} item{initialImport.unmatchedItems.length === 1 ? '' : 's'} couldn't be matched — fill them in below:</p>
+                <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                  {initialImport.unmatchedItems.slice(0, 8).map(it => <li key={it.id}>{it.label}</li>)}
+                  {initialImport.unmatchedItems.length > 8 && <li>…and {initialImport.unmatchedItems.length - 8} more</li>}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Brand / Store selector (or a flat Department picker, for
@@ -1440,29 +1511,6 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
         </CardContent>
       </Card>
 
-      {/* Imported-from-Excel summary — everything below is still the normal
-          fill form, pre-filled rather than blank, so whatever got matched
-          (or didn't) is visible and editable before submitting, same as
-          clicking through by hand. */}
-      {initialImport && (
-        <Card className={`border-2 ${initialImport.unmatchedItems.length ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
-          <CardContent className="p-4">
-            <p className={`text-sm font-semibold ${initialImport.unmatchedItems.length ? 'text-amber-800' : 'text-emerald-800'}`}>
-              Imported {initialImport.matchedCount} of {initialImport.totalItems} answers from the uploaded file.
-            </p>
-            {initialImport.unmatchedItems.length > 0 && (
-              <div className="mt-2 text-xs text-amber-700">
-                <p className="font-medium">These {initialImport.unmatchedItems.length} item{initialImport.unmatchedItems.length === 1 ? '' : 's'} couldn't be matched — fill them in below:</p>
-                <ul className="mt-1 list-disc pl-4 space-y-0.5">
-                  {initialImport.unmatchedItems.slice(0, 8).map(it => <li key={it.id}>{it.label}</li>)}
-                  {initialImport.unmatchedItems.length > 8 && <li>…and {initialImport.unmatchedItems.length - 8} more</li>}
-                </ul>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       {/* Audit Type — only for templates that opted in */}
       {(template.requires_audit_type || template.requires_visit_number || template.requires_commitment_date) && (
         <Card className="border-2 border-slate-200">
@@ -1475,9 +1523,18 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
                     <SelectValue placeholder="Select audit type..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="unannounced">Unannounced</SelectItem>
-                    <SelectItem value="follow_up">Follow-up</SelectItem>
-                    <SelectItem value="spot">Spot</SelectItem>
+                    {isMysteryShopper ? (
+                      <>
+                        <SelectItem value="reassessment">Re-assessment</SelectItem>
+                        <SelectItem value="unannounced">Unannounced</SelectItem>
+                      </>
+                    ) : (
+                      <>
+                        <SelectItem value="unannounced">Unannounced</SelectItem>
+                        <SelectItem value="follow_up">Follow-up</SelectItem>
+                        <SelectItem value="spot">Spot</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

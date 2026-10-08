@@ -8,7 +8,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 import { ClipboardList, Plus, Trash2, Loader2 } from "lucide-react";
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
+
+const matchesAssignment = (a, q) =>
+  a.user_name?.toLowerCase().includes(q) ||
+  a.user_email?.toLowerCase().includes(q) ||
+  a.store_name?.toLowerCase().includes(q) ||
+  a.template_title?.toLowerCase().includes(q);
 
 export default function AuditAssignmentManager() {
   const qc = useQueryClient();
@@ -35,6 +44,8 @@ export default function AuditAssignmentManager() {
     queryKey: ['audit-assignments'],
     queryFn: () => base44.entities.AuditAssignment.list('-created_date', 200),
   });
+
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(assignments, matchesAssignment);
 
   const deleteMutation = useMutation({
     mutationFn: (id) => base44.entities.AuditAssignment.delete(id),
@@ -90,6 +101,10 @@ export default function AuditAssignmentManager() {
         {isLoading ? (
           <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
         ) : (
+          <>
+          <div className="pt-4 px-6 mb-4">
+            <AdminSearchBar value={search} onChange={setSearch} placeholder="Search assignments..." wrapperClassName="relative" />
+          </div>
           <Table>
             <TableHeader>
               <TableRow>
@@ -102,14 +117,14 @@ export default function AuditAssignmentManager() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {assignments.length === 0 && (
+              {filteredCount === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-slate-400 py-10">
-                    No assignments yet. Click "Assign Template" to get started.
+                    {assignments.length === 0 ? 'No assignments yet. Click "Assign Template" to get started.' : `No assignments match "${search}"`}
                   </TableCell>
                 </TableRow>
               )}
-              {assignments.map(a => (
+              {pageItems.map(a => (
                 <TableRow key={a.id}>
                   <TableCell>
                     <p className="font-medium text-slate-900">{a.user_name || a.user_email}</p>
@@ -133,6 +148,16 @@ export default function AuditAssignmentManager() {
               ))}
             </TableBody>
           </Table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 px-6 pb-6">
+              <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </CardContent>
 

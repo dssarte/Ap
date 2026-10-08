@@ -9,6 +9,11 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Pencil, Building2, Loader2 } from "lucide-react";
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
+
+const matchesDepartment = (dept, q) =>
+  dept.name?.toLowerCase().includes(q) || dept.description?.toLowerCase().includes(q);
 
 export default function DepartmentManager() {
   const [departments, setDepartments] = useState([]);
@@ -17,6 +22,7 @@ export default function DepartmentManager() {
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({ name: '', description: '', is_active: true });
   const [saving, setSaving] = useState(false);
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(departments, matchesDepartment);
 
   useEffect(() => {
     loadDepartments();
@@ -115,6 +121,8 @@ export default function DepartmentManager() {
             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
           </div>
         ) : (
+          <>
+          <AdminSearchBar value={search} onChange={setSearch} placeholder="Search departments..." />
           <Table>
             <TableHeader>
               <TableRow>
@@ -125,7 +133,7 @@ export default function DepartmentManager() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {departments.map(dept => (
+              {pageItems.map(dept => (
                 <TableRow key={dept.id}>
                   <TableCell className="font-medium">{dept.name}</TableCell>
                   <TableCell className="text-slate-600">{dept.description || '-'}</TableCell>
@@ -141,15 +149,25 @@ export default function DepartmentManager() {
                   </TableCell>
                 </TableRow>
               ))}
-              {departments.length === 0 && (
+              {filteredCount === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-slate-500 py-8">
-                    No departments yet
+                    {departments.length === 0 ? 'No departments yet' : `No departments match "${search}"`}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </CardContent>
     </Card>
