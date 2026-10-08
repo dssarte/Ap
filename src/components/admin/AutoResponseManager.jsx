@@ -8,9 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Pencil, Trash2, Building2, Clock, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Clock } from "lucide-react";
 import { isTimeWithinWindow } from '@/lib/dateUtils';
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 const EMPTY_FORM = { department_id: '', department_name: '', message: '', start_time: '00:00', end_time: '23:59' };
 
@@ -141,15 +142,7 @@ export default function AutoResponseManager() {
       </div>
 
       {/* List */}
-      <div className="relative mb-4">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search auto responses..."
-          className="pl-9"
-        />
-      </div>
+      <AdminSearchBar value={search} onChange={setSearch} placeholder="Search auto responses..." />
       {filteredCount === 0 ? (
         <Card className="border-dashed border-2">
           <CardContent className="p-12 text-center text-slate-500">

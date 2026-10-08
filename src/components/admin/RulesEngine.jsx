@@ -8,8 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Zap, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Zap, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 
 // ─── Config ────────────────────────────────────────────────────────────────
 const CONDITION_FIELDS = [
@@ -388,15 +389,7 @@ export default function RulesEngine() {
         </Card>
       ) : (
         <>
-          <div className="relative mb-4">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search rules..."
-              className="pl-9"
-            />
-          </div>
+          <AdminSearchBar value={search} onChange={setSearch} placeholder="Search rules..." />
           {filteredCount === 0 ? (
             <p className="text-center text-slate-500 py-8 text-sm">No rules match "{search}"</p>
           ) : (

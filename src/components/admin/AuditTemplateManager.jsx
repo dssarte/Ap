@@ -6,13 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, ClipboardList, Sparkles, Copy, GripVertical, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, ClipboardList, Sparkles, Copy, GripVertical } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
+import AdminSearchBar from './AdminSearchBar';
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StoreMultiSelect from "@/components/admin/StoreMultiSelect";
+import { CHECKLIST_CATEGORIES } from '@/lib/checklistCategories';
 
 // Presets are looked up by their exact matching Category title, not by
 // brand tab — a tab can hold multiple different checklists, so the preset
@@ -194,15 +196,7 @@ export default function AuditTemplateManager() {
         </Card>
       ) : (
         <>
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search templates..."
-            className="pl-9"
-          />
-        </div>
+        <AdminSearchBar value={search} onChange={setSearch} placeholder="Search templates..." wrapperClassName="relative" />
         {filteredCount === 0 && (
           <p className="text-slate-400 text-sm text-center py-8">No templates match "{search}"</p>
         )}
@@ -298,6 +292,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
   const [availableToTime, setAvailableToTime] = useState('17:00');
   const [activeTicket, setActiveTicket] = useState(false);
   const [templateGroup, setTemplateGroup] = useState(group);
+  const [checklistCategory, setChecklistCategory] = useState('store_audit');
   const [passThreshold, setPassThreshold] = useState(75);
   const [requiresAuditType, setRequiresAuditType] = useState(false);
   const [requiresVisitNumber, setRequiresVisitNumber] = useState(false);
@@ -311,6 +306,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       setDescription(initial?.description || '');
       setSections(initial?.sections ? JSON.parse(JSON.stringify(initial.sections)) : []);
       setTemplateGroup(initial ? normalizeGroup(initial.template_group) : group);
+      setChecklistCategory(initial?.checklist_category || 'store_audit');
       setHasTimeRestriction(!!initial?.has_time_restriction);
       setAvailableFromTime(initial?.available_from_time || '06:00');
       setAvailableToTime(initial?.available_to_time || '17:00');
@@ -464,6 +460,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       sections,
       is_active: initial?.is_active ?? true,
       template_group: templateGroup,
+      checklist_category: checklistCategory,
       active_ticket: activeTicket,
       pass_threshold: Number(passThreshold) || 75,
       requires_audit_type: requiresAuditType,
@@ -542,6 +539,21 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
               <SelectContent>
                 {TEMPLATE_GROUPS.map(g => (
                   <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-700">Checklist Category</label>
+            <p className="text-xs text-slate-500">Which Conduct Audit tab this checklist appears under — separate from Brand Tab above, which only organizes this admin screen.</p>
+            <Select value={checklistCategory} onValueChange={setChecklistCategory}>
+              <SelectTrigger className="w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CHECKLIST_CATEGORIES.map(c => (
+                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -647,7 +659,10 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
               <Switch checked={requiresAuditType} onCheckedChange={setRequiresAuditType} />
               <span className="text-sm font-semibold text-slate-700">Ask Audit Type <span className="text-slate-400 font-normal">(optional)</span></span>
             </label>
-            <p className="text-xs text-slate-500">When enabled, whoever conducts this audit must pick Unannounced, Follow-up, or Spot before submitting.</p>
+            <p className="text-xs text-slate-500">
+              When enabled, whoever conducts this audit must pick an Audit Type before submitting —
+              {checklistCategory === 'mystery_shopper' ? ' Re-assessment or Unannounced for Mystery Shopper checklists.' : ' Unannounced, Follow-up, or Spot.'}
+            </p>
           </div>
 
           {/* Visits — First / Second visit, recorded per submission */}
