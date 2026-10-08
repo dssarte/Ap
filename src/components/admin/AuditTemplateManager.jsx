@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, ClipboardList, Sparkles, Copy, GripVertical } from "lucide-react";
+import { Plus, Pencil, Trash2, ClipboardList, Sparkles, Copy, GripVertical, Search } from "lucide-react";
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -91,6 +92,8 @@ function formatTimeLabel(hhmm) {
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
+const matchesTemplate = (t, q) => t.title?.toLowerCase().includes(q);
+
 export default function AuditTemplateManager() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -156,6 +159,7 @@ export default function AuditTemplateManager() {
   };
 
   const visibleTemplates = templates.filter(t => normalizeGroup(t.template_group) === groupTab);
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(visibleTemplates, matchesTemplate);
 
   return (
     <div className="space-y-6">
@@ -189,8 +193,21 @@ export default function AuditTemplateManager() {
           </CardContent>
         </Card>
       ) : (
+        <>
+        <div className="relative">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search templates..."
+            className="pl-9"
+          />
+        </div>
+        {filteredCount === 0 && (
+          <p className="text-slate-400 text-sm text-center py-8">No templates match "{search}"</p>
+        )}
         <div className="grid gap-4">
-          {visibleTemplates.map(t => (
+          {pageItems.map(t => (
             <Card key={t.id} className="border-2 border-slate-200 shadow-sm">
               <CardContent className="p-5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -241,6 +258,16 @@ export default function AuditTemplateManager() {
             </Card>
           ))}
         </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       <TemplateDialog

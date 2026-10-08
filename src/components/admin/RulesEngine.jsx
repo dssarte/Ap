@@ -8,7 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Zap, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Zap, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Search } from "lucide-react";
+import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
 
 // ─── Config ────────────────────────────────────────────────────────────────
 const CONDITION_FIELDS = [
@@ -296,6 +297,8 @@ function RuleCard({ rule, departments, onEdit, onDelete, onToggle }) {
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
+const matchesRule = (rule, q) => rule.name?.toLowerCase().includes(q);
+
 export default function RulesEngine() {
   const [rules, setRules] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -303,6 +306,7 @@ export default function RulesEngine() {
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(rules, matchesRule);
 
   useEffect(() => { loadData(); }, []);
 
@@ -383,18 +387,42 @@ export default function RulesEngine() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {rules.map(rule => (
-            <RuleCard
-              key={rule.id}
-              rule={rule}
-              departments={departments}
-              onEdit={handleEdit}
-              onDelete={r => setDeleteTarget(r)}
-              onToggle={handleToggle}
+        <>
+          <div className="relative mb-4">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search rules..."
+              className="pl-9"
             />
-          ))}
-        </div>
+          </div>
+          {filteredCount === 0 ? (
+            <p className="text-center text-slate-500 py-8 text-sm">No rules match "{search}"</p>
+          ) : (
+            <div className="space-y-3">
+              {pageItems.map(rule => (
+                <RuleCard
+                  key={rule.id}
+                  rule={rule}
+                  departments={departments}
+                  onEdit={handleEdit}
+                  onDelete={r => setDeleteTarget(r)}
+                  onToggle={handleToggle}
+                />
+              ))}
+            </div>
+          )}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Form modal */}
