@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, FileText } from "lucide-react";
 import { formatPHDateTime, formatPHDateShort } from '@/lib/dateUtils';
 import PhotoThumb from '@/components/audit/PhotoThumb';
+import { normalizeChecklistCategory } from '@/lib/checklistCategories';
 
 const LOGO_URL = '/assets/figaro-logo.png';
 
@@ -32,6 +33,23 @@ async function fetchImageBase64(url) {
   }
 }
 
+const ROMAN_NUMERAL_VALUES = [
+  [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+  [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+  [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+];
+function toRomanNumeral(num) {
+  let n = num;
+  let result = '';
+  for (const [value, symbol] of ROMAN_NUMERAL_VALUES) {
+    while (n >= value) {
+      result += symbol;
+      n -= value;
+    }
+  }
+  return result;
+}
+
 export function ScoreBadge({ score }) {
   if (score == null) return null;
   const color = score >= 80 ? 'bg-green-100 text-green-700' : score >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
@@ -43,6 +61,28 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
   ref
 ) {
   const template = templates.find(t => t.id === submission.template_id);
+  const isQaViewer = user?.user_type === 'admin' || user?.department_name === 'Quality Assurance';
+  const isMysteryShopperTemplate = normalizeChecklistCategory(template?.checklist_category) === 'mystery_shopper';
+  // QA/admin default to the full item-by-item scored breakdown (they need
+  // it to grade and verify) but can switch to the same summary a store sees
+  // via the toggle below — e.g. to generate that condensed version
+  // themselves. A store viewer has no toggle: summary is the only option.
+  const qualifiesForSummary = !!template?.requires_audit_type && !isMysteryShopperTemplate;
+  const [viewMode, setViewMode] = useState('detailed');
+  const useSummaryView = qualifiesForSummary && (!isQaViewer || viewMode === 'summary');
+  const sectionsWithDeviations = (template?.sections || []).map(sec => {
+    let deviationCounter = 0;
+    const items = (sec.items || []).map(item => {
+      const isNo = submission.answers?.[item.id] === 'NO';
+      return { item, isNo, num: isNo ? ++deviationCounter : null };
+    });
+    const failedItems = items.filter(i => i.isNo);
+    return {
+      sec,
+      items,
+      hasDeviation: failedItems.length > 0,
+    };
+  });
   const [exportingPdf, setExportingPdfState] = useState(false);
   const setExportingPdf = (val) => {
     setExportingPdfState(val);
@@ -96,10 +136,30 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       doc.line(margin, y, pageW - margin, y);
       y += 5;
 
-      // Summary row
+      // Summary row — Submitted by / Branch / Date each have a fixed-width
+      // slot since they share one row; a long value wraps onto extra lines
+      // within its own column (jsPDF text has no auto-wrap/clip of its own,
+      // so without this it would run straight into the next field) rather
+      // than being cut off. The row grows to fit whichever field wraps the
+      // most. Location gets its own full-width row inside the same bordered
+      // container instead of a separate block below it.
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      const submittedByWrapped = doc.splitTextToSize(submission.submitted_by_name || submission.submitted_by_email || '-', 44);
+      const brandWrapped = submission.brand ? doc.splitTextToSize(submission.brand, 53) : [];
+
+      const hasLocation = !!submission.location;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      const locationWrapped = hasLocation ? doc.splitTextToSize(submission.location, contentW - 26) : [];
+      const firstRowLines = Math.max(1, submittedByWrapped.length, brandWrapped.length);
+      const firstRowHeight = Math.max(16, 9 + firstRowLines * 4);
+      const locationRowHeight = hasLocation ? (locationWrapped.length * 4 + 6) : 0;
+      const boxHeight = firstRowHeight + locationRowHeight;
+
       doc.setDrawColor(226, 232, 240);
       doc.setFillColor(248, 250, 252);
-      doc.roundedRect(margin, y, contentW, 16, 2, 2, 'FD');
+      doc.roundedRect(margin, y, contentW, boxHeight, 2, 2, 'FD');
 
       const scoreColor = submission.score >= 80 ? [34, 197, 94] : submission.score >= 50 ? [234, 179, 8] : [239, 68, 68];
       doc.setFillColor(...scoreColor);
@@ -115,7 +175,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       doc.text('Submitted by', margin + 28, y + 5);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
-      doc.text(submission.submitted_by_name || submission.submitted_by_email || '-', margin + 28, y + 10);
+      doc.text(submittedByWrapped, margin + 28, y + 10);
 
       if (submission.brand) {
         doc.setFont('helvetica', 'normal');
@@ -124,7 +184,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         doc.text('Branch / Brand', margin + 75, y + 5);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
-        doc.text(submission.brand, margin + 75, y + 10);
+        doc.text(brandWrapped, margin + 75, y + 10);
       }
 
       doc.setFont('helvetica', 'normal');
@@ -135,36 +195,68 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       doc.setFontSize(8);
       doc.text(formatPHDateTime(submission.submission_date || submission.created_date), pageW - margin - 55, y + 10);
 
-      // YES/NO/NA counts
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(34, 197, 94);
-      doc.text(`YES: ${submission.yes_count}`, pageW - margin - 6, y + 5, { align: 'right' });
-      doc.setTextColor(239, 68, 68);
-      doc.text(`NO: ${submission.no_count}`, pageW - margin - 6, y + 10, { align: 'right' });
-      doc.setTextColor(150, 150, 150);
-      doc.text(`N/A: ${submission.na_count}`, pageW - margin - 6, y + 15, { align: 'right' });
-
-      y += 20;
-
-      // Location (where the audit was submitted)
-      if (submission.location) {
-        addPageIfNeeded(8);
-        doc.setTextColor(100, 116, 139);
+      // YES/NO/NA counts — omitted from the store-facing summary export; the
+      // overall score badge above already conveys the grade without
+      // exposing the raw scored breakdown.
+      if (!useSummaryView) {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7);
-        doc.text('LOCATION', margin, y);
-        doc.setTextColor(60, 60, 60);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
-        const locWrapped = doc.splitTextToSize(submission.location, contentW - 20);
-        doc.text(locWrapped, margin + 18, y);
-        y += locWrapped.length * 4 + 4;
+        doc.setFontSize(8);
+        doc.setTextColor(34, 197, 94);
+        doc.text(`YES: ${submission.yes_count}`, pageW - margin - 6, y + 5, { align: 'right' });
+        doc.setTextColor(239, 68, 68);
+        doc.text(`NO: ${submission.no_count}`, pageW - margin - 6, y + 10, { align: 'right' });
+        doc.setTextColor(150, 150, 150);
+        doc.text(`N/A: ${submission.na_count}`, pageW - margin - 6, y + 15, { align: 'right' });
       }
+
+      if (hasLocation) {
+        doc.setDrawColor(226, 232, 240);
+        doc.line(margin + 4, y + firstRowHeight, margin + contentW - 4, y + firstRowHeight);
+        doc.setTextColor(80, 80, 80);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.text('Location', margin + 4, y + firstRowHeight + 5);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text(locationWrapped, margin + 22, y + firstRowHeight + 5);
+      }
+
+      y += boxHeight + 4;
+
+      // Item photos — shared by both the detailed and summary section renderers below
+      const drawItemPhotoGrid = async (urls) => {
+        const imgW = 30, imgH = 22, gap = 3;
+        addPageIfNeeded(imgH + 4);
+        let px = margin + 2;
+        for (const url of urls) {
+          if (px + imgW > pageW - margin) {
+            px = margin + 2;
+            y += imgH + gap;
+            addPageIfNeeded(imgH + 4);
+          }
+          const b64 = await fetchImageBase64(url);
+          if (b64) {
+            try { doc.addImage(b64, 'JPEG', px, y, imgW, imgH); }
+            catch { /* unsupported format — leave blank slot */ }
+          } else {
+            // Placeholder for missing/unsupported photo so the slot isn't invisible
+            doc.setFillColor(241, 245, 249);
+            doc.rect(px, y, imgW, imgH, 'F');
+            doc.setDrawColor(203, 213, 225);
+            doc.rect(px, y, imgW, imgH, 'S');
+            doc.setTextColor(148, 163, 184);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(6);
+            doc.text(isHeicUrl(url) ? 'HEIC' : 'N/A', px + imgW / 2, y + imgH / 2, { align: 'center' });
+          }
+          px += imgW + gap;
+        }
+        y += imgH + 4;
+      };
 
       // Sections
       if (template?.sections) {
-        for (const sec of template.sections) {
+        for (const { sec, items, hasDeviation } of sectionsWithDeviations) {
           addPageIfNeeded(12);
           doc.setFillColor(240, 253, 244);
           doc.roundedRect(margin, y, contentW, 8, 1.5, 1.5, 'F');
@@ -176,82 +268,91 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
           doc.text(sec.title?.toUpperCase() || '', margin + 3, y + 5.5);
           y += 10;
 
-          for (const [idx, item] of (sec.items || []).entries()) {
-            const ans = submission.answers?.[item.id];
-            const rowH = 8;
-            addPageIfNeeded(rowH + 2);
-
-            const bg = idx % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
-            doc.setFillColor(...bg);
-            doc.rect(margin, y, contentW, rowH, 'F');
-            doc.setDrawColor(230, 230, 230);
-            doc.line(margin, y + rowH, margin + contentW, y + rowH);
-
-            doc.setTextColor(60, 60, 60);
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(8);
-            const label = `${idx + 1}. ${item.label}`;
-            const wrappedLabel = doc.splitTextToSize(label, contentW - 25);
-            doc.text(wrappedLabel, margin + 2, y + 5);
-
-            // Answer badge
-            if (ans) {
-              const badgeColor = ans === 'YES' ? [220, 252, 231] : ans === 'NO' ? [254, 226, 226] : [241, 245, 249];
-              const textColor = ans === 'YES' ? [22, 163, 74] : ans === 'NO' ? [220, 38, 38] : [100, 116, 139];
-              doc.setFillColor(...badgeColor);
-              doc.roundedRect(pageW - margin - 15, y + 1.5, 13, rowH - 3, 1.5, 1.5, 'F');
-              doc.setTextColor(...textColor);
-              doc.setFont('helvetica', 'bold');
-              doc.setFontSize(7);
-              doc.text(ans === 'NA' ? 'N/A' : ans, pageW - margin - 8.5, y + 5.5, { align: 'center' });
-            }
-
-            y += rowH + (wrappedLabel.length > 1 ? (wrappedLabel.length - 1) * 3.5 : 0);
-
-            // NO comment
-            const noComment = submission.no_comments?.[item.id];
-            if (ans === 'NO' && noComment) {
+          if (useSummaryView) {
+            if (!hasDeviation) {
               addPageIfNeeded(6);
-              doc.setFillColor(254, 242, 242);
-              const commentWrapped = doc.splitTextToSize(`  >> ${noComment}`, contentW - 4);
-              doc.rect(margin, y, contentW, commentWrapped.length * 4 + 2, 'F');
-              doc.setTextColor(220, 38, 38);
+              doc.setTextColor(100, 116, 139);
               doc.setFont('helvetica', 'italic');
-              doc.setFontSize(7);
-              doc.text(commentWrapped, margin + 2, y + 3.5);
-              y += commentWrapped.length * 4 + 4;
-            }
+              doc.setFontSize(8);
+              doc.text('No noted deviation.', margin + 2, y + 4);
+              y += 8;
+            } else {
+              for (const { item, num } of items.filter(i => i.isNo)) {
+                addPageIfNeeded(8);
+                doc.setTextColor(30, 30, 30);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8);
+                const label = `${toRomanNumeral(num)}. ${item.label}`;
+                const wrappedLabel = doc.splitTextToSize(label, contentW - 4);
+                doc.text(wrappedLabel, margin + 2, y + 4);
+                y += wrappedLabel.length * 4 + 2;
 
-            // Item photos
-            const itemPhotoUrls = submission.item_photos?.[item.id];
-            if (itemPhotoUrls?.length) {
-              const imgW = 30, imgH = 22, gap = 3;
-              addPageIfNeeded(imgH + 4);
-              let px = margin + 2;
-              for (const url of itemPhotoUrls) {
-                if (px + imgW > pageW - margin) {
-                  px = margin + 2;
-                  y += imgH + gap;
-                  addPageIfNeeded(imgH + 4);
-                }
-                const b64 = await fetchImageBase64(url);
-                if (b64) {
-                  try { doc.addImage(b64, 'JPEG', px, y, imgW, imgH); }
-                  catch { /* unsupported format — leave blank slot */ }
-                } else {
-                  // Placeholder for missing/unsupported photo so the slot isn't invisible
-                  doc.setFillColor(241, 245, 249);
-                  doc.rect(px, y, imgW, imgH, 'F');
-                  doc.setDrawColor(203, 213, 225);
-                  doc.rect(px, y, imgW, imgH, 'S');
-                  doc.setTextColor(148, 163, 184);
+                const noComment = submission.no_comments?.[item.id];
+                if (noComment) {
+                  doc.setTextColor(80, 80, 80);
                   doc.setFont('helvetica', 'normal');
-                  doc.setFontSize(6);
-                  doc.text(isHeicUrl(url) ? 'HEIC' : 'N/A', px + imgW / 2, y + imgH / 2, { align: 'center' });
+                  doc.setFontSize(8);
+                  const reasonWrapped = doc.splitTextToSize(`- ${noComment}`, contentW - 8);
+                  addPageIfNeeded(reasonWrapped.length * 4 + 2);
+                  doc.text(reasonWrapped, margin + 4, y + 4);
+                  y += reasonWrapped.length * 4 + 2;
                 }
-                px += imgW + gap;
+
+                const itemPhotoUrls = submission.item_photos?.[item.id];
+                if (itemPhotoUrls?.length) await drawItemPhotoGrid(itemPhotoUrls);
+                y += 2;
               }
-              y += imgH + 4;
+            }
+          } else {
+            for (const [idx, item] of (sec.items || []).entries()) {
+              const ans = submission.answers?.[item.id];
+              const rowH = 8;
+              addPageIfNeeded(rowH + 2);
+
+              const bg = idx % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
+              doc.setFillColor(...bg);
+              doc.rect(margin, y, contentW, rowH, 'F');
+              doc.setDrawColor(230, 230, 230);
+              doc.line(margin, y + rowH, margin + contentW, y + rowH);
+
+              doc.setTextColor(60, 60, 60);
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(8);
+              const label = `${idx + 1}. ${item.label}`;
+              const wrappedLabel = doc.splitTextToSize(label, contentW - 25);
+              doc.text(wrappedLabel, margin + 2, y + 5);
+
+              // Answer badge
+              if (ans) {
+                const badgeColor = ans === 'YES' ? [220, 252, 231] : ans === 'NO' ? [254, 226, 226] : [241, 245, 249];
+                const textColor = ans === 'YES' ? [22, 163, 74] : ans === 'NO' ? [220, 38, 38] : [100, 116, 139];
+                doc.setFillColor(...badgeColor);
+                doc.roundedRect(pageW - margin - 15, y + 1.5, 13, rowH - 3, 1.5, 1.5, 'F');
+                doc.setTextColor(...textColor);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(7);
+                doc.text(ans === 'NA' ? 'N/A' : ans, pageW - margin - 8.5, y + 5.5, { align: 'center' });
+              }
+
+              y += rowH + (wrappedLabel.length > 1 ? (wrappedLabel.length - 1) * 3.5 : 0);
+
+              // NO comment
+              const noComment = submission.no_comments?.[item.id];
+              if (ans === 'NO' && noComment) {
+                addPageIfNeeded(6);
+                doc.setFillColor(254, 242, 242);
+                const commentWrapped = doc.splitTextToSize(`  >> ${noComment}`, contentW - 4);
+                doc.rect(margin, y, contentW, commentWrapped.length * 4 + 2, 'F');
+                doc.setTextColor(220, 38, 38);
+                doc.setFont('helvetica', 'italic');
+                doc.setFontSize(7);
+                doc.text(commentWrapped, margin + 2, y + 3.5);
+                y += commentWrapped.length * 4 + 4;
+              }
+
+              // Item photos
+              const itemPhotoUrls = submission.item_photos?.[item.id];
+              if (itemPhotoUrls?.length) await drawItemPhotoGrid(itemPhotoUrls);
             }
           }
           y += 4;
@@ -416,56 +517,109 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
             <span className="text-red-500 font-bold">✗ {submission.no_count} NO</span>
             <span className="text-slate-400 font-bold">— {submission.na_count} N/A</span>
           </div>
-          {!hideExportButton && (
-            <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            {qualifiesForSummary && isQaViewer && (
+              <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('detailed')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${viewMode === 'detailed' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Detailed
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('summary')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${viewMode === 'summary' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Summary
+                </button>
+              </div>
+            )}
+            {!hideExportButton && (
               <Button onClick={handleExportPdf} disabled={exportingPdf} className="bg-[#1fd655] hover:bg-[#1bc14c] text-slate-900 font-bold gap-2">
                 {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                 Export PDF
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </CardContent>
       </Card>
 
-      {template?.sections?.map(sec => (
-        <Card key={sec.id} className="border-2 border-slate-200">
-          <CardHeader className="pb-2 pt-4 px-5">
-            <CardTitle className="text-sm font-bold uppercase tracking-wide text-[#1fd655]">{sec.title}</CardTitle>
-          </CardHeader>
-          <CardContent className="px-5 pb-4 space-y-1">
-            {(sec.items || []).map((item, idx) => {
-              const ans = submission.answers?.[item.id];
-              const noComment = submission.no_comments?.[item.id];
-              const photos = submission.item_photos?.[item.id];
-              return (
-                <div key={item.id} className="py-2 border-b border-slate-100 last:border-0">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm text-slate-800 flex-1">{idx + 1}. {item.label}</p>
-                    <span className={`px-3 py-0.5 rounded-md text-xs font-bold flex-shrink-0 ${
-                      ans === 'YES' ? 'bg-green-100 text-green-700'
-                      : ans === 'NO' ? 'bg-red-100 text-red-700'
-                      : ans === 'NA' ? 'bg-slate-100 text-slate-500'
-                      : 'bg-slate-50 text-slate-300'
-                    }`}>
-                      {ans === 'NA' ? 'N/A' : (ans || '—')}
-                    </span>
+      {useSummaryView ? (
+        <Card className="border-2 border-slate-200">
+          <CardContent className="p-5 space-y-5">
+            {sectionsWithDeviations.map(({ sec, items, hasDeviation }) => (
+              <div key={sec.id}>
+                <p className="text-sm font-bold uppercase tracking-wide text-[#1fd655] mb-1.5">{sec.title}</p>
+                {!hasDeviation ? (
+                  <p className="text-sm text-slate-500 italic">No noted deviation.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {items.filter(i => i.isNo).map(({ item, num }) => {
+                      const noComment = submission.no_comments?.[item.id];
+                      const photos = submission.item_photos?.[item.id];
+                      return (
+                        <div key={item.id}>
+                          <p className="text-sm text-slate-900"><span className="font-bold">{toRomanNumeral(num)}. {item.label}</span></p>
+                          {noComment && <p className="mt-0.5 text-sm text-slate-600">- {noComment}</p>}
+                          {photos?.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {photos.map((url, i) => (
+                                <PhotoThumb key={i} url={url} alt={`Item photo ${i+1}`} className="h-20 w-20 object-cover rounded-md border border-slate-200" />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  {ans === 'NO' && noComment && (
-                    <p className="mt-1 text-xs text-red-600 bg-red-50 rounded px-2 py-1">{noComment}</p>
-                  )}
-                  {photos?.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {photos.map((url, i) => (
-                        <PhotoThumb key={i} url={url} alt={`Item photo ${i+1}`} className="h-20 w-20 object-cover rounded-md border border-slate-200" />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                )}
+              </div>
+            ))}
           </CardContent>
         </Card>
-      ))}
+      ) : (
+        template?.sections?.map(sec => (
+          <Card key={sec.id} className="border-2 border-slate-200">
+            <CardHeader className="pb-2 pt-4 px-5">
+              <CardTitle className="text-sm font-bold uppercase tracking-wide text-[#1fd655]">{sec.title}</CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pb-4 space-y-1">
+              {(sec.items || []).map((item, idx) => {
+                const ans = submission.answers?.[item.id];
+                const noComment = submission.no_comments?.[item.id];
+                const photos = submission.item_photos?.[item.id];
+                return (
+                  <div key={item.id} className="py-2 border-b border-slate-100 last:border-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm text-slate-800 flex-1">{idx + 1}. {item.label}</p>
+                      <span className={`px-3 py-0.5 rounded-md text-xs font-bold flex-shrink-0 ${
+                        ans === 'YES' ? 'bg-green-100 text-green-700'
+                        : ans === 'NO' ? 'bg-red-100 text-red-700'
+                        : ans === 'NA' ? 'bg-slate-100 text-slate-500'
+                        : 'bg-slate-50 text-slate-300'
+                      }`}>
+                        {ans === 'NA' ? 'N/A' : (ans || '—')}
+                      </span>
+                    </div>
+                    {ans === 'NO' && noComment && (
+                      <p className="mt-1 text-xs text-red-600 bg-red-50 rounded px-2 py-1">{noComment}</p>
+                    )}
+                    {photos?.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {photos.map((url, i) => (
+                          <PhotoThumb key={i} url={url} alt={`Item photo ${i+1}`} className="h-20 w-20 object-cover rounded-md border border-slate-200" />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        ))
+      )}
 
       {/* Extra fields detail */}
       <Card className="border-2 border-slate-200">

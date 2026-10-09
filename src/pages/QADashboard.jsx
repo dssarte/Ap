@@ -1230,6 +1230,7 @@ export default function QADashboard() {
           submissions={fullDrilldownStore.submissions}
           templatesById={templatesById}
           passThreshold={fullDrilldownStore.passThreshold}
+          user={user}
           onClose={() => setFullDrilldownStore(null)}
         />
       )}

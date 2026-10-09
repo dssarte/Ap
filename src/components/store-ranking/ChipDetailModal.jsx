@@ -14,7 +14,7 @@ import SubmissionDetail from '@/components/audit/SubmissionDetail';
 // Cover tab here never has to reconcile multiple audit types in one sheet
 // the way a whole-store view would — it's always one visit type's own
 // breakdown, same as the printed form.
-export default function ChipDetailModal({ label, submissions, templatesById, passThreshold, onClose }) {
+export default function ChipDetailModal({ label, submissions, templatesById, passThreshold, user, onClose }) {
   const sorted = useMemo(
     () => [...submissions].sort((a, b) => new Date(b.submission_date) - new Date(a.submission_date)),
     [submissions]
@@ -123,6 +123,7 @@ export default function ChipDetailModal({ label, submissions, templatesById, pas
                 ref={submissionDetailRef}
                 submission={selectedSubmission}
                 templates={Object.values(templatesById)}
+                user={user}
                 hideExportButton
                 onExportingChange={setExportingPdf}
               />
