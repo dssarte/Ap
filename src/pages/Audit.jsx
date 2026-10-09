@@ -133,6 +133,9 @@ export default function Audit() {
   }, [view]);
 
   const isAdmin = user?.user_type === 'admin';
+  // Department Heads of QA can delete a finalized submission from History
+  // (but not edit it — that stays admin-only).
+  const isQaDeptHead = user?.user_type === 'department_head' && user?.department_name === 'Quality Assurance';
   // Effective stores: store managers aggregate across all assigned stores; others use their single store
   const effectiveStores = isAdmin
     ? []
@@ -153,10 +156,18 @@ export default function Audit() {
   // outside officer visiting a store, not the store filling something out
   // about itself) — those stay QA-department/admin-only even when store
   // restrictions are set for brand/store scoping convenience.
+  //
+  // Punchlist/Commissary/Warehouse/Head Office checklists are QA-only the
+  // same way, regardless of requires_audit_type: these are restricted to
+  // specific stores/facilities for SCOPING (which location a punchlist item
+  // belongs to), not to grant that location's own regular staff visibility
+  // — without this, a store whose name happens to match one of those
+  // restrictions would otherwise see it in their own Conduct Audit list.
+  const QA_ONLY_CATEGORIES = new Set(['punchlist', 'commissary', 'warehouse', 'mayon']);
   const templates = isAdmin
     ? allTemplates
     : allTemplates.filter(t => {
-        if (t.requires_audit_type) {
+        if (t.requires_audit_type || QA_ONLY_CATEGORIES.has(normalizeChecklistCategory(t.checklist_category))) {
           return user?.department_name === 'Quality Assurance';
         }
 
@@ -210,11 +221,17 @@ export default function Audit() {
   });
 
   // Admins see all submissions
-  // Store managers see submissions from all their assigned stores (aggregated as one)
-  // Everyone else only sees their own submissions
+  // Anyone tied to a store (store managers across all assigned stores, or a
+  // regular store-locked user for their one store) sees every submission
+  // for that store — including audits QA conducted on it, not just ones
+  // they personally submitted. This matches what the server-side fetch
+  // above already scopes by (effectiveStores.length > 0), which previously
+  // only this client-side filter failed to mirror for plain store users.
+  // Everyone else (QA officers, department heads, etc. with no fixed
+  // store) only sees their own submissions.
   const submissions = (isAdmin
     ? allSubmissions
-    : user?.user_type === 'store_manager'
+    : effectiveStores.length > 0
       ? allSubmissions.filter(sub => effectiveStores.some(name => sub.brand?.includes(name)))
       : allSubmissions.filter(sub => sub.submitted_by_email === user?.email)
   ).filter(sub => !sub.is_draft);
@@ -236,7 +253,7 @@ export default function Audit() {
   });
   const historySubmissionsScoped = (isAdmin
     ? historySubmissions
-    : user?.user_type === 'store_manager'
+    : effectiveStores.length > 0
       ? historySubmissions.filter(sub => effectiveStores.some(name => sub.brand?.includes(name)))
       : historySubmissions.filter(sub => sub.submitted_by_email === user?.email)
   ).filter(sub => !sub.is_draft);
@@ -642,11 +659,13 @@ export default function Audit() {
                     <p className="text-red-500 font-semibold">✗ {sub.no_count} NO</p>
                     <p className="text-slate-400">— {sub.na_count} N/A</p>
                   </div>
-                  {isAdmin && (
+                  {(isAdmin || isQaDeptHead) && (
                     <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" onClick={(e) => editSubmission(e, sub)}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
+                      {isAdmin && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" onClick={(e) => editSubmission(e, sub)}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-600" onClick={(e) => deleteSubmission(e, sub.id)}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -684,9 +703,19 @@ export default function Audit() {
                       Last saved {formatPHDateTime(sub.updated_date || sub.created_date)}
                     </p>
                   </div>
-                  <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 flex-shrink-0">
-                    {Object.keys(sub.answers || {}).length} answered
-                  </span>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {(sub.yes_count || 0) + (sub.no_count || 0) > 0 && (
+                      <>
+                        <ScoreBadge score={sub.score} />
+                        <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-2.5 py-1">
+                          {sub.no_count || 0} NCF
+                        </span>
+                      </>
+                    )}
+                    <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
+                      {Object.keys(sub.answers || {}).length} answered
+                    </span>
+                  </div>
                   <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
                     <Button variant="ghost" size="sm" className="gap-1.5 text-slate-600 hover:text-[#1fd655]" onClick={() => resumeDraft(sub)}>
                       <Pencil className="w-4 h-4" /> Resume
@@ -743,7 +772,14 @@ export default function Audit() {
 
       {/* SUBMISSION DETAIL */}
       {view === 'detail' && selectedSubmission && (
-        <SubmissionDetail submission={selectedSubmission} templates={templates} user={user} />
+        // allTemplates, not the role-filtered `templates` — that list only
+        // decides which checklists this user can START (Conduct Audit), and
+        // correctly excludes QA-only templates for store users. A store
+        // user can now view a QA-conducted submission on their own store
+        // (see the History scoping above), but still needs that template's
+        // sections to render it — the "can view" and "can start" checks are
+        // separate concerns and shouldn't share this one filtered list.
+        <SubmissionDetail submission={selectedSubmission} templates={allTemplates} user={user} />
       )}
     </div>
   );
@@ -1143,6 +1179,11 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
     if (!sig1Name.trim() || !sig1Position.trim()) {
       setErrorItemId(null);
       setPhotoError('Signature 1 name and position are required.');
+      return;
+    }
+    if (template.requires_audit_type && (!sig2Name.trim() || !sig2Position.trim())) {
+      setErrorItemId(null);
+      setPhotoError('Signature 2 name and position are required for this checklist.');
       return;
     }
     if (!window.confirm('Are you sure you want to continue?')) return;
@@ -1819,7 +1860,9 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
               <Input placeholder="Enter your position here" value={sig1Position} onChange={e => setSig1Position(e.target.value)} className="h-9 text-sm" />
             </div>
             <div className="space-y-2 border-2 border-slate-200 rounded-lg p-4">
-              <label className="text-sm font-semibold text-slate-700">Signature 2 <span className="text-slate-400 text-xs font-normal">(optional)</span></label>
+              <label className="text-sm font-semibold text-slate-700">
+                Signature 2 {template.requires_audit_type ? <span className="text-red-500">*</span> : <span className="text-slate-400 text-xs font-normal">(optional)</span>}
+              </label>
               <SignaturePad value={sig2Photo} onChange={setSig2Photo} />
               <Input placeholder="Enter your name here" value={sig2Name} onChange={e => setSig2Name(e.target.value)} className="h-9 text-sm" />
               <Input placeholder="Enter your position here" value={sig2Position} onChange={e => setSig2Position(e.target.value)} className="h-9 text-sm" />

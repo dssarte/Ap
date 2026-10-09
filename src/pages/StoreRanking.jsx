@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from "@/components/ui/card";
@@ -86,6 +86,8 @@ async function fetchImageBase64(url) {
 }
 
 export default function StoreRanking() {
+  const [user, setUser] = useState(null);
+  useEffect(() => { base44.auth.me().then(setUser).catch(() => {}); }, []);
   const [selectedBrandId, setSelectedBrandId] = useState('all');
   const [selectedStoreId, setSelectedStoreId] = useState('all');
   const [selectedAuditType, setSelectedAuditType] = useState('all');
@@ -645,6 +647,7 @@ export default function StoreRanking() {
           submissions={chipDetailItem.submissions}
           templatesById={templatesById}
           passThreshold={chipDetailItem.passThreshold}
+          user={user}
           onClose={() => setChipDetailItem(null)}
         />
       )}
