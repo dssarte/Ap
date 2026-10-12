@@ -1,5 +1,7 @@
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import jsPDF from 'jspdf';
+import { base44 } from '@/api/base44Client';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -57,9 +59,21 @@ export function ScoreBadge({ score }) {
 }
 
 const SubmissionDetail = forwardRef(function SubmissionDetail(
-  { submission, templates, user, hideExportButton, onExportingChange },
+  { submission: listedSubmission, templates, user, hideExportButton, onExportingChange },
   ref
 ) {
+  // Dashboards list submissions without their photo lists and notes (see
+  // AUDIT_SUBMISSION_FIELDS in base44Client), so fetch the full row when one
+  // of those is opened. If that fetch fails, fall back to the listed row
+  // rather than spinning forever.
+  const isPartial = listedSubmission.item_photos === undefined;
+  const fullQuery = useQuery({
+    queryKey: ['audit-submission-full', listedSubmission.id],
+    queryFn: () => base44.entities.AuditSubmission.get(listedSubmission.id),
+    enabled: isPartial,
+  });
+  const loadingFull = isPartial && fullQuery.isPending;
+  const submission = isPartial ? { ...listedSubmission, ...(fullQuery.data || {}) } : listedSubmission;
   const template = templates.find(t => t.id === submission.template_id);
   const isQaViewer = user?.user_type === 'admin' || user?.department_name === 'Quality Assurance';
   const isMysteryShopperTemplate = normalizeChecklistCategory(template?.checklist_category) === 'mystery_shopper';
@@ -93,6 +107,9 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
   };
 
   const handleExportPdf = async () => {
+    // Exporting before the full row arrives would print a PDF without its
+    // photos and notes.
+    if (loadingFull) return;
     setExportingPdf(true);
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -471,6 +488,14 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
   };
 
   useImperativeHandle(ref, () => ({ exportPdf: handleExportPdf, exportingPdf }));
+
+  if (loadingFull) {
+    return (
+      <div className="flex justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

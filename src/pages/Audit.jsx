@@ -794,6 +794,10 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
   // no GPS requirement on photos, no location line in the photo stamp, and
   // no submitter location saved with the submission.
   const isQaChecklist = !!template.requires_audit_type;
+  // QA audits routinely need far more Deviations/Updates photos than a
+  // daily store checklist (a single report can run 30+ deviations and 100+
+  // updates); store checklists keep the original cap.
+  const photoSectionLimit = isQaChecklist ? 300 : 10;
   const isMysteryShopper = template.checklist_category === 'mystery_shopper';
   const [savingDraft, setSavingDraft] = useState(false);
   const { toast } = useToast();
@@ -1003,21 +1007,28 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
 
   const uploadMultiplePhotos = async (files, setter, setUploading, currentCount = 0) => {
     const selected = Array.from(files);
-    if (currentCount + selected.length > 10) {
-      setPhotoError('Each audit photo section can contain up to 10 images.');
+    if (currentCount + selected.length > photoSectionLimit) {
+      setPhotoError(`Each audit photo section can contain up to ${photoSectionLimit} images.`);
       return;
     }
     setUploading(true);
     setPhotoError('');
     try {
-      const urls = await Promise.all(
-        selected.map(async (file) => {
-        const compressed = await compressImage(file);
-        const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
-        return file_url;
-        })
-      );
-      setter(prev => [...prev, ...urls]);
+      // A few at a time, not all at once — decoding and compressing 100+
+      // full-size photos in parallel can run a phone browser out of memory.
+      // Each finished batch is kept, so a failure partway through doesn't
+      // throw away the photos that already uploaded.
+      const BATCH_SIZE = 4;
+      for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+        const urls = await Promise.all(
+          selected.slice(i, i + BATCH_SIZE).map(async (file) => {
+            const compressed = await compressImage(file);
+            const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
+            return file_url;
+          })
+        );
+        setter(prev => [...prev, ...urls]);
+      }
     } catch (error) {
       setPhotoError(error?.message || 'Photo upload failed.');
     } finally {
@@ -1263,7 +1274,11 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
           ...payload,
           signature1_photo_url: storedSig1,
           signature2_photo_url: storedSig2,
-          submission_date: payload.submission_date || new Date().toISOString(),
+          // A finalized draft keeps the date it was first saved as a draft
+          // (when the audit was actually conducted), not the submit time.
+          submission_date: payload.submission_date
+            || (existingSubmission?.is_draft ? (existingSubmission.submission_date || existingSubmission.created_date) : null)
+            || new Date().toISOString(),
           created_by: user.email,
         };
         const generatedTickets = [];

@@ -167,7 +167,7 @@ export default function QADashboard() {
 
   const { data: submissions = [], isLoading } = useQuery({
     queryKey: ['qa-dashboard-submissions', dateFrom, dateTo, qaTemplateIdList.join(',')],
-    queryFn: () => base44.audit.listSubmissions({ dateFrom, dateTo, templateIds: qaTemplateIdList, maxRows: 25000 }),
+    queryFn: () => base44.audit.listSubmissions({ dateFrom, dateTo, templateIds: qaTemplateIdList, maxRows: 25000, fields: 'summaryWithAnswers' }),
     enabled: !!user && qaTemplateIdList.length > 0,
   });
 
