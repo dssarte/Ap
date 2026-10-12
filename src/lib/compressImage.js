@@ -1,17 +1,23 @@
 // Downscale + re-encode an image file to a small JPEG before upload.
-// Phone photos are often 3-5MB; this brings them to ~100-300KB with no visible loss
-// for audit/evidence purposes. Smaller uploads = less storage and faster saves.
+// Phone photos are often 3-5MB; this brings them to roughly 60-120KB.
+// 1024px keeps handwriting and small print (temperature logs, labels,
+// receipts, POS books) readable when zoomed, while storing about a third
+// less than the previous 1280px — photo storage is billed per GB, and audit
+// photos are kept for years. Going much lower makes text in evidence photos
+// hard to read.
 //
 // Falls back to the original file if the browser can't decode it (e.g. HEIC).
 
-const MAX_DIMENSION = 1280; // longest edge in px
+const MAX_DIMENSION = 1024; // longest edge in px
 const JPEG_QUALITY = 0.7;
 
 export async function compressImage(file, { maxDimension = MAX_DIMENSION, quality = JPEG_QUALITY } = {}) {
   if (!file || !file.type?.startsWith('image/')) return file;
 
-  // Already small enough — skip the canvas round-trip.
-  if (file.size <= 250 * 1024) return file;
+  // Already about the size a resized photo would be — skip the canvas
+  // round-trip. Kept low so in-app camera captures (often 150-250KB at
+  // 1280px) still get resized instead of being uploaded as-is.
+  if (file.size <= 120 * 1024) return file;
 
   try {
     const url = URL.createObjectURL(file);
