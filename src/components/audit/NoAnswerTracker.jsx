@@ -9,6 +9,8 @@ import { auditBusinessDayKey } from '@/lib/dateUtils';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
+import { usePagination } from '@/hooks/usePagination';
+import TablePagination from '@/components/TablePagination';
 
 const PIE_COLORS = ['#ef4444', '#f59e0b', '#a855f7', '#3b82f6', '#10b981', '#ec4899', '#64748b', '#0ea5e9', '#eab308', '#8b5cf6'];
 
@@ -18,36 +20,59 @@ function AnswerBadge({ value }) {
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${cls}`}>{value === 'NA' ? 'N/A' : value}</span>;
 }
 
-export default function NoAnswerTracker({ allowedStores = null, showFilters = true, initialDateFrom = null, initialDateTo = null }) {
+export default function NoAnswerTracker({
+  allowedStores = null,
+  showFilters = true,
+  initialDateFrom = null,
+  initialDateTo = null,
+  // A page that already has the submissions loaded (Audit Dashboard) passes
+  // them in with its date range: this skips the tracker's own fetches, date
+  // inputs and brand/store filters, since the page's filters already apply.
+  submissions: providedSubmissions = null,
+  templates: providedTemplates = null,
+  dateFrom: providedDateFrom = null,
+  dateTo: providedDateTo = null,
+  loading: providedLoading = false,
+}) {
+  const isControlled = providedSubmissions != null;
   const [selectedBrandId, setSelectedBrandId] = useState('all');
   const [selectedStore, setSelectedStore] = useState('all');
-  const [dateFrom, setDateFrom] = useState(() => initialDateFrom || moment().utcOffset(8).format('YYYY-MM-DD'));
-  const [dateTo, setDateTo] = useState(() => initialDateTo || moment().utcOffset(8).format('YYYY-MM-DD'));
+  const [ownDateFrom, setDateFrom] = useState(() => initialDateFrom || moment().utcOffset(8).format('YYYY-MM-DD'));
+  const [ownDateTo, setDateTo] = useState(() => initialDateTo || moment().utcOffset(8).format('YYYY-MM-DD'));
+  const dateFrom = isControlled ? providedDateFrom : ownDateFrom;
+  const dateTo = isControlled ? providedDateTo : ownDateTo;
 
-  const { data: submissions = [], isLoading } = useQuery({
+  const { data: fetchedSubmissions = [], isLoading: loadingOwnSubmissions } = useQuery({
     queryKey: ['audit-submissions-no-tracker', dateFrom, dateTo, allowedStores?.join('|') || 'all'],
     queryFn: () => base44.audit.listSubmissions({
       dateFrom,
       dateTo,
       stores: allowedStores,
       maxRows: 10000,
+      fields: 'summaryWithAnswers',
     }),
+    enabled: !isControlled,
   });
+  const submissions = isControlled ? providedSubmissions : fetchedSubmissions;
+  const isLoading = isControlled ? providedLoading : loadingOwnSubmissions;
 
-  const { data: templates = [] } = useQuery({
+  const { data: fetchedTemplates = [] } = useQuery({
     queryKey: ['audit-templates-no-tracker'],
     queryFn: () => base44.entities.AuditTemplate.list('-created_date', 500),
+    enabled: !providedTemplates,
   });
+  const templates = providedTemplates || fetchedTemplates;
 
   const { data: brands = [] } = useQuery({
     queryKey: ['audit-brands-no-tracker'],
     queryFn: () => base44.entities.Brand.list('-created_date', 500),
+    enabled: !isControlled,
   });
 
   const { data: allStores = [] } = useQuery({
     queryKey: ['audit-stores-no-tracker'],
     queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 500),
-    enabled: !!allowedStores,
+    enabled: !!allowedStores && !isControlled,
   });
 
   // Brands visible in the filter — narrowed to only the brands tied to
@@ -148,6 +173,10 @@ export default function NoAnswerTracker({ allowedStores = null, showFilters = tr
       .sort((a, b) => b.day.localeCompare(a.day) || a.store.localeCompare(b.store));
   }, [filtered]);
 
+  // Only the on-screen table is paginated — the pie chart and the Excel
+  // export still cover every row.
+  const dayPagination = usePagination(dayRows);
+
   const handleExport = () => {
     const summarySheet = {
       name: 'Summary',
@@ -184,11 +213,14 @@ export default function NoAnswerTracker({ allowedStores = null, showFilters = tr
     <Card className="border border-slate-200 shadow-sm">
       <CardHeader className="pb-2 pt-5 px-5">
         <p className="font-bold text-slate-800 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-red-500" /> NO Answer Tracker</p>
-        <p className="text-xs text-slate-500">Monitor checklist items marked NO per day, per store, to see if they get resolved to YES</p>
+        <p className="text-xs text-slate-500">
+          Monitor checklist items marked NO per day, per store, to see if they get resolved to YES
+          {isControlled && ' — uses the dashboard\'s date range and filters above.'}
+        </p>
       </CardHeader>
       <CardContent className="px-5 pb-5 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          {showFilters && (
+          {showFilters && !isControlled && (
             <>
               <Select value={selectedBrandId} onValueChange={setSelectedBrandId}>
                 <SelectTrigger className="w-48 h-9">
@@ -210,13 +242,15 @@ export default function NoAnswerTracker({ allowedStores = null, showFilters = tr
               </Select>
             </>
           )}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-[#1fd655]" />
-            <span className="hidden text-sm text-slate-400 sm:inline">–</span>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-[#1fd655]" />
-          </div>
+          {!isControlled && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-[#1fd655]" />
+              <span className="hidden text-sm text-slate-400 sm:inline">–</span>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="border border-slate-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-[#1fd655]" />
+            </div>
+          )}
           <ExcelExportButton onClick={handleExport} disabled={noItemColumns.length === 0} label="Export Report" className="sm:ml-auto" />
         </div>
 
@@ -274,7 +308,7 @@ export default function NoAnswerTracker({ allowedStores = null, showFilters = tr
                 </tr>
               </thead>
               <tbody>
-                {dayRows.map(row => (
+                {dayPagination.pageItems.map(row => (
                   <tr key={`${row.day}::${row.store}`} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-slate-800 whitespace-nowrap sticky left-0 bg-white">
                       {moment(row.day).format('MMM D, YYYY')}
@@ -294,6 +328,7 @@ export default function NoAnswerTracker({ allowedStores = null, showFilters = tr
               </tbody>
             </table>
             </div>
+            <TablePagination page={dayPagination.page} totalPages={dayPagination.totalPages} onPageChange={dayPagination.setPage} />
           </div>
         )}
       </CardContent>

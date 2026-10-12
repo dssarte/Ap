@@ -18,7 +18,6 @@ import {
   CalendarCheck,
   ChevronDown,
   CircleHelp,
-  ClipboardCheck,
   ClipboardList,
   FileBarChart,
   Gauge,
@@ -157,13 +156,14 @@ export default function Layout({ children, currentPageName }) {
   let navItems = [{ name: 'Overview', icon: Home, page: 'Home', badge: hasUnreadTicketUpdates ? 1 : null }];
 
   if (user?.user_type === 'store_manager') {
+    // Store Analytics already covers their stores' audits — Audit Dashboard
+    // repeated the same sections, so store managers only get the former.
     if (user.assigned_stores?.length) {
       navItems.push(
         { name: 'Approval Queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null },
         { name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' },
         { name: 'Daily Summary', icon: CalendarCheck, page: 'DailySummary' },
         { name: 'Store Analytics', icon: BarChart3, page: 'StoreAuditAnalytics' },
-        { name: 'Audit Dashboard', icon: ClipboardCheck, page: 'AuditDashboard' },
       );
     }
   } else {
@@ -185,8 +185,7 @@ export default function Layout({ children, currentPageName }) {
         { name: 'Administration', icon: Settings, page: 'Admin' },
       );
     }
-    // Director gets the same workspace tabs as admin, minus Administration
-    // and Store Ranking.
+    // Director gets the same workspace tabs as admin, minus Administration.
     if (user?.user_type === 'director') {
       navItems.push(
         { name: 'Reports', icon: FileBarChart, page: 'Reports' },
@@ -194,22 +193,22 @@ export default function Layout({ children, currentPageName }) {
         { name: 'Daily Summary', icon: CalendarCheck, page: 'DailySummary' },
         { name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' },
         { name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' },
+        { name: 'Store Ranking', icon: Trophy, page: 'StoreRanking' },
+        { name: 'QA Dashboard', icon: Gauge, page: 'QADashboard' },
       );
     }
     if ((isQA || hasAuditAssignments) && user?.user_type !== 'director') {
       navItems.push({ name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' });
     }
     if (user?.store_name) navItems.push({ name: 'Store Analytics', icon: BarChart3, page: 'StoreAuditAnalytics' });
-    if (isQA) {
+    // Directors already got these in their own block above — skipped here
+    // so a director in the QA department doesn't get duplicate tabs.
+    if (isQA && user?.user_type !== 'director') {
       navItems.push({ name: 'Store Ranking', icon: Trophy, page: 'StoreRanking' });
-      // Quality Assurance department gets the new executive QA Dashboard;
-      // admins keep the existing operational Audit Dashboard (used for
-      // managing/reviewing all submissions, not just QA's own view).
-      navItems.push(
-        isAdmin
-          ? { name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' }
-          : { name: 'QA Dashboard', icon: Gauge, page: 'QADashboard' }
-      );
+      // Admins also keep the operational Audit Dashboard (managing/reviewing
+      // all submissions), alongside the executive QA Dashboard.
+      if (isAdmin) navItems.push({ name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' });
+      navItems.push({ name: 'QA Dashboard', icon: Gauge, page: 'QADashboard' });
     }
   }
   navItems.push({ name: 'Help & manual', icon: BookOpen, page: 'UserManual' });

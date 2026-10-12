@@ -55,6 +55,7 @@ export default function DailySummary() {
       dateTo: selectedDate,
       stores: isStoreManager ? assignedStores : null,
       maxRows: 5000,
+      fields: 'summary',
     }),
     enabled: !!user && canAccess && (!isStoreManager || assignedStores.length > 0),
   });

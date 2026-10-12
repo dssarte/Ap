@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +63,10 @@ function AssignedStoresCell({ stores, allStores, brands }) {
 const matchesUser = (user, q) =>
   user.display_name?.toLowerCase().includes(q) || user.full_name?.toLowerCase().includes(q) || user.email?.toLowerCase().includes(q);
 
+// Legacy 'approver' accounts are shown as Dept Head • Approver, so they
+// filter under Department Head too.
+const userCategory = (u) => (u.user_type === 'approver' ? 'department_head' : (u.user_type || 'user'));
+
 export default function UserManager() {
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -87,7 +91,20 @@ export default function UserManager() {
   const [deleting, setDeleting] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(null);
   const { toast } = useToast();
-  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(users, matchesUser);
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const departmentOptions = useMemo(
+    () => [...new Set(users.map(u => u.department_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [users]
+  );
+  const filteredUsers = useMemo(
+    () => users.filter(u =>
+      (categoryFilter === 'all' || userCategory(u) === categoryFilter)
+      && (departmentFilter === 'all' || u.department_name === departmentFilter)
+    ),
+    [users, categoryFilter, departmentFilter]
+  );
+  const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(filteredUsers, matchesUser);
 
   useEffect(() => {
     loadData();
@@ -336,6 +353,9 @@ HelpDesk Support Team`
     if (user.user_type === 'store_manager') {
       return <Badge className="bg-teal-100 text-teal-700 border-0 font-semibold uppercase text-xs">Store Manager</Badge>;
     }
+    if (user.user_type === 'director') {
+      return <Badge className="bg-indigo-100 text-indigo-700 border-0 font-semibold uppercase text-xs">Director</Badge>;
+    }
     return <Badge className="bg-slate-100 text-slate-600 border-0 font-semibold uppercase text-xs">User</Badge>;
   };
 
@@ -536,7 +556,27 @@ HelpDesk Support Team`
           </div>
         ) : (
           <>
-          <AdminSearchBar value={search} onChange={setSearch} placeholder="Search users..." />
+          <div className="mt-4 mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <AdminSearchBar value={search} onChange={setSearch} placeholder="Search users..." wrapperClassName="relative flex-1" />
+            <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}>
+              <SelectTrigger className="sm:w-48"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All categories</SelectItem>
+                <SelectItem value="user">User</SelectItem>
+                <SelectItem value="department_head">Department Head</SelectItem>
+                <SelectItem value="store_manager">Store Manager</SelectItem>
+                <SelectItem value="director">Director</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={departmentFilter} onValueChange={(v) => { setDepartmentFilter(v); setPage(1); }}>
+              <SelectTrigger className="sm:w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {departmentOptions.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-3 md:hidden">
             {pageItems.map(user => (
               <article key={user.id} className={`rounded-xl border border-slate-200 p-4 shadow-sm ${isDisabled(user) ? 'bg-slate-50 opacity-75' : 'bg-white'}`}>
@@ -563,7 +603,7 @@ HelpDesk Support Team`
                 </div>
               </article>
             ))}
-            {filteredCount === 0 && <p className="py-8 text-center text-sm text-slate-500">{users.length === 0 ? 'No users yet' : `No users match "${search}"`}</p>}
+            {filteredCount === 0 && <p className="py-8 text-center text-sm text-slate-500">{users.length === 0 ? 'No users yet' : 'No users match your search or filters'}</p>}
           </div>
           <div className="hidden md:block">
           <Table>
@@ -632,7 +672,7 @@ HelpDesk Support Team`
               {filteredCount === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-slate-500 py-8">
-                    {users.length === 0 ? 'No users yet' : `No users match "${search}"`}
+                    {users.length === 0 ? 'No users yet' : 'No users match your search or filters'}
                   </TableCell>
                 </TableRow>
               )}
