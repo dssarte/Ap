@@ -790,6 +790,10 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
   // Audit Type) — the daily operational checklists are meant to be quick
   // and one-shot, so they don't get a draft option.
   const isDraftEligible = !!template.requires_audit_type;
+  // QA-conducted checklists (Ask Audit Type on) don't record location —
+  // no GPS requirement on photos, no location line in the photo stamp, and
+  // no submitter location saved with the submission.
+  const isQaChecklist = !!template.requires_audit_type;
   const isMysteryShopper = template.checklist_category === 'mystery_shopper';
   const [savingDraft, setSavingDraft] = useState(false);
   const { toast } = useToast();
@@ -1190,8 +1194,9 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
     setPhotoError('');
     setErrorItemId(null);
     setSaving(true);
-    // Capture the submitter's location (reverse-geocoded to an address)
-    const submitLocation = await getLocation().catch(() => null);
+    // Capture the submitter's location (reverse-geocoded to an address) —
+    // not for QA checklists, which don't record location at all.
+    const submitLocation = isQaChecklist ? null : await getLocation().catch(() => null);
     const yes = weightedCount(allItems, 'YES');
     const no = weightedCount(allItems, 'NO');
     const na = weightedCount(allItems, 'NA');
@@ -1909,7 +1914,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
       </div>
 
       {cameraTarget && (
-        <CameraCapture onCapture={handleCameraCapture} onClose={() => setCameraTarget(null)} />
+        <CameraCapture onCapture={handleCameraCapture} onClose={() => setCameraTarget(null)} withLocation={!isQaChecklist} />
       )}
 
       {uploadPreviewTarget && (
@@ -1920,6 +1925,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
           itemKey={uploadPreviewTarget.itemKey}
           onDone={handleUploadPreviewDone}
           onClose={() => setUploadPreviewTarget(null)}
+          withLocation={!isQaChecklist}
         />
       )}
     </div>

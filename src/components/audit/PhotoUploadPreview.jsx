@@ -9,16 +9,17 @@ import { supabase } from '@/api/supabaseClient';
 // Shown after picking photo(s) from the device gallery/file picker. Mirrors
 // CameraCapture's location-gating: the confirm/upload action stays disabled
 // until GPS resolves, and the same timestamp + location stamp gets burned
-// into each photo before it's handed off to the caller's upload function.
+// into each photo before it's handed off to the caller's upload function
+// (withLocation=false skips GPS entirely and stamps the timestamp alone).
 // Also blocks re-using the exact same photo file across different days for
 // the same checklist item/store, since that's easy to do from a gallery
 // (unlike a live camera capture, which is always a genuinely new file).
-export default function PhotoUploadPreview({ files, storeName, templateId, itemKey, onDone, onClose }) {
+export default function PhotoUploadPreview({ files, storeName, templateId, itemKey, onDone, onClose, withLocation = true }) {
   const canvasRef = useRef(null);
   const [index, setIndex] = useState(0);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [location, setLocation] = useState(null);
-  const [locatingGps, setLocatingGps] = useState(true);
+  const [locatingGps, setLocatingGps] = useState(withLocation);
   const [locationFailed, setLocationFailed] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [stamped, setStamped] = useState([]);
@@ -48,7 +49,7 @@ export default function PhotoUploadPreview({ files, storeName, templateId, itemK
   };
 
   useEffect(() => {
-    fetchLocation();
+    if (withLocation) fetchLocation();
     getServerTime().then(setServerTime);
   }, []);
 
@@ -126,22 +127,21 @@ export default function PhotoUploadPreview({ files, storeName, templateId, itemK
         year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', hour12: true,
       });
-      const lineTwo = location || 'Location unavailable';
+      const lines = withLocation ? [stamp, location || 'Location unavailable'] : [stamp];
       const fontPx = Math.max(16, Math.round(canvas.height * 0.035));
       ctx.font = `${fontPx}px sans-serif`;
       const padX = Math.round(fontPx * 0.4);
       const padY = Math.round(fontPx * 0.3);
       const lineHeight = Math.round(fontPx * 1.25);
-      const textW = Math.max(ctx.measureText(stamp).width, ctx.measureText(lineTwo).width);
-      const boxH = lineHeight * 2 + padY * 2;
+      const textW = Math.max(...lines.map(line => ctx.measureText(line).width));
+      const boxH = lineHeight * lines.length + padY * 2;
       const boxY = canvas.height - boxH - Math.round(canvas.height * 0.02);
       const boxX = Math.round(canvas.height * 0.02);
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(boxX, boxY, textW + padX * 2, boxH);
       ctx.fillStyle = '#ffffff';
       ctx.textBaseline = 'middle';
-      ctx.fillText(stamp, boxX + padX, boxY + padY + lineHeight / 2);
-      ctx.fillText(lineTwo, boxX + padX, boxY + padY + lineHeight * 1.5);
+      lines.forEach((line, i) => ctx.fillText(line, boxX + padX, boxY + padY + lineHeight * (i + 0.5)));
 
       const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
       const blob = await (await fetch(dataUrl)).blob();
@@ -179,20 +179,22 @@ export default function PhotoUploadPreview({ files, storeName, templateId, itemK
         <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black sm:aspect-video sm:flex-none">
           {previewUrl && <img src={previewUrl} alt="Preview" className="max-h-full max-w-full object-contain" />}
           <div className="absolute top-3 left-3 rounded bg-black/55 px-2 py-1 text-xs text-white">
-            <div className="flex items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5" />
-              {locationFailed ? (
-                <>
-                  <span>Activate Location / Check Internet</span>
-                  <button type="button" onClick={() => fetchLocation()} className="ml-1 underline decoration-white/60 underline-offset-2 hover:decoration-white">
-                    Retry
-                  </button>
-                </>
-              ) : (
-                location || 'Locating...'
-              )}
-            </div>
-            <div className="mt-0.5 pl-5">
+            {withLocation && (
+              <div className="flex items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5" />
+                {locationFailed ? (
+                  <>
+                    <span>Activate Location / Check Internet</span>
+                    <button type="button" onClick={() => fetchLocation()} className="ml-1 underline decoration-white/60 underline-offset-2 hover:decoration-white">
+                      Retry
+                    </button>
+                  </>
+                ) : (
+                  location || 'Locating...'
+                )}
+              </div>
+            )}
+            <div className={withLocation ? 'mt-0.5 pl-5' : ''}>
               {(serverTime || new Date()).toLocaleString('en-PH', {
                 timeZone: 'Asia/Manila',
                 year: 'numeric', month: '2-digit', day: '2-digit',
