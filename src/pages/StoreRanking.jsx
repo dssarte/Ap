@@ -139,7 +139,7 @@ export default function StoreRanking() {
   // score straight into the submissions behind it.
   const { data: rawSubmissions = [], isLoading } = useQuery({
     queryKey: ['audit-store-ranking-raw-submissions', dateFrom, dateTo, qaTemplateIdList.join(',')],
-    queryFn: () => base44.audit.listSubmissions({ dateFrom, dateTo, templateIds: qaTemplateIdList, maxRows: 5000 }),
+    queryFn: () => base44.audit.listSubmissions({ dateFrom, dateTo, templateIds: qaTemplateIdList, maxRows: 5000, fields: 'summaryWithAnswers' }),
     enabled: Boolean(dateFrom && dateTo) && qaTemplateIdList.length > 0,
   });
 

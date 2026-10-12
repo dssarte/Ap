@@ -208,6 +208,19 @@ async function maybeSendAutoResponse(ticket) {
   }
 }
 
+// listSubmissions `fields` options. Dashboards only need scores/counts
+// (plus `answers`, for NO findings and the Front Cover breakdown). A QA
+// submission's photo URL lists, NO reasons and free-text notes make it many
+// times larger and are only needed when one submission is opened —
+// SubmissionDetail fetches that full row on demand. Every column here must
+// exist on audit_submissions, or PostgREST rejects the whole request.
+const AUDIT_SUMMARY_COLUMNS = 'id,created_date,updated_date,template_id,template_title,submission_date,business_date,submitted_by_email,submitted_by_name,brand,location,score,total_items,yes_count,no_count,na_count,audit_type,visit_number,commitment_date,is_draft';
+const AUDIT_SUBMISSION_FIELDS = {
+  full: '*',
+  summary: AUDIT_SUMMARY_COLUMNS,
+  summaryWithAnswers: `${AUDIT_SUMMARY_COLUMNS},answers`,
+};
+
 const auditData = {
   async listGeneratedTickets({ dateFrom = null, dateTo = null, maxRows = 25000 } = {}) {
     const pageSize = 1000;
@@ -259,7 +272,8 @@ const auditData = {
   // store's daily operational checklists too and discarding most of them
   // client-side — those vastly outnumber QA submissions, so skipping them
   // server-side is what keeps a wide date range from timing out.
-  async listSubmissions({ dateFrom = null, dateTo = null, stores = null, templateId = null, templateIds = null, maxRows = 25000 } = {}) {
+  async listSubmissions({ dateFrom = null, dateTo = null, stores = null, templateId = null, templateIds = null, maxRows = 25000, fields = 'full' } = {}) {
+    const columns = AUDIT_SUBMISSION_FIELDS[fields] || '*';
     const pageSize = 1000;
     const rows = [];
     // Request one extra calendar day so this source remains compatible with
@@ -279,7 +293,7 @@ const auditData = {
 
     while (rows.length < maxRows) {
       const limit = Math.min(pageSize, maxRows - rows.length);
-      const { data, error } = await supabase.rpc('list_audit_submissions', {
+      let request = supabase.rpc('list_audit_submissions', {
         p_date_from: dateFrom || null,
         p_date_to: databaseDateTo,
         p_store_names: stores?.length ? stores : null,
@@ -290,6 +304,8 @@ const auditData = {
         p_before_date: cursor?.date || null,
         p_before_id: cursor?.id || null,
       });
+      if (columns !== '*') request = request.select(columns);
+      const { data, error } = await request;
 
       if (error) {
         if (!isMissingRpc(error)) throw error;
@@ -297,7 +313,7 @@ const auditData = {
         // Backward-compatible fallback while the production migration is being
         // deployed. It still filters and paginates at the database boundary
         // (OFFSET-based — this branch is only hit pre-migration, briefly).
-        let query = supabase.from('audit_submissions').select('*');
+        let query = supabase.from('audit_submissions').select(columns);
         if (dateFrom) query = query.gte('submission_date', new Date(`${dateFrom}T00:00:00+08:00`).toISOString());
         if (databaseDateTo) {
           const exclusiveEnd = new Date(`${databaseDateTo}T00:00:00+08:00`);

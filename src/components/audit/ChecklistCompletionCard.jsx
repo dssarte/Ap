@@ -25,6 +25,9 @@ export default function ChecklistCompletionCard({
   // as a fallback for older callers that don't have full records handy.
   stores = [],
   storeNames = [],
+  // While the caller's submissions are still loading, show a spinner rather
+  // than a 0% rate that would only be corrected once the data arrives.
+  loading = false,
 }) {
   const [showManager, setShowManager] = useState(false);
   const [breakdownDay, setBreakdownDay] = useState('');
@@ -171,6 +174,11 @@ export default function ChecklistCompletionCard({
         </CardContent>
       )}
 
+      {loading ? (
+        <CardContent className="px-5 pb-5">
+          <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+        </CardContent>
+      ) : (
       <CardContent className="px-5 pb-5 space-y-4">
         <div>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Overall Completion</p>
@@ -264,6 +272,7 @@ export default function ChecklistCompletionCard({
           </div>
         )}
       </CardContent>
+      )}
     </Card>
   );
 }
