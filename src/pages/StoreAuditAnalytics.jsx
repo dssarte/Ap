@@ -101,6 +101,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
       dateTo: today,
       stores: storeNames,
       maxRows: 10000,
+      fields: 'summaryWithAnswers',
     }),
     enabled: storeNames.length > 0,
   });
@@ -108,7 +109,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
   // All active templates available for checklist completion tracking. Kept
   // as full rows (not column-trimmed) — SubmissionDetail's modal reads
   // template.sections off this same list to render a submission's checklist.
-  const { data: allTemplates = [] } = useQuery({
+  const { data: allTemplates = [], isLoading: loadingAllTemplates } = useQuery({
     queryKey: ['audit-templates-active-analytics'],
     queryFn: () => base44.entities.AuditTemplate.filter({ is_active: true }, '-created_date', 100),
     enabled: storeNames.length > 0,
@@ -154,7 +155,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
   });
 
   // Global checklist completion config (admin-controlled, shared across all store users)
-  const { data: configRecords = [] } = useQuery({
+  const { data: configRecords = [], isLoading: loadingCompletionConfig } = useQuery({
     queryKey: ['checklist-completion-config'],
     queryFn: () => base44.entities.ChecklistConfig.filter({ config_key: 'default' }, '-updated_date', 10),
   });
@@ -584,6 +585,7 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
             storeNames={storeNames}
             selectedStore={selectedStore}
             onStoreChange={setSelectedStore}
+            loading={loadingAllTemplates || loadingCompletionConfig}
           />
 
           {/* Score Trend */}

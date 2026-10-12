@@ -7,10 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, TrendingUp, TrendingDown, Minus, Store, ClipboardCheck, Trophy, AlertTriangle, CalendarDays, Ticket, CheckCircle2, XCircle, ChevronLeft, ChevronRight, FileText } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, ClipboardCheck, AlertTriangle, CalendarDays, Ticket, CheckCircle2, XCircle, ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, Cell, PieChart, Pie
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, Cell
 } from 'recharts';
 import moment from 'moment';
 import NoAnswerTracker from '@/components/audit/NoAnswerTracker';
@@ -20,10 +20,11 @@ import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
+import { usePagination } from '@/hooks/usePagination';
+import TablePagination from '@/components/TablePagination';
 
 const PASS_THRESHOLD = 75;
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100];
-const COLORS = ['#1fd655', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
 function ScoreBadge({ score }) {
   if (score == null) return <span className="text-slate-300 text-sm">—</span>;
@@ -112,13 +113,20 @@ export default function AuditDashboard() {
     queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 500),
   });
 
-  const { data: submissions = [] } = useQuery({
+  // The summary query above returns quickly, so the page renders before this
+  // (much larger) list arrives — everything built from it (Checklist
+  // Completion, Recent Audits, the NO item analysis, NO Answer Tracker)
+  // shows a spinner until then instead of a misleading empty/0 state.
+  // isPending stays true for every new date range/template filter too,
+  // since each one is a fresh query with no data yet.
+  const { data: submissions = [], isPending: loadingSubmissions } = useQuery({
     queryKey: ['audit-submissions-dashboard', dateFrom, dateTo, selectedTemplateIds.join(',')],
     queryFn: () => base44.audit.listSubmissions({
       dateFrom,
       dateTo,
       templateIds: selectedTemplateIds.length ? selectedTemplateIds : null,
       maxRows: 25000,
+      fields: 'summaryWithAnswers',
     }),
     enabled: !!user,
   });
@@ -151,17 +159,15 @@ export default function AuditDashboard() {
     retry: 2,
   });
 
-  const { data: templates = [], isLoading: loadingTemplates } = useQuery({
-    queryKey: ['audit-templates-all'],
-    queryFn: () => base44.entities.AuditTemplate.filter({ is_active: true }, 'title', 200),
-  });
-
-  // Include inactive templates when resolving historical answer IDs. The
-  // template filter above intentionally remains limited to active templates.
-  const { data: templateDefinitions = [] } = useQuery({
+  // One fetch for every template — inactive ones included, to resolve
+  // historical answer IDs in the NO analysis and NO Answer Tracker. The
+  // template filter only offers active ones, derived from the same list
+  // instead of fetching again.
+  const { data: templateDefinitions = [], isLoading: loadingTemplates } = useQuery({
     queryKey: ['audit-template-definitions-no-analysis'],
     queryFn: () => base44.entities.AuditTemplate.list('title', 500),
   });
+  const templates = useMemo(() => templateDefinitions.filter(t => t.is_active === true), [templateDefinitions]);
 
   // Global checklist completion config (admin-controlled, shared across all store users)
   const { data: configRecords = [] } = useQuery({
@@ -224,22 +230,6 @@ export default function AuditDashboard() {
     if (selectedBrandId === 'all') return base;
     return base.filter(s => s.brand_id === selectedBrandId);
   }, [stores, ownStoreRecords, allowedStores, selectedBrandId]);
-
-  // Store names for NoAnswerTracker's own independent query — it takes a
-  // store-name allowlist, not the dashboard's brand/store filter, so this
-  // narrows it down to just what's currently selected. Without this, the
-  // NO Answer Tracker section stayed unscoped by Brand/Store, showing every
-  // store's data regardless of what the rest of the dashboard was filtered to.
-  const noAnswerTrackerStores = useMemo(() => {
-    if (selectedStoreId !== 'all') {
-      const store = stores.find(s => s.id === selectedStoreId);
-      return store ? [store.store_name] : (allowedStores || []);
-    }
-    if (selectedBrandId !== 'all') {
-      return visibleStores.map(s => s.store_name);
-    }
-    return allowedStores;
-  }, [selectedStoreId, selectedBrandId, stores, visibleStores, allowedStores]);
 
   // Store records (not just names) for the Checklist Completion Rate card —
   // it needs to track completion per store, not just an allowlist.
@@ -358,13 +348,10 @@ export default function AuditDashboard() {
   // OD checklists so the template analysis is complete, same as before.
   const templateRows = dashboardSummary?.templateRows || [];
 
-  const topTemplate = templateRows.find(row => row.avg != null) || null;
-  const bottomTemplate = [...templateRows].reverse().find(row => row.avg != null) || null;
   const noTemplateRows = useMemo(
     () => [...templateRows].sort((a, b) => b.noFindings - a.noFindings || b.tickets - a.tickets || a.title.localeCompare(b.title)),
     [templateRows]
   );
-  const mostNoTemplate = noTemplateRows.find(row => row.noFindings > 0) || null;
 
   const auditItemLookup = useMemo(() => {
     const lookup = new Map();
@@ -472,19 +459,6 @@ export default function AuditDashboard() {
     };
   }, [dailyRows]);
 
-  const auditDistribution = useMemo(
-    () => templateRows.map((row, index) => ({ ...row, fill: COLORS[index % COLORS.length] })),
-    [templateRows]
-  );
-
-  const outcomeDistribution = useMemo(() => {
-    const s = dashboardSummary?.stats;
-    if (!s) return [];
-    return [
-      { name: 'Passing', value: s.passing || 0, fill: '#16a34a' },
-      { name: 'Failing', value: s.failing || 0, fill: '#ef4444' },
-    ].filter(item => item.value > 0);
-  }, [dashboardSummary]);
 
   // Summary stats — computed server-side (see audit_dashboard_summary) so a
   // whole month across every brand doesn't require fetching every raw
@@ -498,8 +472,6 @@ export default function AuditDashboard() {
       failing: s.failing,
       total: s.total,
       stores: s.stores,
-      templatesUsed: s.templatesUsed,
-      tickets: s.tickets,
     };
   }, [dashboardSummary]);
 
@@ -516,6 +488,9 @@ export default function AuditDashboard() {
     [dashboardSummary]
   );
 
+  const noItemPagination = usePagination(noItemRows);
+  const storePagination = usePagination(storeRows);
+
   // All unique template titles visible in current filter
   const visibleTemplates = useMemo(() => {
     const seen = new Set();
@@ -525,26 +500,6 @@ export default function AuditDashboard() {
     }));
     return out;
   }, [storeRows]);
-
-  // Trend over time (grouped by month) — reshape the RPC's flat
-  // (month, templateId, title, avg) rows into the { month, Overall, [title]:
-  // avg } row-per-month shape the chart expects. The RPC already orders by
-  // month then title, so insertion order here stays chronological.
-  const trendData = useMemo(() => {
-    const byMonth = new Map();
-    (dashboardSummary?.trendData || []).forEach(r => {
-      if (!byMonth.has(r.month)) byMonth.set(r.month, { month: r.month });
-      const row = byMonth.get(r.month);
-      row[r.title] = r.avg != null ? parseFloat(Number(r.avg).toFixed(1)) : null;
-    });
-    return Array.from(byMonth.values());
-  }, [dashboardSummary]);
-
-  const trendKeys = useMemo(() => {
-    const keys = new Set();
-    trendData.forEach(d => Object.keys(d).filter(k => k !== 'month').forEach(k => keys.add(k)));
-    return Array.from(keys);
-  }, [trendData]);
 
   const handleExportExcel = () => {
     const brandLabel = selectedBrandId === 'all' ? 'All Brands' : (brands.find(b => b.id === selectedBrandId)?.brand_name || 'All Brands');
@@ -605,20 +560,6 @@ export default function AuditDashboard() {
           row.count,
           row.storeCount,
           row.storeSummary,
-        ]),
-      },
-      {
-        name: 'Daily Summary',
-        title: `Daily Audit Summary — ${brandLabel} · ${dateFrom} to ${dateTo} · NO trend: ${noTrend.direction}`,
-        headers: ['Business Date', 'Average Score', 'Audits', 'Passing', 'Failing', 'NO Findings', 'Generated Tickets'],
-        rows: [...dailyRows].reverse().map(row => [
-          row.day,
-          row.avg != null ? `${row.avg.toFixed(1)}%` : '—',
-          row.audits,
-          row.passing,
-          row.failing,
-          row.noFindings,
-          row.tickets,
         ]),
       },
     ];
@@ -705,14 +646,12 @@ export default function AuditDashboard() {
       ) : (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {[
               { label: 'Overall Avg Score', value: stats.avg != null ? `${stats.avg.toFixed(1)}%` : '—', color: stats.avg != null && stats.avg >= PASS_THRESHOLD ? 'text-green-600' : 'text-red-600' },
               { label: 'Total Audits', value: stats.total, color: 'text-slate-900' },
               { label: 'Passing', value: stats.passing, color: 'text-green-600' },
               { label: 'Failing', value: stats.failing, color: 'text-red-600' },
-              { label: 'Templates Used', value: stats.templatesUsed, color: 'text-blue-600' },
-              { label: 'Audit Tickets', value: stats.tickets, color: 'text-violet-600' },
             ].map(k => (
               <Card key={k.label} className="border border-slate-200 shadow-sm">
                 <CardContent className="p-5">
@@ -723,32 +662,6 @@ export default function AuditDashboard() {
             ))}
           </div>
 
-          {/* Highest and lowest performing templates — hidden per request, restore by removing the `false &&` guard */}
-          {false && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card className="border border-emerald-200 bg-emerald-50/60 shadow-sm">
-              <CardContent className="flex items-center gap-4 p-5">
-                <div className="rounded-xl bg-emerald-100 p-3"><Trophy className="h-6 w-6 text-emerald-700" /></div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Top-performing template</p>
-                  <p className="mt-1 truncate font-bold text-slate-900">{topTemplate?.title || 'No scored template'}</p>
-                  <p className="mt-1 text-sm text-slate-600">{topTemplate ? `${topTemplate.avg.toFixed(1)}% average · ${topTemplate.audits} audit${topTemplate.audits !== 1 ? 's' : ''} · ${topTemplate.tickets} ticket${topTemplate.tickets !== 1 ? 's' : ''}` : '—'}</p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border border-rose-200 bg-rose-50/60 shadow-sm">
-              <CardContent className="flex items-center gap-4 p-5">
-                <div className="rounded-xl bg-rose-100 p-3"><AlertTriangle className="h-6 w-6 text-rose-700" /></div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold uppercase tracking-wide text-rose-700">Bottom-performing template</p>
-                  <p className="mt-1 truncate font-bold text-slate-900">{bottomTemplate?.title || 'No scored template'}</p>
-                  <p className="mt-1 text-sm text-slate-600">{bottomTemplate ? `${bottomTemplate.avg.toFixed(1)}% average · ${bottomTemplate.audits} audit${bottomTemplate.audits !== 1 ? 's' : ''} · ${bottomTemplate.tickets} ticket${bottomTemplate.tickets !== 1 ? 's' : ''}` : '—'}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-          )}
-
           {/* NO findings headline analytics */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Card className="border border-red-200 bg-red-50/60 shadow-sm">
@@ -758,21 +671,17 @@ export default function AuditDashboard() {
                 <p className="mt-1 text-xs text-slate-500">Across all templates in the selected date range</p>
               </CardContent>
             </Card>
-            {/* Template with most NO — hidden per request, restore by removing the `false &&` guard */}
-            {false && (
-            <Card className="border border-amber-200 bg-amber-50/60 shadow-sm">
-              <CardContent className="p-5">
-                <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Template with most NO</p>
-                <p className="mt-2 truncate text-lg font-bold text-slate-900">{mostNoTemplate?.title || 'No NO findings'}</p>
-                <p className="mt-1 text-sm text-slate-600">{mostNoTemplate ? `${mostNoTemplate.noFindings} NO · ${mostNoTemplate.tickets} generated ticket${mostNoTemplate.tickets !== 1 ? 's' : ''}` : '—'}</p>
-              </CardContent>
-            </Card>
-            )}
             <Card className="border border-orange-200 bg-orange-50/60 shadow-sm">
               <CardContent className="p-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-orange-700">Top NO checklist item</p>
-                <p className="mt-2 line-clamp-2 text-lg font-bold text-slate-900">{topNoItem?.label || 'No NO findings'}</p>
-                <p className="mt-1 text-sm text-slate-600">{topNoItem ? `${topNoItem.count} NO · ${topNoItem.storeCount} affected store${topNoItem.storeCount !== 1 ? 's' : ''}` : '—'}</p>
+                {loadingSubmissions ? (
+                  <Loader2 className="mt-3 h-6 w-6 animate-spin text-orange-400" />
+                ) : (
+                  <>
+                    <p className="mt-2 line-clamp-2 text-lg font-bold text-slate-900">{topNoItem?.label || 'No NO findings'}</p>
+                    <p className="mt-1 text-sm text-slate-600">{topNoItem ? `${topNoItem.count} NO · ${topNoItem.storeCount} affected store${topNoItem.storeCount !== 1 ? 's' : ''}` : '—'}</p>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card className={`border shadow-sm ${noTrend.direction === 'rising' ? 'border-red-200 bg-red-50/60' : noTrend.direction === 'falling' ? 'border-green-200 bg-green-50/60' : 'border-slate-200 bg-slate-50/60'}`}>
@@ -802,6 +711,7 @@ export default function AuditDashboard() {
             onClearAll={handleClearAll}
             saving={saving}
             stores={checklistCompletionStores}
+            loading={loadingSubmissions}
           />
 
           {/* NO findings graphs */}
@@ -825,29 +735,6 @@ export default function AuditDashboard() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
-
-            {/* Daily NO Trend — hidden per request, restore by removing the `false &&` guard. The Daily Audit and Ticket Summary card now takes this slot instead. */}
-            {false && (
-            <Card className="border border-slate-200 shadow-sm">
-              <CardHeader className="pb-2 pt-5 px-5">
-                <p className="font-bold text-slate-800 flex items-center gap-2"><TrendingUp className="h-4 w-4 text-red-500" /> Daily NO Trend</p>
-                <p className="text-xs text-slate-500">Shows whether all NO findings are increasing or decreasing across the selected date range.</p>
-              </CardHeader>
-              <CardContent className="px-2 pb-5">
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={dailyRows} margin={{ top: 10, right: 24, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                    <Tooltip labelFormatter={(_, payload) => payload?.[0]?.payload?.day || ''} formatter={(value, name) => [value, name]} />
-                    <Legend />
-                    <Line type="monotone" dataKey="noFindings" name="NO findings" stroke="#dc2626" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="tickets" name="Generated tickets" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-            )}
 
             {/* Daily Audit and Ticket Summary — moved here from further down, into the freed-up Daily NO Trend slot */}
             <Card className="border border-slate-200 shadow-sm">
@@ -902,7 +789,7 @@ export default function AuditDashboard() {
             <CardHeader className="pb-2 pt-5 px-5 flex flex-row items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-3">
                 <p className="font-bold text-slate-800">Recent Audits</p>
-                <p className="text-xs text-slate-400">{filtered.length} total</p>
+                {!loadingSubmissions && <p className="text-xs text-slate-400">{filtered.length} total</p>}
               </div>
             </CardHeader>
             <CardContent className="px-0 pb-4">
@@ -921,7 +808,11 @@ export default function AuditDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pagedSubmissions.length === 0 ? (
+                    {loadingSubmissions ? (
+                      <tr>
+                        <td colSpan={8} className="px-5 py-10"><Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-400" /></td>
+                      </tr>
+                    ) : pagedSubmissions.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="text-center px-5 py-10 text-slate-400 text-sm">No audits in the selected date range.</td>
                       </tr>
@@ -985,27 +876,6 @@ export default function AuditDashboard() {
             </CardContent>
           </Card>
 
-          {/* Daily summary table — moved up, directly below All Template Analytics */}
-          <Card className="border border-slate-200 shadow-sm">
-            <CardHeader className="pb-2 pt-5 px-5"><p className="font-bold text-slate-800">Daily Summary</p></CardHeader>
-            <CardContent className="px-0 pb-4">
-              <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead><tr className="border-b border-slate-100 bg-slate-50">
-                  {['Business date', 'Average', 'Audits', 'Pass', 'Fail', 'NO findings', 'Tickets'].map(header => <th key={header} className={`${header === 'Business date' ? 'text-left' : 'text-center'} px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600`}>{header}</th>)}
-                </tr></thead>
-                <tbody>{[...dailyRows].reverse().map(row => <tr key={row.day} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-semibold text-slate-800">{moment(row.day, 'YYYY-MM-DD').format('MMM D, YYYY')}</td>
-                  <td className="px-4 py-3 text-center"><ScoreBadge score={row.avg} /></td>
-                  <td className="px-4 py-3 text-center">{row.audits}</td>
-                  <td className="px-4 py-3 text-center text-green-600">{row.passing}</td>
-                  <td className="px-4 py-3 text-center text-red-600">{row.failing}</td>
-                  <td className="px-4 py-3 text-center text-amber-600">{row.noFindings}</td>
-                  <td className="px-4 py-3 text-center font-semibold text-violet-600">{row.tickets}</td>
-                </tr>)}</tbody>
-              </table></div>
-            </CardContent>
-          </Card>
-
           {/* Individual checklist-item NO analysis */}
           <Card className="border border-slate-200 shadow-sm">
             <CardHeader className="pb-2 pt-5 px-5">
@@ -1013,7 +883,9 @@ export default function AuditDashboard() {
               <p className="text-xs text-slate-500">Examples include MIS — POS, CCTV, BMD — Pizza Oven, Sales Performance, and Manager Daily Focus. The chart shows the top 15; the complete ranked list and every affected store appear below.</p>
             </CardHeader>
             <CardContent className="px-2 pb-5">
-              {topNoItemChartRows.length ? (
+              {loadingSubmissions ? (
+                <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
+              ) : topNoItemChartRows.length ? (
                 <ResponsiveContainer width="100%" height={Math.max(300, topNoItemChartRows.length * 42)}>
                   <BarChart data={topNoItemChartRows} layout="vertical" margin={{ left: 12, right: 42 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
@@ -1051,9 +923,12 @@ export default function AuditDashboard() {
                     ))}
                   </tr></thead>
                   <tbody>
-                    {noItemRows.map((row, index) => (
+                    {loadingSubmissions && (
+                      <tr><td colSpan={8} className="px-4 py-12"><Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-400" /></td></tr>
+                    )}
+                    {!loadingSubmissions && noItemPagination.pageItems.map((row, index) => (
                       <tr key={row.id} className="border-b border-slate-100 align-top hover:bg-slate-50">
-                        <td className="px-4 py-3 text-center font-semibold text-slate-500">{index + 1}</td>
+                        <td className="px-4 py-3 text-center font-semibold text-slate-500">{noItemPagination.startIndex + index + 1}</td>
                         <td className="px-4 py-3 text-center text-slate-600">
                           <DateOccurrencesBadge labels={row.dateLabels} />
                         </td>
@@ -1065,123 +940,15 @@ export default function AuditDashboard() {
                         <td className="min-w-[320px] px-4 py-3 leading-6 text-slate-600">{row.storeSummary}</td>
                       </tr>
                     ))}
-                    {!noItemRows.length && (
+                    {!loadingSubmissions && !noItemRows.length && (
                       <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-400">No checklist items were marked NO for the selected filters.</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
+              <TablePagination page={noItemPagination.page} totalPages={noItemPagination.totalPages} onPageChange={noItemPagination.setPage} className="px-5 pt-4" />
             </CardContent>
           </Card>
-
-          {/* Template bar graph (Average Score by Audit Template) — hidden per request, restore by removing the `false &&` guard */}
-          {false && (
-          <Card className="border border-slate-200 shadow-sm">
-            <CardHeader className="pb-2 pt-5 px-5">
-              <p className="font-bold text-slate-800 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-[#1fd655]" /> Average Score by Audit Template</p>
-              <p className="text-xs text-slate-500">Every template in the selected date range, ordered from top to bottom.</p>
-            </CardHeader>
-            <CardContent className="px-2 pb-5">
-              <ResponsiveContainer width="100%" height={Math.max(240, templateRows.length * 42)}>
-                <BarChart data={templateRows.map(row => ({ ...row, score: row.avg != null ? Number(row.avg.toFixed(1)) : 0 }))} layout="vertical" margin={{ left: 12, right: 42 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                  <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={value => `${value}%`} />
-                  <YAxis type="category" dataKey="title" width={170} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(value, name) => [name === 'score' ? `${value}%` : value, name === 'score' ? 'Average score' : name]} />
-                  <Bar dataKey="score" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, formatter: value => `${value}%` }}>
-                    {templateRows.map(row => <Cell key={row.id} fill={(row.avg ?? 0) >= PASS_THRESHOLD ? '#16a34a' : '#ef4444'} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-          )}
-
-          {/* Pie graphs (Audit Volume by Template, Pass and Fail Distribution) — hidden per request, restore by removing the `false &&` guard */}
-          {false && (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card className="border border-slate-200 shadow-sm">
-              <CardHeader className="pb-2 pt-5 px-5">
-                <p className="font-bold text-slate-800">Audit Volume by Template</p>
-              </CardHeader>
-              <CardContent className="pb-5">
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie data={auditDistribution} dataKey="audits" nameKey="title" cx="50%" cy="48%" outerRadius={100} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine />
-                    <Tooltip formatter={(value) => [`${value} audit${value !== 1 ? 's' : ''}`, 'Volume']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-            <Card className="border border-slate-200 shadow-sm">
-              <CardHeader className="pb-2 pt-5 px-5">
-                <p className="font-bold text-slate-800">Pass and Fail Distribution</p>
-              </CardHeader>
-              <CardContent className="pb-5">
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie data={outcomeDistribution} dataKey="value" nameKey="name" cx="50%" cy="48%" innerRadius={58} outerRadius={100} label={({ name, value }) => `${name}: ${value}`}>
-                      {outcomeDistribution.map(item => <Cell key={item.name} fill={item.fill} />)}
-                    </Pie>
-                    <Tooltip formatter={(value) => [`${value} audit${value !== 1 ? 's' : ''}`, 'Count']} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-          )}
-
-          {/* Score Trend Chart */}
-          {trendData.length > 1 && (
-            <Card className="border border-slate-200 shadow-sm">
-              <CardHeader className="pb-2 pt-5 px-5">
-                <p className="font-bold text-slate-800 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-[#1fd655]" /> Score Trend Over Time</p>
-              </CardHeader>
-              <CardContent className="px-2 pb-5">
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={trendData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} />
-                    <Tooltip formatter={v => `${v}%`} />
-                    <Legend />
-                    {trendKeys.map((key, i) => (
-                      <Line key={key} type="monotone" dataKey={key}
-                        stroke={COLORS[i % COLORS.length]}
-                        strokeWidth={key === 'Overall' ? 3 : 1.5}
-                        dot={{ r: 3 }} />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Per-store Bar Chart (Average Score by Store) — hidden per request, restore by removing the `false &&` guard */}
-          {false && (
-          <Card className="border border-slate-200 shadow-sm">
-            <CardHeader className="pb-2 pt-5 px-5">
-              <p className="font-bold text-slate-800 flex items-center gap-2"><Store className="w-4 h-4 text-[#1fd655]" /> Average Score by Store</p>
-            </CardHeader>
-            <CardContent className="px-2 pb-5">
-              <ResponsiveContainer width="100%" height={Math.max(220, storeRows.length * 36)}>
-                <BarChart data={storeRows.map(r => ({ name: r.store, score: r.avg != null ? parseFloat(r.avg.toFixed(1)) : 0, isPassing: r.isPassing }))}
-                  layout="vertical" margin={{ left: 8, right: 30 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                  <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} />
-                  <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={v => `${v}%`} />
-                  <Bar dataKey="score" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, formatter: v => `${v}%` }}>
-                    {storeRows.map((r, i) => (
-                      <Cell key={i} fill={r.isPassing == null ? '#cbd5e1' : (r.isPassing ? '#1fd655' : '#ef4444')} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-          )}
 
           {/* Detailed Store Table */}
           <Card className="border border-slate-200 shadow-sm">
@@ -1204,7 +971,7 @@ export default function AuditDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {storeRows.map((r, i) => (
+                    {storePagination.pageItems.map((r, i) => (
                       <tr key={r.store} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/50'} hover:bg-slate-50`}>
                         <td className="px-5 py-3 font-semibold text-slate-800">{r.store}</td>
                         {visibleTemplates.map(title => {
@@ -1232,11 +999,12 @@ export default function AuditDashboard() {
                   </tbody>
                 </table>
               </div>
+              <TablePagination page={storePagination.page} totalPages={storePagination.totalPages} onPageChange={storePagination.setPage} className="px-5 pt-4" />
             </CardContent>
           </Card>
 
           {/* NO Answer Tracker */}
-          <NoAnswerTracker allowedStores={noAnswerTrackerStores} />
+          <NoAnswerTracker submissions={filtered} templates={templateDefinitions} dateFrom={dateFrom} dateTo={dateTo} loading={loadingSubmissions} />
         </>
       )}
       <Dialog open={!!selectedSubmission} onOpenChange={(open) => { if (!open) setSelectedSubmission(null); }}>
