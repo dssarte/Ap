@@ -68,6 +68,9 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
   // via the toggle below — e.g. to generate that condensed version
   // themselves. A store viewer has no toggle: summary is the only option.
   const qualifiesForSummary = !!template?.requires_audit_type && !isMysteryShopperTemplate;
+  // QA checklists don't record location — also hidden for older QA
+  // submissions that captured one before that changed.
+  const showLocation = !!submission.location && !template?.requires_audit_type;
   const [viewMode, setViewMode] = useState('detailed');
   const useSummaryView = qualifiesForSummary && (!isQaViewer || viewMode === 'summary');
   const sectionsWithDeviations = (template?.sections || []).map(sec => {
@@ -148,7 +151,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       const submittedByWrapped = doc.splitTextToSize(submission.submitted_by_name || submission.submitted_by_email || '-', 44);
       const brandWrapped = submission.brand ? doc.splitTextToSize(submission.brand, 53) : [];
 
-      const hasLocation = !!submission.location;
+      const hasLocation = showLocation;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
       const locationWrapped = hasLocation ? doc.splitTextToSize(submission.location, contentW - 26) : [];
@@ -506,7 +509,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
             <p className="text-xs text-slate-500">Date</p>
             <p className="font-semibold text-slate-900">{formatPHDateTime(submission.submission_date || submission.created_date)}</p>
           </div>
-          {submission.location && (
+          {showLocation && (
             <div>
               <p className="text-xs text-slate-500">Location</p>
               <p className="font-semibold text-slate-900">{submission.location}</p>
