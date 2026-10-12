@@ -4,7 +4,10 @@ import { Loader2, Camera, RefreshCw, Check, X, MapPin } from "lucide-react";
 import { getLocation } from '@/lib/getLocation';
 import { getServerTime } from '@/lib/serverTime';
 
-export default function CameraCapture({ onCapture, onClose }) {
+// withLocation=false skips GPS entirely — no permission prompt, the shutter
+// is never blocked waiting for a fix, and the burned-in stamp is the
+// timestamp alone.
+export default function CameraCapture({ onCapture, onClose, withLocation = true }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const fallbackInputRef = useRef(null);
@@ -15,7 +18,7 @@ export default function CameraCapture({ onCapture, onClose }) {
   const [uploading, setUploading] = useState(false);
   const [facingMode, setFacingMode] = useState('environment');
   const [location, setLocation] = useState(null);
-  const [locatingGps, setLocatingGps] = useState(true);
+  const [locatingGps, setLocatingGps] = useState(withLocation);
   const [locationFailed, setLocationFailed] = useState(false);
   const serverTimeRef = useRef(null);
 
@@ -79,7 +82,7 @@ export default function CameraCapture({ onCapture, onClose }) {
       // permission dialog at a time, so firing both at once causes the
       // second prompt (location) to silently fail instead of queueing.
       await startCamera();
-      fetchLocation();
+      if (withLocation) fetchLocation();
     })();
     getServerTime().then((t) => { serverTimeRef.current = t; });
     return stopStream;
@@ -102,22 +105,21 @@ export default function CameraCapture({ onCapture, onClose }) {
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', hour12: true,
     });
-    const lineTwo = location || 'Locating...';
+    const lines = withLocation ? [stamp, location || 'Locating...'] : [stamp];
     const fontPx = Math.max(16, Math.round(canvas.height * 0.035));
     ctx.font = `${fontPx}px sans-serif`;
     const padX = Math.round(fontPx * 0.4);
     const padY = Math.round(fontPx * 0.3);
     const lineHeight = Math.round(fontPx * 1.25);
-    const textW = Math.max(ctx.measureText(stamp).width, ctx.measureText(lineTwo).width);
-    const boxH = lineHeight * 2 + padY * 2;
+    const textW = Math.max(...lines.map(line => ctx.measureText(line).width));
+    const boxH = lineHeight * lines.length + padY * 2;
     const boxY = canvas.height - boxH - Math.round(canvas.height * 0.02);
     const boxX = Math.round(canvas.height * 0.02);
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(boxX, boxY, textW + padX * 2, boxH);
     ctx.fillStyle = '#ffffff';
     ctx.textBaseline = 'middle';
-    ctx.fillText(stamp, boxX + padX, boxY + padY + lineHeight / 2);
-    ctx.fillText(lineTwo, boxX + padX, boxY + padY + lineHeight * 1.5);
+    lines.forEach((line, i) => ctx.fillText(line, boxX + padX, boxY + padY + lineHeight * (i + 0.5)));
 
     setSnapshot(canvas.toDataURL('image/jpeg', 0.92));
   };
@@ -212,7 +214,7 @@ export default function CameraCapture({ onCapture, onClose }) {
                   <RefreshCw className="w-4 h-4 text-slate-700" />
                 </button>
               )}
-              {!snapshot && (
+              {!snapshot && withLocation && (
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded bg-black/55 px-2 py-1 text-xs text-white">
                   <MapPin className="w-3.5 h-3.5" />
                   {locationFailed ? (
