@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Loader2, FileText } from "lucide-react";
 import { formatPHDateTime } from '@/lib/dateUtils';
+import { formatScore } from '@/lib/auditScore';
 import { computeFrontCover } from '@/components/store-ranking/FrontCoverModal';
 import SubmissionDetail from '@/components/audit/SubmissionDetail';
 
@@ -112,7 +113,7 @@ export default function ChipDetailModal({ label, submissions, templatesById, pas
                 <SelectContent>
                   {sorted.map(s => (
                     <SelectItem key={s.id} value={s.id}>
-                      {formatPHDateTime(s.submission_date)} — {s.score != null ? `${s.score}%` : '—'}
+                      {formatPHDateTime(s.submission_date)} — {s.score != null ? formatScore(s.score) : '—'}
                     </SelectItem>
                   ))}
                 </SelectContent>

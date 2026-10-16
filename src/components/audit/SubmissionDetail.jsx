@@ -9,6 +9,8 @@ import { Loader2, FileText } from "lucide-react";
 import { formatPHDateTime, formatPHDateShort } from '@/lib/dateUtils';
 import PhotoThumb from '@/components/audit/PhotoThumb';
 import { normalizeChecklistCategory } from '@/lib/checklistCategories';
+import { formatScore, answerCounts, submissionScore } from '@/lib/auditScore';
+import { drawPdfText, splitPdfText } from '@/lib/pdfText';
 
 const LOGO_URL = '/assets/figaro-logo.png';
 
@@ -55,7 +57,7 @@ function toRomanNumeral(num) {
 export function ScoreBadge({ score }) {
   if (score == null) return null;
   const color = score >= 80 ? 'bg-green-100 text-green-700' : score >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
-  return <Badge className={`${color} border-0 font-bold text-base px-3 py-1`}>{score}%</Badge>;
+  return <Badge className={`${color} border-0 font-bold text-base px-3 py-1`}>{formatScore(score)}</Badge>;
 }
 
 const SubmissionDetail = forwardRef(function SubmissionDetail(
@@ -75,6 +77,8 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
   const loadingFull = isPartial && fullQuery.isPending;
   const submission = isPartial ? { ...listedSubmission, ...(fullQuery.data || {}) } : listedSubmission;
   const template = templates.find(t => t.id === submission.template_id);
+  const counts = answerCounts(submission);
+  const score = submissionScore(submission);
   const isQaViewer = user?.user_type === 'admin' || user?.department_name === 'Quality Assurance';
   const isMysteryShopperTemplate = normalizeChecklistCategory(template?.checklist_category) === 'mystery_shopper';
   // QA/admin default to the full item-by-item scored breakdown (they need
@@ -146,11 +150,11 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       doc.setFontSize(8.5);
       doc.setTextColor(100, 116, 139);
       const deptLabel = (user?.department_name || 'QUALITY ASSURANCE').toUpperCase();
-      doc.text(deptLabel, pageW / 2, y + 10.5, { align: 'center' });
+      drawPdfText(doc, deptLabel, pageW / 2, y + 10.5, { align: 'center' });
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
       doc.setTextColor(30, 30, 30);
-      doc.text(submission.template_title?.toUpperCase() || 'AUDIT FORM', pageW / 2, y + 17, { align: 'center' });
+      drawPdfText(doc, submission.template_title?.toUpperCase() || 'AUDIT FORM', pageW / 2, y + 17, { align: 'center' });
       y += logoH + 5;
       doc.setDrawColor(220, 220, 220);
       doc.line(margin, y, pageW - margin, y);
@@ -165,13 +169,13 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       // container instead of a separate block below it.
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
-      const submittedByWrapped = doc.splitTextToSize(submission.submitted_by_name || submission.submitted_by_email || '-', 44);
-      const brandWrapped = submission.brand ? doc.splitTextToSize(submission.brand, 53) : [];
+      const submittedByWrapped = splitPdfText(doc, submission.submitted_by_name || submission.submitted_by_email || '-', 44);
+      const brandWrapped = submission.brand ? splitPdfText(doc, submission.brand, 53) : [];
 
       const hasLocation = showLocation;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      const locationWrapped = hasLocation ? doc.splitTextToSize(submission.location, contentW - 26) : [];
+      const locationWrapped = hasLocation ? splitPdfText(doc, submission.location, contentW - 26) : [];
       const firstRowLines = Math.max(1, submittedByWrapped.length, brandWrapped.length);
       const firstRowHeight = Math.max(16, 9 + firstRowLines * 4);
       const locationRowHeight = hasLocation ? (locationWrapped.length * 4 + 6) : 0;
@@ -181,13 +185,13 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       doc.setFillColor(248, 250, 252);
       doc.roundedRect(margin, y, contentW, boxHeight, 2, 2, 'FD');
 
-      const scoreColor = submission.score >= 80 ? [34, 197, 94] : submission.score >= 50 ? [234, 179, 8] : [239, 68, 68];
+      const scoreColor = score >= 80 ? [34, 197, 94] : score >= 50 ? [234, 179, 8] : [239, 68, 68];
       doc.setFillColor(...scoreColor);
       doc.roundedRect(margin + 2, y + 2, 22, 12, 2, 2, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
-      doc.text(`${submission.score}%`, margin + 13, y + 9.5, { align: 'center' });
+      doc.text(formatScore(score), margin + 13, y + 9.5, { align: 'center' });
 
       doc.setTextColor(80, 80, 80);
       doc.setFont('helvetica', 'normal');
@@ -195,7 +199,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       doc.text('Submitted by', margin + 28, y + 5);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
-      doc.text(submittedByWrapped, margin + 28, y + 10);
+      drawPdfText(doc, submittedByWrapped, margin + 28, y + 10);
 
       if (submission.brand) {
         doc.setFont('helvetica', 'normal');
@@ -204,7 +208,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         doc.text('Branch / Brand', margin + 75, y + 5);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
-        doc.text(brandWrapped, margin + 75, y + 10);
+        drawPdfText(doc, brandWrapped, margin + 75, y + 10);
       }
 
       doc.setFont('helvetica', 'normal');
@@ -222,11 +226,11 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
         doc.setTextColor(34, 197, 94);
-        doc.text(`YES: ${submission.yes_count}`, pageW - margin - 6, y + 5, { align: 'right' });
+        doc.text(`YES: ${counts.yes}`, pageW - margin - 6, y + 5, { align: 'right' });
         doc.setTextColor(239, 68, 68);
-        doc.text(`NO: ${submission.no_count}`, pageW - margin - 6, y + 10, { align: 'right' });
+        doc.text(`NO: ${counts.no}`, pageW - margin - 6, y + 10, { align: 'right' });
         doc.setTextColor(150, 150, 150);
-        doc.text(`N/A: ${submission.na_count}`, pageW - margin - 6, y + 15, { align: 'right' });
+        doc.text(`N/A: ${counts.na}`, pageW - margin - 6, y + 15, { align: 'right' });
       }
 
       if (hasLocation) {
@@ -238,7 +242,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         doc.text('Location', margin + 4, y + firstRowHeight + 5);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
-        doc.text(locationWrapped, margin + 22, y + firstRowHeight + 5);
+        drawPdfText(doc, locationWrapped, margin + 22, y + firstRowHeight + 5);
       }
 
       y += boxHeight + 4;
@@ -285,7 +289,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
           doc.setTextColor(22, 163, 74);
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(8);
-          doc.text(sec.title?.toUpperCase() || '', margin + 3, y + 5.5);
+          drawPdfText(doc, sec.title?.toUpperCase() || '', margin + 3, y + 5.5);
           y += 10;
 
           if (useSummaryView) {
@@ -303,8 +307,8 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(8);
                 const label = `${toRomanNumeral(num)}. ${item.label}`;
-                const wrappedLabel = doc.splitTextToSize(label, contentW - 4);
-                doc.text(wrappedLabel, margin + 2, y + 4);
+                const wrappedLabel = splitPdfText(doc, label, contentW - 4);
+                drawPdfText(doc, wrappedLabel, margin + 2, y + 4);
                 y += wrappedLabel.length * 4 + 2;
 
                 const noComment = submission.no_comments?.[item.id];
@@ -312,9 +316,9 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
                   doc.setTextColor(80, 80, 80);
                   doc.setFont('helvetica', 'normal');
                   doc.setFontSize(8);
-                  const reasonWrapped = doc.splitTextToSize(`- ${noComment}`, contentW - 8);
+                  const reasonWrapped = splitPdfText(doc, `- ${noComment}`, contentW - 8);
                   addPageIfNeeded(reasonWrapped.length * 4 + 2);
-                  doc.text(reasonWrapped, margin + 4, y + 4);
+                  drawPdfText(doc, reasonWrapped, margin + 4, y + 4);
                   y += reasonWrapped.length * 4 + 2;
                 }
 
@@ -339,8 +343,8 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
               doc.setFont('helvetica', 'normal');
               doc.setFontSize(8);
               const label = `${idx + 1}. ${item.label}`;
-              const wrappedLabel = doc.splitTextToSize(label, contentW - 25);
-              doc.text(wrappedLabel, margin + 2, y + 5);
+              const wrappedLabel = splitPdfText(doc, label, contentW - 25);
+              drawPdfText(doc, wrappedLabel, margin + 2, y + 5);
 
               // Answer badge
               if (ans) {
@@ -361,12 +365,12 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
               if (ans === 'NO' && noComment) {
                 addPageIfNeeded(6);
                 doc.setFillColor(254, 242, 242);
-                const commentWrapped = doc.splitTextToSize(`  >> ${noComment}`, contentW - 4);
+                const commentWrapped = splitPdfText(doc, `  >> ${noComment}`, contentW - 4);
                 doc.rect(margin, y, contentW, commentWrapped.length * 4 + 2, 'F');
                 doc.setTextColor(220, 38, 38);
                 doc.setFont('helvetica', 'italic');
                 doc.setFontSize(7);
-                doc.text(commentWrapped, margin + 2, y + 3.5);
+                drawPdfText(doc, commentWrapped, margin + 2, y + 3.5);
                 y += commentWrapped.length * 4 + 4;
               }
 
@@ -391,8 +395,8 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         doc.setTextColor(60, 60, 60);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
-        const wrapped = doc.splitTextToSize(value, contentW);
-        doc.text(wrapped, margin, y + 4);
+        const wrapped = splitPdfText(doc, value, contentW);
+        drawPdfText(doc, wrapped, margin, y + 4);
         y += wrapped.length * 4 + 4;
       };
 
@@ -458,11 +462,11 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
           doc.setTextColor(30, 30, 30);
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(8);
-          doc.text(sig.name || '', sx + sigW / 2, y + 28, { align: 'center' });
+          drawPdfText(doc, sig.name || '', sx + sigW / 2, y + 28, { align: 'center' });
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(7);
           doc.setTextColor(100, 116, 139);
-          doc.text(sig.pos || '', sx + sigW / 2, y + 33, { align: 'center' });
+          drawPdfText(doc, sig.pos || '', sx + sigW / 2, y + 33, { align: 'center' });
         }
         y += 42;
       }
@@ -501,7 +505,10 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
     <div className="space-y-5">
       <Card className="border-2 border-slate-200">
         <CardContent className="p-5 flex flex-wrap gap-6 items-center">
-          <ScoreBadge score={submission.score} />
+          <ScoreBadge score={score} />
+          {submission.is_draft && (
+            <Badge className="bg-amber-100 text-amber-700 border-0 font-bold">Draft — not yet submitted</Badge>
+          )}
           <div>
             <p className="text-xs text-slate-500">Submitted by</p>
             <p className="font-semibold text-slate-900">{submission.submitted_by_name || submission.submitted_by_email}</p>
@@ -541,9 +548,9 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
             </div>
           )}
           <div className="flex gap-3 text-sm">
-            <span className="text-green-600 font-bold">✓ {submission.yes_count} YES</span>
-            <span className="text-red-500 font-bold">✗ {submission.no_count} NO</span>
-            <span className="text-slate-400 font-bold">— {submission.na_count} N/A</span>
+            <span className="text-green-600 font-bold">✓ {counts.yes} YES</span>
+            <span className="text-red-500 font-bold">✗ {counts.no} NO</span>
+            <span className="text-slate-400 font-bold">— {counts.na} N/A</span>
           </div>
           <div className="ml-auto flex items-center gap-3">
             {qualifiesForSummary && isQaViewer && (

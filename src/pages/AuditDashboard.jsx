@@ -20,6 +20,7 @@ import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
+import { formatScore, answerCounts } from '@/lib/auditScore';
 import { usePagination } from '@/hooks/usePagination';
 import TablePagination from '@/components/TablePagination';
 
@@ -35,7 +36,7 @@ function ScoreBadge({ score }) {
     : 'bg-red-100 text-red-700 border-red-200';
   return (
     <span className={`inline-block px-2 py-0.5 rounded border text-xs font-bold ${cls}`}>
-      {score.toFixed(1)}%
+      {formatScore(score)}
     </span>
   );
 }
@@ -816,7 +817,9 @@ export default function AuditDashboard() {
                       <tr>
                         <td colSpan={8} className="text-center px-5 py-10 text-slate-400 text-sm">No audits in the selected date range.</td>
                       </tr>
-                    ) : pagedSubmissions.map((s, i) => (
+                    ) : pagedSubmissions.map((s, i) => {
+                      const counts = answerCounts(s);
+                      return (
                       <tr
                         key={s.id}
                         onClick={() => setSelectedSubmission(s)}
@@ -827,15 +830,15 @@ export default function AuditDashboard() {
                         <td className="text-center px-3 py-3"><ScoreBadge score={s.score} /></td>
                         <td className="text-center px-3 py-3">
                           <span className="flex items-center justify-center gap-1 text-green-600 font-semibold text-xs">
-                            <CheckCircle2 className="w-3.5 h-3.5" />{s.yes_count}
+                            <CheckCircle2 className="w-3.5 h-3.5" />{counts.yes}
                           </span>
                         </td>
                         <td className="text-center px-3 py-3">
                           <span className="flex items-center justify-center gap-1 text-red-500 font-semibold text-xs">
-                            <XCircle className="w-3.5 h-3.5" />{s.no_count}
+                            <XCircle className="w-3.5 h-3.5" />{counts.no}
                           </span>
                         </td>
-                        <td className="text-center px-3 py-3 text-slate-400 text-xs">{s.na_count}</td>
+                        <td className="text-center px-3 py-3 text-slate-400 text-xs">{counts.na}</td>
                         <td className="text-center px-3 py-3">
                           <Badge className={s.score >= PASS_THRESHOLD ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}>
                             {s.score >= PASS_THRESHOLD ? 'PASS' : 'FAIL'}
@@ -843,7 +846,8 @@ export default function AuditDashboard() {
                         </td>
                         <td className="text-right px-5 py-3 text-slate-500 text-xs">{formatPHDateTime(s.submission_date || s.created_date)}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

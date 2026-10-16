@@ -19,6 +19,7 @@ import moment from 'moment';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { getLocation } from '@/lib/getLocation';
 import { compressImage } from '@/lib/compressImage';
+import { roundScore, answerCounts, submissionScore } from '@/lib/auditScore';
 import { SectionLoadingSkeleton } from '@/components/PageState';
 import { useToast } from '@/components/ui/use-toast';
 import { parseMysteryShopperFile } from '@/lib/excelImport';
@@ -258,13 +259,21 @@ export default function Audit() {
       : historySubmissions.filter(sub => sub.submitted_by_email === user?.email)
   ).filter(sub => !sub.is_draft);
 
-  // Drafts are per-user regardless of role — a QA officer resumes their own
-  // in-progress checklist, not their store's or department's.
-  const { data: myDrafts = [], isLoading: loadingDrafts } = useQuery({
-    queryKey: ['audit-submission-drafts', user?.email],
-    queryFn: () => base44.entities.AuditSubmission.filter({ submitted_by_email: user.email, is_draft: true }, '-updated_date', 100),
+  // Everyone resumes only their own drafts. QA members (and admins) can
+  // also open the rest of the team's drafts, view-only — the read policy
+  // already lets the QA department see every audit, drafts included.
+  const canViewTeamDrafts = isAdmin || user?.department_name === 'Quality Assurance';
+  const { data: drafts = [], isLoading: loadingDrafts } = useQuery({
+    queryKey: ['audit-submission-drafts', user?.email, canViewTeamDrafts],
+    queryFn: () => base44.entities.AuditSubmission.filter(
+      canViewTeamDrafts ? { is_draft: true } : { submitted_by_email: user.email, is_draft: true },
+      '-updated_date',
+      canViewTeamDrafts ? 200 : 100
+    ),
     enabled: !!user,
   });
+  const myDrafts = drafts.filter(sub => sub.submitted_by_email === user?.email);
+  const teamDrafts = drafts.filter(sub => sub.submitted_by_email !== user?.email);
 
   const deleteMutation = useMutation({
     mutationFn: (id) => base44.entities.AuditSubmission.delete(id),
@@ -402,11 +411,12 @@ export default function Audit() {
 
   if (!user) return <div className="flex justify-center items-center min-h-screen"><Loader2 className="w-8 h-8 animate-spin text-[#1fd655]" /></div>;
 
-  const titleMap = { list: 'Audit', history: 'Audit History', drafts: 'My Drafts', fill: selectedTemplate?.title, edit: selectedSubmission?.template_title, detail: selectedSubmission?.template_title };
+  const titleMap = { list: 'Audit', history: 'Audit History', drafts: canViewTeamDrafts ? 'Drafts' : 'My Drafts', fill: selectedTemplate?.title, edit: selectedSubmission?.template_title, detail: selectedSubmission?.template_title };
   // Resuming a draft and admin-editing a finalized submission share the same
-  // 'edit' view — Back/Cancel should return to wherever that session came
-  // from (Drafts vs History) rather than always History.
-  const editCameFromDrafts = view === 'edit' && !!selectedSubmission?.is_draft;
+  // 'edit' view (and viewing a teammate's draft shares 'detail' with History)
+  // — Back/Cancel should return to wherever that session came from (Drafts
+  // vs History) rather than always History.
+  const cameFromDrafts = (view === 'edit' || view === 'detail') && !!selectedSubmission?.is_draft;
 
   return (
     <div className="app-page app-page-narrow">
@@ -415,8 +425,10 @@ export default function Audit() {
         <div>
           {view !== 'list' && view !== 'history' && view !== 'drafts' && (
             <Button variant="ghost" size="sm" className="mb-2 -ml-2 gap-1 text-slate-500" onClick={() => {
-              if (!window.confirm('Leave this audit? Your current progress is saved automatically as a draft.')) return;
-              setView(view === 'fill' ? 'list' : editCameFromDrafts ? 'drafts' : 'history');
+              // Only a form being filled in has progress to lose — viewing a
+              // submission or a teammate's draft doesn't.
+              if (view !== 'detail' && !window.confirm('Leave this audit? Your current progress is saved automatically as a draft.')) return;
+              setView(view === 'fill' ? 'list' : cameFromDrafts ? 'drafts' : 'history');
             }}>
               <ChevronLeft className="w-4 h-4" /> Back
             </Button>
@@ -643,7 +655,9 @@ export default function Audit() {
               </Card>
             ) : (
           <div className="space-y-3">
-            {filtered.map(sub => (
+            {filtered.map(sub => {
+              const counts = answerCounts(sub);
+              return (
               <Card key={sub.id} className="border-2 border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => viewSubmission(sub)}>
                 <CardContent className="p-4 flex items-center gap-4">
                   <div className="flex-1 min-w-0">
@@ -655,9 +669,9 @@ export default function Audit() {
                   </div>
                   <ScoreBadge score={sub.score} />
                   <div className="text-xs text-slate-400 text-right hidden sm:block">
-                    <p className="text-green-600 font-semibold">✓ {sub.yes_count} YES</p>
-                    <p className="text-red-500 font-semibold">✗ {sub.no_count} NO</p>
-                    <p className="text-slate-400">— {sub.na_count} N/A</p>
+                    <p className="text-green-600 font-semibold">✓ {counts.yes} YES</p>
+                    <p className="text-red-500 font-semibold">✗ {counts.no} NO</p>
+                    <p className="text-slate-400">— {counts.na} N/A</p>
                   </div>
                   {(isAdmin || isQaDeptHead) && (
                     <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
@@ -673,7 +687,8 @@ export default function Audit() {
                   )}
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
             );
           })()}
@@ -684,7 +699,7 @@ export default function Audit() {
       {view === 'drafts' && (
         loadingDrafts ? (
           <SectionLoadingSkeleton rows={3} label="Loading drafts" />
-        ) : myDrafts.length === 0 ? (
+        ) : drafts.length === 0 ? (
           <Card className="border-2 border-dashed border-slate-200">
             <CardContent className="py-16 text-center">
               <FileEdit className="w-12 h-12 text-slate-300 mx-auto mb-3" />
@@ -692,40 +707,67 @@ export default function Audit() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-3">
-            {myDrafts.map(sub => (
-              <Card key={sub.id} className="border-2 border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => resumeDraft(sub)}>
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-slate-900">{sub.template_title}</p>
-                    <p className="text-xs text-slate-500">
-                      {sub.brand && <span className="mr-2">📍 {sub.brand}</span>}
-                      Last saved {formatPHDateTime(sub.updated_date || sub.created_date)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {(sub.yes_count || 0) + (sub.no_count || 0) > 0 && (
-                      <>
-                        <ScoreBadge score={sub.score} />
-                        <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-2.5 py-1">
-                          {sub.no_count || 0} NCF
-                        </span>
-                      </>
-                    )}
-                    <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
-                      {Object.keys(sub.answers || {}).length} answered
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                    <Button variant="ghost" size="sm" className="gap-1.5 text-slate-600 hover:text-[#1fd655]" onClick={() => resumeDraft(sub)}>
-                      <Pencil className="w-4 h-4" /> Resume
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-600" onClick={(e) => discardDraft(e, sub.id)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+          <div className="space-y-6">
+            {[
+              { key: 'mine', title: 'My Drafts', rows: myDrafts },
+              { key: 'team', title: "Other QA Members' Drafts", rows: teamDrafts },
+            ].filter(group => group.rows.length > 0).map(group => (
+              <div key={group.key} className="space-y-3">
+                {canViewTeamDrafts && (
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                    {group.title} ({group.rows.length})
+                  </p>
+                )}
+                {group.rows.map(sub => {
+                  // Only the owner can resume (or discard) a draft — anyone
+                  // else on the team opens it read-only.
+                  const isMine = group.key === 'mine';
+                  const counts = answerCounts(sub);
+                  return (
+                    <Card key={sub.id} className="border-2 border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => (isMine ? resumeDraft(sub) : viewSubmission(sub))}>
+                      <CardContent className="p-4 flex items-center gap-4">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-slate-900">{sub.template_title}</p>
+                          <p className="text-xs text-slate-500">
+                            {sub.brand && <span className="mr-2">📍 {sub.brand}</span>}
+                            {!isMine && <>By {sub.submitted_by_name || sub.submitted_by_email} · </>}
+                            Last saved {formatPHDateTime(sub.updated_date || sub.created_date)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {counts.yes + counts.no > 0 && (
+                            <>
+                              <ScoreBadge score={submissionScore(sub)} />
+                              <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-2.5 py-1">
+                                {counts.no} NCF
+                              </span>
+                            </>
+                          )}
+                          <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
+                            {Object.keys(sub.answers || {}).length} answered
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                          {isMine ? (
+                            <>
+                              <Button variant="ghost" size="sm" className="gap-1.5 text-slate-600 hover:text-[#1fd655]" onClick={() => resumeDraft(sub)}>
+                                <Pencil className="w-4 h-4" /> Resume
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-red-600" onClick={(e) => discardDraft(e, sub.id)}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </>
+                          ) : (
+                            <Button variant="ghost" size="sm" className="gap-1.5 text-slate-600 hover:text-[#1fd655]" onClick={() => viewSubmission(sub)}>
+                              <Eye className="w-4 h-4" /> View
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             ))}
           </div>
         )
@@ -765,7 +807,7 @@ export default function Audit() {
             qc.invalidateQueries(['audit-submission-drafts']);
             setView('history');
           }}
-          onCancel={() => setView(editCameFromDrafts ? 'drafts' : 'history')}
+          onCancel={() => setView(cameFromDrafts ? 'drafts' : 'history')}
           onDraftSaved={() => { qc.invalidateQueries(['audit-submission-drafts']); setView('drafts'); }}
         />
       )}
@@ -790,9 +832,9 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
   // Audit Type) — the daily operational checklists are meant to be quick
   // and one-shot, so they don't get a draft option.
   const isDraftEligible = !!template.requires_audit_type;
-  // QA-conducted checklists (Ask Audit Type on) don't record location —
-  // no GPS requirement on photos, no location line in the photo stamp, and
-  // no submitter location saved with the submission.
+  // QA-conducted checklists (Ask Audit Type on) don't record location or
+  // time on photos — no GPS requirement, no timestamp/location stamp burned
+  // into the picture, and no submitter location saved with the submission.
   const isQaChecklist = !!template.requires_audit_type;
   // QA audits routinely need far more Deviations/Updates photos than a
   // daily store checklist (a single report can run 30+ deviations and 100+
@@ -1212,7 +1254,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
     const no = weightedCount(allItems, 'NO');
     const na = weightedCount(allItems, 'NA');
     const answered = yes + no;
-    const score = answered > 0 ? Math.round((yes / answered) * 100) : 0;
+    const score = answered > 0 ? roundScore((yes / answered) * 100) : 0;
 
     const payload = {
       template_id: template.id,
@@ -1375,7 +1417,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
       const no = weightedCount(allItems, 'NO');
       const na = weightedCount(allItems, 'NA');
       const answeredCount = yes + no;
-      const score = answeredCount > 0 ? Math.round((yes / answeredCount) * 100) : 0;
+      const score = answeredCount > 0 ? roundScore((yes / answeredCount) * 100) : 0;
 
       const draftPayload = {
         template_id: template.id,
@@ -1929,7 +1971,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
       </div>
 
       {cameraTarget && (
-        <CameraCapture onCapture={handleCameraCapture} onClose={() => setCameraTarget(null)} withLocation={!isQaChecklist} />
+        <CameraCapture onCapture={handleCameraCapture} onClose={() => setCameraTarget(null)} stamp={!isQaChecklist} />
       )}
 
       {uploadPreviewTarget && (
@@ -1940,7 +1982,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
           itemKey={uploadPreviewTarget.itemKey}
           onDone={handleUploadPreviewDone}
           onClose={() => setUploadPreviewTarget(null)}
-          withLocation={!isQaChecklist}
+          stamp={!isQaChecklist}
         />
       )}
     </div>
