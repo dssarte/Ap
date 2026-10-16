@@ -13,6 +13,8 @@ import { LineChart, Line, BarChart, Bar, Cell, ReferenceLine, XAxis, YAxis, Cart
 import moment from 'moment';
 import jsPDF from 'jspdf';
 import { auditBusinessDayKey, formatPHDate, formatPHDateTime } from '@/lib/dateUtils';
+import { formatScore } from '@/lib/auditScore';
+import { drawPdfText, splitPdfText } from '@/lib/pdfText';
 import { computeFrontCover } from '@/components/store-ranking/FrontCoverModal';
 import ChipDetailModal from '@/components/store-ranking/ChipDetailModal';
 import TemplateMultiSelect from '@/components/audit/TemplateMultiSelect';
@@ -114,7 +116,7 @@ function ScoreRing({ score, color, size = 110, strokeWidth = 11 }) {
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-xl font-extrabold text-slate-900">{pct.toFixed(0)}%</span>
+        <span className="text-xl font-extrabold text-slate-900">{formatScore(pct)}</span>
       </div>
     </div>
   );
@@ -429,7 +431,7 @@ export default function QADashboard() {
       alerts.push({ key: 'not-audited', level: 'not_audited', text: `${storesNotAudited.length} store${storesNotAudited.length === 1 ? '' : 's'} with no QA audit in this range` });
     }
     storeRows.filter(r => r.status.key === 'critical').forEach(r => {
-      alerts.push({ key: `critical-${r.store}`, level: 'critical', text: `${r.store} is Critical (${r.avgScore.toFixed(0)}% — ${r.mainIssue})` });
+      alerts.push({ key: `critical-${r.store}`, level: 'critical', text: `${r.store} is Critical (${formatScore(r.avgScore)} — ${r.mainIssue})` });
     });
     storeRows.filter(r => r.trend < -5).forEach(r => {
       alerts.push({ key: `decline-${r.store}`, level: 'decline', text: `${r.store} is declining (${r.trend.toFixed(1)} pts this range)` });
@@ -479,7 +481,7 @@ export default function QADashboard() {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
       doc.setTextColor(30, 30, 30);
-      doc.text(`${store.store.toUpperCase()} — QA DASHBOARD DETAIL`, pageW / 2, y + 17, { align: 'center' });
+      drawPdfText(doc, `${store.store.toUpperCase()} — QA DASHBOARD DETAIL`, pageW / 2, y + 17, { align: 'center' });
       y += logoH + 5;
       doc.setDrawColor(220, 220, 220);
       doc.line(margin, y, pageW - margin, y);
@@ -498,7 +500,7 @@ export default function QADashboard() {
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13);
-      doc.text(`${store.avgScore.toFixed(0)}%`, margin + 17, y + 10, { align: 'center' });
+      doc.text(formatScore(store.avgScore), margin + 17, y + 10, { align: 'center' });
       doc.setFontSize(7);
       doc.text(store.status.label.toUpperCase(), margin + 17, y + 15.5, { align: 'center' });
 
@@ -530,7 +532,7 @@ export default function QADashboard() {
         doc.setTextColor(60, 60, 60);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8.5);
-        doc.text(store.location, margin + 22, y);
+        drawPdfText(doc, store.location, margin + 22, y);
         y += 6;
       }
 
@@ -543,8 +545,8 @@ export default function QADashboard() {
         doc.setTextColor(60, 60, 60);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8.5);
-        const wrapped = doc.splitTextToSize(store.templatesUsed, contentW - 45);
-        doc.text(wrapped, margin + 42, y);
+        const wrapped = splitPdfText(doc, store.templatesUsed, contentW - 45);
+        drawPdfText(doc, wrapped, margin + 42, y);
         y += wrapped.length * 4 + 4;
       }
 
@@ -588,8 +590,8 @@ export default function QADashboard() {
           doc.setFontSize(8);
           doc.setTextColor(60, 60, 60);
           doc.text(h.dateLabel, colX[0], y);
-          doc.text(h.auditType || '—', colX[1], y);
-          doc.text(`${h.score.toFixed(0)}%`, colX[2], y);
+          drawPdfText(doc, h.auditType || '—', colX[1], y);
+          doc.text(formatScore(h.score), colX[2], y);
           doc.setFont('helvetica', 'bold');
           doc.setTextColor(...(h.pass ? [16, 185, 129] : [239, 68, 68]));
           doc.text(h.pass ? 'PASS' : 'FAIL', colX[3], y);
@@ -616,10 +618,10 @@ export default function QADashboard() {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
         doc.setTextColor(60, 60, 60);
-        const label = doc.splitTextToSize(row.title, contentW - 30)[0];
-        doc.text(label, margin, y);
+        const label = splitPdfText(doc, row.title, contentW - 30)[0];
+        drawPdfText(doc, label, margin, y);
         doc.setFont('helvetica', 'bold');
-        doc.text(`${pct.toFixed(0)}%`, margin + contentW, y, { align: 'right' });
+        doc.text(formatScore(pct), margin + contentW, y, { align: 'right' });
         y += 2;
         doc.setFillColor(226, 232, 240);
         doc.roundedRect(margin, y, contentW, 2.2, 1, 1, 'F');
@@ -645,8 +647,8 @@ export default function QADashboard() {
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(8);
           doc.setTextColor(60, 60, 60);
-          const titleWrapped = doc.splitTextToSize(t.title, contentW - 30);
-          doc.text(titleWrapped, margin, y);
+          const titleWrapped = splitPdfText(doc, t.title, contentW - 30);
+          drawPdfText(doc, titleWrapped, margin, y);
           doc.setTextColor(150, 150, 150);
           doc.setFontSize(7.5);
           doc.text(formatPHDate(t.created_date), margin + contentW, y, { align: 'right' });
@@ -872,7 +874,7 @@ export default function QADashboard() {
                         >
                           <td className="px-4 py-3 text-slate-400 font-semibold">{idx + 1}</td>
                           <td className="px-4 py-3 font-semibold text-slate-900">{row.store}</td>
-                          <td className="px-4 py-3 text-center font-bold text-slate-900">{row.avgScore.toFixed(1)}%</td>
+                          <td className="px-4 py-3 text-center font-bold text-slate-900">{formatScore(row.avgScore)}</td>
                           <td className="px-4 py-3"><div className="flex items-center justify-center"><TrendIcon trend={row.trend} /></div></td>
                           <td className="px-4 py-3">
                             <span className={`inline-block px-2 py-0.5 rounded border text-xs font-bold ${row.status.badge}`}>{row.status.label}</span>
@@ -908,7 +910,7 @@ export default function QADashboard() {
                         <p className="text-xs text-slate-500 truncate">{row.mainIssue}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                        <span className="text-sm font-bold text-slate-900">{row.avgScore.toFixed(0)}%</span>
+                        <span className="text-sm font-bold text-slate-900">{formatScore(row.avgScore)}</span>
                         <span className={`inline-block px-2 py-0.5 rounded border text-[10px] font-bold ${PRIORITY_BY_STATUS[row.status.key].badge}`}>
                           {PRIORITY_BY_STATUS[row.status.key].label}
                         </span>
@@ -1044,7 +1046,7 @@ export default function QADashboard() {
                             onClick={() => setDetailStore(r)}
                           >
                             <span className="text-sm text-slate-700 truncate">{r.store}</span>
-                            <span className="text-xs font-semibold text-slate-500 flex-shrink-0">{r.avgScore.toFixed(0)}%</span>
+                            <span className="text-xs font-semibold text-slate-500 flex-shrink-0">{formatScore(r.avgScore)}</span>
                           </li>
                         ))}
                       </ul>
@@ -1164,7 +1166,7 @@ export default function QADashboard() {
                         {history.map(h => (
                           <li key={h.id} className="flex flex-col items-center gap-1">
                             <span className={`text-xs px-2 py-1 rounded-full border font-semibold ${h.pass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                              {h.dateLabel} · {h.score.toFixed(0)}%{h.auditType ? ` · ${h.auditType}` : ''}
+                              {h.dateLabel} · {formatScore(h.score)}{h.auditType ? ` · ${h.auditType}` : ''}
                             </span>
                             {h.templateTitle && (
                               <span className="text-[10px] text-slate-400 text-center max-w-[140px] leading-tight">{h.templateTitle}</span>
@@ -1187,7 +1189,7 @@ export default function QADashboard() {
                       <div key={row.title}>
                         <div className="flex items-center justify-between text-xs mb-1">
                           <span className="font-medium text-slate-600">{row.title}</span>
-                          <span className="text-slate-400">{pct.toFixed(0)}%</span>
+                          <span className="text-slate-400">{formatScore(pct)}</span>
                         </div>
                         <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
                           <div className={`h-full ${pct >= detailStore.passThreshold ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />

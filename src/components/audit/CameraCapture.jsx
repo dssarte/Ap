@@ -4,10 +4,10 @@ import { Loader2, Camera, RefreshCw, Check, X, MapPin } from "lucide-react";
 import { getLocation } from '@/lib/getLocation';
 import { getServerTime } from '@/lib/serverTime';
 
-// withLocation=false skips GPS entirely — no permission prompt, the shutter
-// is never blocked waiting for a fix, and the burned-in stamp is the
-// timestamp alone.
-export default function CameraCapture({ onCapture, onClose, withLocation = true }) {
+// stamp=false (QA checklists) takes the photo as-is: no GPS at all — no
+// permission prompt, the shutter is never blocked waiting for a fix — and
+// no timestamp or location burned into it.
+export default function CameraCapture({ onCapture, onClose, stamp = true }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const fallbackInputRef = useRef(null);
@@ -18,7 +18,7 @@ export default function CameraCapture({ onCapture, onClose, withLocation = true 
   const [uploading, setUploading] = useState(false);
   const [facingMode, setFacingMode] = useState('environment');
   const [location, setLocation] = useState(null);
-  const [locatingGps, setLocatingGps] = useState(withLocation);
+  const [locatingGps, setLocatingGps] = useState(stamp);
   const [locationFailed, setLocationFailed] = useState(false);
   const serverTimeRef = useRef(null);
 
@@ -82,9 +82,9 @@ export default function CameraCapture({ onCapture, onClose, withLocation = true 
       // permission dialog at a time, so firing both at once causes the
       // second prompt (location) to silently fail instead of queueing.
       await startCamera();
-      if (withLocation) fetchLocation();
+      if (stamp) fetchLocation();
     })();
-    getServerTime().then((t) => { serverTimeRef.current = t; });
+    if (stamp) getServerTime().then((t) => { serverTimeRef.current = t; });
     return stopStream;
   }, []);
 
@@ -97,29 +97,31 @@ export default function CameraCapture({ onCapture, onClose, withLocation = true 
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Burn a timestamp + location into the photo (Manila time) — uses the
-    // server's clock, not the device's, so it can't be spoofed by changing
-    // the phone/laptop's date and time.
-    const stamp = (serverTimeRef.current || new Date()).toLocaleString('en-PH', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: true,
-    });
-    const lines = withLocation ? [stamp, location || 'Locating...'] : [stamp];
-    const fontPx = Math.max(16, Math.round(canvas.height * 0.035));
-    ctx.font = `${fontPx}px sans-serif`;
-    const padX = Math.round(fontPx * 0.4);
-    const padY = Math.round(fontPx * 0.3);
-    const lineHeight = Math.round(fontPx * 1.25);
-    const textW = Math.max(...lines.map(line => ctx.measureText(line).width));
-    const boxH = lineHeight * lines.length + padY * 2;
-    const boxY = canvas.height - boxH - Math.round(canvas.height * 0.02);
-    const boxX = Math.round(canvas.height * 0.02);
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(boxX, boxY, textW + padX * 2, boxH);
-    ctx.fillStyle = '#ffffff';
-    ctx.textBaseline = 'middle';
-    lines.forEach((line, i) => ctx.fillText(line, boxX + padX, boxY + padY + lineHeight * (i + 0.5)));
+    if (stamp) {
+      // Burn a timestamp + location into the photo (Manila time) — uses the
+      // server's clock, not the device's, so it can't be spoofed by changing
+      // the phone/laptop's date and time.
+      const time = (serverTimeRef.current || new Date()).toLocaleString('en-PH', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+      });
+      const lines = [time, location || 'Locating...'];
+      const fontPx = Math.max(16, Math.round(canvas.height * 0.035));
+      ctx.font = `${fontPx}px sans-serif`;
+      const padX = Math.round(fontPx * 0.4);
+      const padY = Math.round(fontPx * 0.3);
+      const lineHeight = Math.round(fontPx * 1.25);
+      const textW = Math.max(...lines.map(line => ctx.measureText(line).width));
+      const boxH = lineHeight * lines.length + padY * 2;
+      const boxY = canvas.height - boxH - Math.round(canvas.height * 0.02);
+      const boxX = Math.round(canvas.height * 0.02);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(boxX, boxY, textW + padX * 2, boxH);
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      lines.forEach((line, i) => ctx.fillText(line, boxX + padX, boxY + padY + lineHeight * (i + 0.5)));
+    }
 
     setSnapshot(canvas.toDataURL('image/jpeg', 0.92));
   };
@@ -214,7 +216,7 @@ export default function CameraCapture({ onCapture, onClose, withLocation = true 
                   <RefreshCw className="w-4 h-4 text-slate-700" />
                 </button>
               )}
-              {!snapshot && withLocation && (
+              {!snapshot && stamp && (
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded bg-black/55 px-2 py-1 text-xs text-white">
                   <MapPin className="w-3.5 h-3.5" />
                   {locationFailed ? (

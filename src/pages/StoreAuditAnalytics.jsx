@@ -15,6 +15,7 @@ import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useEffect } from 'react';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
+import { formatScore, answerCounts } from '@/lib/auditScore';
 import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
 import NoAnswerTracker from '@/components/audit/NoAnswerTracker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,7 +35,7 @@ const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100];
 function ScoreBadge({ score }) {
   if (score == null) return null;
   const cls = score >= 80 ? 'bg-green-100 text-green-700' : score >= PASS_THRESHOLD ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
-  return <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${cls}`}>{score.toFixed(1)}%</span>;
+  return <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${cls}`}>{formatScore(score)}</span>;
 }
 
 // A NO item can recur dozens of times over a date range — showing every
@@ -235,12 +236,15 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
       {
         name: 'Recent Audits',
         headers: ['Template', 'Store', 'Score', 'YES', 'NO', 'N/A', 'Status', 'Date'],
-        rows: recentAudits.map(s => [
-          s.template_title, s.brand || '—', `${s.score?.toFixed(1) ?? ''}%`,
-          s.yes_count, s.no_count, s.na_count,
-          s.score >= PASS_THRESHOLD ? 'PASS' : 'FAIL',
-          formatPHDateTime(s.submission_date || s.created_date),
-        ]),
+        rows: recentAudits.map(s => {
+          const counts = answerCounts(s);
+          return [
+            s.template_title, s.brand || '—', formatScore(s.score),
+            counts.yes, counts.no, counts.na,
+            s.score >= PASS_THRESHOLD ? 'PASS' : 'FAIL',
+            formatPHDateTime(s.submission_date || s.created_date),
+          ];
+        }),
       },
     ];
     exportSheetsToExcel('My_Store_Analytics', sheets);
@@ -664,7 +668,9 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
                       <tr>
                         <td colSpan={8} className="text-center px-5 py-10 text-slate-400 text-sm">No audits in the selected date range.</td>
                       </tr>
-                    ) : pagedSubmissions.map((s, i) => (
+                    ) : pagedSubmissions.map((s, i) => {
+                      const counts = answerCounts(s);
+                      return (
                       <tr
      key={s.id}
      onClick={() => setSelectedSubmission(s)}
@@ -679,15 +685,15 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
                         <td className="text-center px-3 py-3"><ScoreBadge score={s.score} /></td>
                         <td className="text-center px-3 py-3">
                           <span className="flex items-center justify-center gap-1 text-green-600 font-semibold text-xs">
-                            <CheckCircle2 className="w-3.5 h-3.5" />{s.yes_count}
+                            <CheckCircle2 className="w-3.5 h-3.5" />{counts.yes}
                           </span>
                         </td>
                         <td className="text-center px-3 py-3">
                           <span className="flex items-center justify-center gap-1 text-red-500 font-semibold text-xs">
-                            <XCircle className="w-3.5 h-3.5" />{s.no_count}
+                            <XCircle className="w-3.5 h-3.5" />{counts.no}
                           </span>
                         </td>
-                        <td className="text-center px-3 py-3 text-slate-400 text-xs">{s.na_count}</td>
+                        <td className="text-center px-3 py-3 text-slate-400 text-xs">{counts.na}</td>
                         <td className="text-center px-3 py-3">
                           <Badge className={s.score >= PASS_THRESHOLD ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}>
                             {s.score >= PASS_THRESHOLD ? 'PASS' : 'FAIL'}
@@ -695,7 +701,8 @@ const [exportingSubmissionPdf, setExportingSubmissionPdf] = useState(false);
                         </td>
                         <td className="text-right px-5 py-3 text-slate-500 text-xs">{formatPHDateTime(s.submission_date || s.created_date)}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
