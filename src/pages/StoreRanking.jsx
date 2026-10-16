@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import jsPDF from 'jspdf';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
+import { drawPdfText, splitPdfText } from '@/lib/pdfText';
 import { computeFrontCover } from '@/components/store-ranking/FrontCoverModal';
 import ChipDetailModal from '@/components/store-ranking/ChipDetailModal';
 
@@ -361,7 +362,7 @@ export default function StoreRanking() {
       doc.setTextColor(31, 65, 154);
       doc.text('FIGARO COFFEE SYSTEM, INC.', pageW / 2, 13, { align: 'center' });
       doc.text('QUALITY ASSURANCE DEPARTMENT', pageW / 2, 18, { align: 'center' });
-      doc.text(`${brandLabel} - STORE RANKING`, pageW / 2, 23, { align: 'center' });
+      drawPdfText(doc, `${brandLabel} - STORE RANKING`, pageW / 2, 23, { align: 'center' });
       doc.text(`FOR THE MONTH OF ${monthYear}`, pageW / 2, 28, { align: 'center' });
 
       // Table setup
@@ -399,10 +400,10 @@ export default function StoreRanking() {
           doc.setFontSize(7);
           doc.setTextColor(31, 65, 154);
           // wrap text in cell
-          const lines = doc.splitTextToSize(h, colWidths[i] - 2);
+          const lines = splitPdfText(doc, h, colWidths[i] - 2);
           const textY = startY + (headerH - lines.length * 3.5) / 2 + 3;
           lines.forEach((line, li) => {
-            doc.text(line, x + colWidths[i] / 2, textY + li * 3.5, { align: 'center' });
+            drawPdfText(doc, line, x + colWidths[i] / 2, textY + li * 3.5, { align: 'center' });
           });
           x += colWidths[i];
         });
@@ -478,9 +479,9 @@ export default function StoreRanking() {
             doc.setTextColor(60, 60, 60);
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(8);
-            const lines = doc.splitTextToSize(val, colWidths[i] - 2);
+            const lines = splitPdfText(doc, val, colWidths[i] - 2);
             const textY = y + (rowH - lines.length * 3.5) / 2 + 3;
-            lines.forEach((line, li) => doc.text(line, cx, textY + li * 3.5, { align: 'center' }));
+            lines.forEach((line, li) => drawPdfText(doc, line, cx, textY + li * 3.5, { align: 'center' }));
           }
 
           x += colWidths[i];
