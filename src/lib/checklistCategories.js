@@ -30,3 +30,15 @@ const KNOWN_CATEGORY_VALUES = new Set(CHECKLIST_CATEGORIES.map(c => c.value));
 export function normalizeChecklistCategory(value) {
   return value && KNOWN_CATEGORY_VALUES.has(value) ? value : 'store_audit';
 }
+
+// Punchlist/Commissary/Warehouse/Head Office checklists are QA-conducted no
+// matter how they're configured — their store restrictions only scope which
+// location an item belongs to, they don't make it that store's own checklist.
+export const QA_ONLY_CATEGORIES = new Set(['punchlist', 'commissary', 'warehouse', 'mayon']);
+
+// Checklists filled in by QA about a store (Ask Audit Type on, or one of the
+// QA-only categories above) rather than by the store itself.
+export function isQaConductedTemplate(template) {
+  return !!template?.requires_audit_type
+    || QA_ONLY_CATEGORIES.has(normalizeChecklistCategory(template?.checklist_category));
+}

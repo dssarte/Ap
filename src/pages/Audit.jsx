@@ -23,7 +23,7 @@ import { roundScore, answerCounts, submissionScore } from '@/lib/auditScore';
 import { SectionLoadingSkeleton } from '@/components/PageState';
 import { useToast } from '@/components/ui/use-toast';
 import { parseMysteryShopperFile } from '@/lib/excelImport';
-import { CHECKLIST_CATEGORIES, normalizeChecklistCategory } from '@/lib/checklistCategories';
+import { CHECKLIST_CATEGORIES, normalizeChecklistCategory, isQaConductedTemplate } from '@/lib/checklistCategories';
 
 function formatTimeLabel(hhmm) {
   if (!hhmm) return '';
@@ -164,11 +164,10 @@ export default function Audit() {
   // belongs to), not to grant that location's own regular staff visibility
   // — without this, a store whose name happens to match one of those
   // restrictions would otherwise see it in their own Conduct Audit list.
-  const QA_ONLY_CATEGORIES = new Set(['punchlist', 'commissary', 'warehouse', 'mayon']);
   const templates = isAdmin
     ? allTemplates
     : allTemplates.filter(t => {
-        if (t.requires_audit_type || QA_ONLY_CATEGORIES.has(normalizeChecklistCategory(t.checklist_category))) {
+        if (isQaConductedTemplate(t)) {
           return user?.department_name === 'Quality Assurance';
         }
 

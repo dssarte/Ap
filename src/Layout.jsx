@@ -156,14 +156,14 @@ export default function Layout({ children, currentPageName }) {
   let navItems = [{ name: 'Overview', icon: Home, page: 'Home', badge: hasUnreadTicketUpdates ? 1 : null }];
 
   if (user?.user_type === 'store_manager') {
-    // Store Analytics already covers their stores' audits — Audit Dashboard
-    // repeated the same sections, so store managers only get the former.
+    // Audit Dashboard is scoped to their own stores' checklists for them —
+    // it replaced Store Analytics, which repeated the same sections.
     if (user.assigned_stores?.length) {
       navItems.push(
         { name: 'Approval Queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null },
         { name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' },
         { name: 'Daily Summary', icon: CalendarCheck, page: 'DailySummary' },
-        { name: 'Store Analytics', icon: BarChart3, page: 'StoreAuditAnalytics' },
+        { name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' },
       );
     }
   } else {
@@ -200,7 +200,11 @@ export default function Layout({ children, currentPageName }) {
     if ((isQA || hasAuditAssignments) && user?.user_type !== 'director') {
       navItems.push({ name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' });
     }
-    if (user?.store_name) navItems.push({ name: 'Store Analytics', icon: BarChart3, page: 'StoreAuditAnalytics' });
+    // Store accounts get the same store-scoped Audit Dashboard; admins and
+    // directors already have the unscoped one.
+    if (user?.store_name && user.user_type !== 'admin' && user.user_type !== 'director') {
+      navItems.push({ name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' });
+    }
     // Directors already got these in their own block above — skipped here
     // so a director in the QA department doesn't get duplicate tabs.
     if (isQA && user?.user_type !== 'director') {
