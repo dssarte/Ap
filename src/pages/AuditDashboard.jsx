@@ -21,11 +21,24 @@ import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { formatScore, answerCounts } from '@/lib/auditScore';
+import { isQaConductedTemplate } from '@/lib/checklistCategories';
 import { usePagination } from '@/hooks/usePagination';
 import TablePagination from '@/components/TablePagination';
 
 const PASS_THRESHOLD = 75;
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100];
+
+// QA-conducted audits stay hidden from store users until QA results are
+// cleared to be shared with stores — flip to false then, and store users
+// will also see the QA audits done on their own stores.
+const HIDE_QA_AUDITS_FROM_STORES = true;
+
+// A template's store scoping: its store_restrictions list, or the single
+// store_name/brand_id/store_id fields older templates still use.
+function templateRestrictions(t) {
+  if (t.store_restrictions?.length > 0) return t.store_restrictions;
+  return t.store_name ? [{ store_name: t.store_name, brand_id: t.brand_id, store_id: t.store_id }] : [];
+}
 
 function ScoreBadge({ score }) {
   if (score == null) return <span className="text-slate-300 text-sm">—</span>;
@@ -95,12 +108,16 @@ export default function AuditDashboard() {
 
   const isAdmin = user?.user_type === 'admin';
 
-  // Store managers are scoped to their assigned stores only; admins/QA see everything
+  // Store users — a store manager across their assigned stores, or a store
+  // account for its one store — only ever see their own stores;
+  // admins/directors/QA see everything.
   const allowedStores = useMemo(() => {
     if (!user) return null;
+    if (user.user_type === 'admin' || user.user_type === 'director') return null;
     if (user.user_type === 'store_manager') {
       return Array.isArray(user.assigned_stores) ? user.assigned_stores : [];
     }
+    if (user.store_name) return [user.store_name];
     return null; // null = no restriction
   }, [user]);
 
@@ -114,22 +131,60 @@ export default function AuditDashboard() {
     queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 500),
   });
 
-  // The summary query above returns quickly, so the page renders before this
+  // One fetch for every template — inactive ones included, to resolve
+  // historical answer IDs in the NO analysis and NO Answer Tracker. The
+  // template filter only offers active ones, derived from the same list
+  // instead of fetching again.
+  const { data: templateDefinitions = [], isLoading: loadingTemplates } = useQuery({
+    queryKey: ['audit-template-definitions-no-analysis'],
+    queryFn: () => base44.entities.AuditTemplate.list('title', 500),
+  });
+  const templates = useMemo(() => templateDefinitions.filter(t => t.is_active === true), [templateDefinitions]);
+
+  // The checklists a store user's own stores use — inactive ones too, so
+  // older history still counts. QA-conducted checklists stay out while
+  // HIDE_QA_AUDITS_FROM_STORES is on; with it off, QA audits show up too
+  // (the database already limits every row to the user's own stores).
+  const storeTemplateIds = useMemo(() => {
+    if (!allowedStores) return null;
+    const ownStores = new Set(allowedStores.map(name => String(name).trim().toLowerCase()));
+    return new Set(templateDefinitions
+      .filter(t => (isQaConductedTemplate(t)
+        ? !HIDE_QA_AUDITS_FROM_STORES
+        : templateRestrictions(t).some(r => ownStores.has(String(r.store_name || '').trim().toLowerCase()))))
+      .map(t => t.id));
+  }, [allowedStores, templateDefinitions]);
+
+  // A store user's data is always narrowed to those checklists, which is
+  // also what keeps QA audits out of every number on the page — so their
+  // queries wait for the template list instead of ever running unscoped.
+  // An empty list would mean "no filter" to the database, so a store with
+  // no checklists skips the queries instead.
+  const queryTemplateIds = selectedTemplateIds.length
+    ? selectedTemplateIds
+    : storeTemplateIds ? [...storeTemplateIds] : null;
+  const queryTemplateKey = queryTemplateIds ? queryTemplateIds.join(',') : 'all';
+  const noStoreChecklists = queryTemplateIds?.length === 0;
+  const scopeReady = !!user && (!allowedStores || !loadingTemplates);
+  const storesKey = allowedStores ? allowedStores.join(',') : 'all';
+
+  // The summary query below returns quickly, so the page renders before this
   // (much larger) list arrives — everything built from it (Checklist
   // Completion, Recent Audits, the NO item analysis, NO Answer Tracker)
   // shows a spinner until then instead of a misleading empty/0 state.
   // isPending stays true for every new date range/template filter too,
   // since each one is a fresh query with no data yet.
   const { data: submissions = [], isPending: loadingSubmissions } = useQuery({
-    queryKey: ['audit-submissions-dashboard', dateFrom, dateTo, selectedTemplateIds.join(',')],
-    queryFn: () => base44.audit.listSubmissions({
+    queryKey: ['audit-submissions-dashboard', dateFrom, dateTo, queryTemplateKey, storesKey],
+    queryFn: () => (noStoreChecklists ? [] : base44.audit.listSubmissions({
       dateFrom,
       dateTo,
-      templateIds: selectedTemplateIds.length ? selectedTemplateIds : null,
+      stores: allowedStores,
+      templateIds: queryTemplateIds,
       maxRows: 25000,
       fields: 'summaryWithAnswers',
-    }),
-    enabled: !!user,
+    })),
+    enabled: scopeReady,
   });
 
   // Resolved name strings (not ids) for the summary RPC's brand/store
@@ -144,31 +199,22 @@ export default function AuditDashboard() {
   // allowedStores (store-manager scoping) doesn't need to be passed through:
   // private.can_access_audit already restricts the underlying rows to what
   // this user can see, the same way it does for the raw `submissions` fetch.
-  const { data: dashboardSummary, isLoading: loadingSummary, isError: summaryError, error: summaryErrorDetail, refetch: refetchSummary } = useQuery({
-    queryKey: ['audit-dashboard-summary', dateFrom, dateTo, brandNameFilter, storeNameFilter, selectedTemplateIds.join(',')],
-    queryFn: () => base44.audit.dashboardSummary({
+  const { data: dashboardSummary, isPending: loadingSummary, isError: summaryError, error: summaryErrorDetail, refetch: refetchSummary } = useQuery({
+    queryKey: ['audit-dashboard-summary', dateFrom, dateTo, brandNameFilter, storeNameFilter, queryTemplateKey, storesKey],
+    queryFn: () => (noStoreChecklists ? null : base44.audit.dashboardSummary({
       dateFrom,
       dateTo,
       brandName: brandNameFilter,
       storeName: storeNameFilter,
-      templateIds: selectedTemplateIds.length ? selectedTemplateIds : null,
-    }),
-    enabled: !!user,
+      templateIds: queryTemplateIds,
+    })),
+    enabled: scopeReady,
     // A timeout is often just a cold cache on the first hit for a given
     // set of filters — retrying (react-query's default) lets a borderline
     // query succeed on a warmed second attempt instead of failing outright.
     retry: 2,
   });
 
-  // One fetch for every template — inactive ones included, to resolve
-  // historical answer IDs in the NO analysis and NO Answer Tracker. The
-  // template filter only offers active ones, derived from the same list
-  // instead of fetching again.
-  const { data: templateDefinitions = [], isLoading: loadingTemplates } = useQuery({
-    queryKey: ['audit-template-definitions-no-analysis'],
-    queryFn: () => base44.entities.AuditTemplate.list('title', 500),
-  });
-  const templates = useMemo(() => templateDefinitions.filter(t => t.is_active === true), [templateDefinitions]);
 
   // Global checklist completion config (admin-controlled, shared across all store users)
   const { data: configRecords = [] } = useQuery({
@@ -217,15 +263,15 @@ export default function AuditDashboard() {
     return stores.filter(s => allowedStores.includes(s.store_name));
   }, [stores, allowedStores]);
 
-  // Brands visible to this user (store managers only see brands tied to their assigned stores)
+  // Brands visible to this user (store users only see brands tied to their own stores)
   const visibleBrands = useMemo(() => {
     if (!allowedStores) return brands;
     const ownBrandIds = new Set(ownStoreRecords.map(s => s.brand_id));
     return brands.filter(b => ownBrandIds.has(b.id));
   }, [brands, allowedStores, ownStoreRecords]);
 
-  // Stores visible under the current brand selection (store managers stay
-  // scoped to their own assigned stores regardless of brand).
+  // Stores visible under the current brand selection (store users stay
+  // scoped to their own stores regardless of brand).
   const visibleStores = useMemo(() => {
     const base = allowedStores ? ownStoreRecords : stores;
     if (selectedBrandId === 'all') return base;
@@ -244,36 +290,23 @@ export default function AuditDashboard() {
   }, [selectedBrandId, selectedStoreId, stores, visibleStores, allowedStores, ownStoreRecords]);
 
   // Templates scoped to the current brand/store selection, for the filter
-  // dropdown. Unrestricted (QA-wide) templates have no store_restrictions
-  // and no store_name, so they always stay visible under "All Brands" but
-  // don't mix into a specific brand's own template list.
+  // dropdown — for a store user, only their own stores' checklists.
+  // Unrestricted (QA-wide) templates have no store_restrictions and no
+  // store_name, so they always stay visible under "All Brands" but don't
+  // mix into a specific brand's own template list.
   const filterTemplates = useMemo(() => {
     return templates.filter(t => {
-      const restrictions = t.store_restrictions?.length > 0
-        ? t.store_restrictions
-        : (t.store_name ? [{ store_name: t.store_name, brand_id: t.brand_id, store_id: t.store_id }] : []);
-      const isUnrestricted = restrictions.length === 0;
+      if (storeTemplateIds && !storeTemplateIds.has(t.id)) return false;
+      const restrictions = templateRestrictions(t);
       if (selectedStoreId !== 'all') {
         return restrictions.some(r => r.store_id === selectedStoreId) || t.store_id === selectedStoreId;
       }
       if (selectedBrandId !== 'all') {
         return restrictions.some(r => r.brand_id === selectedBrandId) || t.brand_id === selectedBrandId;
       }
-      if (isUnrestricted) return true;
-      // visibleBrands depends on the separate stores/brands queries, which
-      // can still be loading the first time this runs. Falling through to
-      // "show everything" until they're ready avoids a false-empty dropdown
-      // for store managers (restricted templates would otherwise all fail
-      // the ownBrandIds check against an empty set) — this list is only a UI
-      // filter, not a security boundary, so briefly showing more than a
-      // store manager's own templates here is harmless.
-      if (allowedStores && visibleBrands.length > 0) {
-        const ownBrandIds = new Set(visibleBrands.map(b => b.id));
-        return restrictions.some(r => ownBrandIds.has(r.brand_id));
-      }
       return true;
     });
-  }, [templates, selectedBrandId, selectedStoreId, allowedStores, visibleBrands]);
+  }, [templates, selectedBrandId, selectedStoreId, storeTemplateIds]);
 
   // Store-restricted templates scoped to the current brand/store selection —
   // what the Checklist Completion Rate card should actually count as "N
@@ -283,22 +316,17 @@ export default function AuditDashboard() {
   const scopedCompletionTemplates = useMemo(() => {
     if (selectedTemplateIds.length) return completionTemplates.filter(t => selectedTemplateIds.includes(t.id));
     return completionTemplates.filter(t => {
-      const restrictions = t.store_restrictions?.length > 0
-        ? t.store_restrictions
-        : (t.store_name ? [{ store_name: t.store_name, brand_id: t.brand_id, store_id: t.store_id }] : []);
+      if (storeTemplateIds && !storeTemplateIds.has(t.id)) return false;
+      const restrictions = templateRestrictions(t);
       if (selectedStoreId !== 'all') {
         return restrictions.some(r => r.store_id === selectedStoreId) || t.store_id === selectedStoreId;
       }
       if (selectedBrandId !== 'all') {
         return restrictions.some(r => r.brand_id === selectedBrandId) || t.brand_id === selectedBrandId;
       }
-      if (allowedStores) {
-        const ownBrandIds = new Set(visibleBrands.map(b => b.id));
-        return restrictions.some(r => ownBrandIds.has(r.brand_id)) || ownBrandIds.has(t.brand_id);
-      }
       return true;
     });
-  }, [completionTemplates, selectedBrandId, selectedStoreId, selectedTemplateIds, allowedStores, visibleBrands]);
+  }, [completionTemplates, selectedBrandId, selectedStoreId, selectedTemplateIds, storeTemplateIds]);
 
   useEffect(() => { setSelectedStoreId('all'); }, [selectedBrandId]);
   useEffect(() => { setSelectedTemplateIds([]); }, [selectedBrandId, selectedStoreId]);
@@ -306,7 +334,7 @@ export default function AuditDashboard() {
   // Filter submissions
   const filtered = useMemo(() => {
     let subs = submissions.filter(s => s.score != null);
-    // Scope store managers to their assigned stores
+    // Scope store users to their own stores
     if (allowedStores) {
       subs = subs.filter(s => allowedStores.some(name => s.brand?.includes(name)));
     }

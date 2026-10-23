@@ -18,7 +18,6 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const AuditDashboard = lazy(() => import('./pages/AuditDashboard'));
 const QADashboard = lazy(() => import('./pages/QADashboard'));
-const StoreAuditAnalytics = lazy(() => import('./pages/StoreAuditAnalytics'));
 const DailySummary = lazy(() => import('./pages/DailySummary'));
 const SqlExport = lazy(() => import('./pages/SqlExport'));
 
@@ -32,7 +31,6 @@ const STORE_SCOPED_PAGES = new Set([
   'Analytics',
   'AuditDashboard',
   'DailySummary',
-  'StoreAuditAnalytics',
   'StoreRanking',
 ]);
 
@@ -96,7 +94,8 @@ function App() {
               <Route path="/StoreRanking" element={<LayoutWrapper currentPageName="StoreRanking"><StoreRanking /></LayoutWrapper>} />
               <Route path="/AuditDashboard" element={<LayoutWrapper currentPageName="AuditDashboard"><AuditDashboard /></LayoutWrapper>} />
               <Route path="/QADashboard" element={<LayoutWrapper currentPageName="QADashboard"><QADashboard /></LayoutWrapper>} />
-              <Route path="/StoreAuditAnalytics" element={<LayoutWrapper currentPageName="StoreAuditAnalytics"><StoreAuditAnalytics /></LayoutWrapper>} />
+              {/* Store Analytics was replaced by the store-scoped Audit Dashboard — keeps old links working */}
+              <Route path="/StoreAuditAnalytics" element={<Navigate to="/AuditDashboard" replace />} />
               <Route path="/DailySummary" element={<LayoutWrapper currentPageName="DailySummary"><DailySummary /></LayoutWrapper>} />
               <Route path="/SqlExport" element={<LayoutWrapper currentPageName="SqlExport"><SqlExport /></LayoutWrapper>} />
             </Route>
