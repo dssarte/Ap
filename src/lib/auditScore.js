@@ -4,6 +4,23 @@ export function roundScore(percent) {
   return Math.round(percent * 100) / 100;
 }
 
+// Pass mark for a checklist that doesn't set its own (QA checklists set 92.5%).
+export const DEFAULT_PASS_THRESHOLD = 75;
+
+// A pass mark of 0 means the checklist isn't graded PASS/FAIL at all (e.g. the
+// Mayon Daily Walkthrough) — its result shows N/A; its score still shows.
+export function isPassFailGraded(template) {
+  const threshold = template?.pass_threshold;
+  return threshold == null || threshold === '' || Number(threshold) !== 0;
+}
+
+// 'PASS', 'FAIL', or 'N/A' (not graded) for one submission's score.
+export function auditResult(score, template) {
+  if (!isPassFailGraded(template)) return 'N/A';
+  if (score == null || score === '') return null;
+  return Number(score) >= Number(template?.pass_threshold ?? DEFAULT_PASS_THRESHOLD) ? 'PASS' : 'FAIL';
+}
+
 // The score to show for a submission. A draft is worked out again from its
 // YES/NO point totals — one saved before scores kept decimals holds a
 // rounded value, and a draft is still in progress anyway. Finalized

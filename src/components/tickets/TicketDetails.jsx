@@ -16,6 +16,7 @@ import InternalDiscussion from "./InternalDiscussion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { safeDate } from "@/lib/dateUtils";
 import { getUserDisplayName } from "@/lib/userDisplayName";
+import { markTicketNotificationsRead } from "@/lib/ticketNotifications";
 
 const formatTicketDate = (value, pattern) => {
   const date = safeDate(value);
@@ -78,6 +79,13 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
     loadFeedback();
     loadOriginalDepartment();
   }, [ticket.id]);
+
+  // Opening a ticket — from any page — reads its updates, including those
+  // of the duplicate tickets folded under it.
+  useEffect(() => {
+    markTicketNotificationsRead(user.email, [ticket.id, ...(ticket._duplicateTicketIds || [])])
+      .catch(error => console.error('Failed to mark ticket updates as read:', error));
+  }, [ticket.id, user.email]);
 
   const loadFeedback = async () => {
     if (ticket.status === 'resolved' || ticket.status === 'closed') {

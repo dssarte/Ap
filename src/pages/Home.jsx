@@ -189,7 +189,7 @@ export default function Home() {
     const loadUnreadNotifications = async () => {
       try {
         const notifications = await base44.entities.Notification.filter(
-          { user_email: user.email },
+          { user_email: user.email, is_read: false },
           '-created_date',
           2000
         );
@@ -213,15 +213,22 @@ export default function Home() {
     };
 
     loadUnreadNotifications();
+    // Reading a ticket marks each of its notifications read as a separate
+    // realtime event — recount once, shortly after the first of a burst,
+    // instead of once per row.
+    let recountTimer = null;
     const unsubscribe = base44.entities.Notification.subscribe((event) => {
       const changedRow = event?.new || event?.old || event?.data;
-      if (String(changedRow?.user_email || '').trim().toLowerCase() === normalizedEmail) {
+      if (String(changedRow?.user_email || '').trim().toLowerCase() !== normalizedEmail || recountTimer) return;
+      recountTimer = setTimeout(() => {
+        recountTimer = null;
         loadUnreadNotifications();
-      }
+      }, 300);
     });
 
     return () => {
       active = false;
+      clearTimeout(recountTimer);
       if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, [user?.email]);
@@ -301,30 +308,16 @@ export default function Home() {
 
     // A collapsed head ticket may represent several real ticket rows folded
     // in as duplicates — clear unread state for all of them, not just the
-    // one that's actually visible.
+    // one that's actually visible. This only clears the dots on screen right
+    // away; TicketDetails marks the notifications read in the database when
+    // it opens.
     const relevantTicketIds = [ticket.id, ...(ticket._duplicateTicketIds || [])];
-    const hasUnread = relevantTicketIds.some(id => unreadByTicket[id]);
-
-    if (hasUnread) {
+    if (relevantTicketIds.some(id => unreadByTicket[id])) {
       setUnreadByTicket(previous => {
         const next = { ...previous };
         relevantTicketIds.forEach(id => delete next[id]);
         return next;
       });
-
-      try {
-        const relatedNotifications = await base44.entities.Notification.filter({
-          user_email: user.email,
-        });
-        const relevantIdSet = new Set(relevantTicketIds);
-        await Promise.all(
-          (Array.isArray(relatedNotifications) ? relatedNotifications : [])
-            .filter(notification => !notification.is_read && relevantIdSet.has(notification.ticket_id))
-            .map(notification => base44.entities.Notification.update(notification.id, { is_read: true }))
-        );
-      } catch (notificationError) {
-        console.error('Failed to mark ticket updates as read:', notificationError);
-      }
     }
 
     // Prompt feedback for resolved/closed tickets submitted by this user that haven't been rated

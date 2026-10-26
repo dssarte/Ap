@@ -9,7 +9,7 @@ import { Loader2, FileText } from "lucide-react";
 import { formatPHDateTime, formatPHDateShort } from '@/lib/dateUtils';
 import PhotoThumb from '@/components/audit/PhotoThumb';
 import { normalizeChecklistCategory } from '@/lib/checklistCategories';
-import { formatScore, answerCounts, submissionScore } from '@/lib/auditScore';
+import { formatScore, answerCounts, submissionScore, auditResult } from '@/lib/auditScore';
 import { drawPdfText, splitPdfText } from '@/lib/pdfText';
 
 const LOGO_URL = '/assets/figaro-logo.png';
@@ -60,6 +60,14 @@ export function ScoreBadge({ score }) {
   return <Badge className={`${color} border-0 font-bold text-base px-3 py-1`}>{formatScore(score)}</Badge>;
 }
 
+// PASS / FAIL against the checklist's pass mark, or N/A for a checklist
+// that isn't graded pass/fail — see auditResult().
+export function AuditResultBadge({ result }) {
+  if (!result) return null;
+  const color = result === 'PASS' ? 'bg-green-100 text-green-700' : result === 'FAIL' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600';
+  return <Badge className={`${color} border-0 font-bold`}>{result}</Badge>;
+}
+
 const SubmissionDetail = forwardRef(function SubmissionDetail(
   { submission: listedSubmission, templates, user, hideExportButton, onExportingChange },
   ref
@@ -89,6 +97,13 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
   // QA checklists don't record location — also hidden for older QA
   // submissions that captured one before that changed.
   const showLocation = !!submission.location && !template?.requires_audit_type;
+  // A Mystery Shopper audit's date is the day the shopper visited (picked
+  // on the form), not when it was uploaded — shown as a plain date since
+  // there's no real time of day behind it.
+  const auditDateLabel = isMysteryShopperTemplate ? 'Date Conducted' : 'Date';
+  const auditDateText = isMysteryShopperTemplate
+    ? formatPHDateShort(submission.submission_date || submission.created_date)
+    : formatPHDateTime(submission.submission_date || submission.created_date);
   const [viewMode, setViewMode] = useState('detailed');
   const useSummaryView = qualifiesForSummary && (!isQaViewer || viewMode === 'summary');
   const sectionsWithDeviations = (template?.sections || []).map(sec => {
@@ -214,10 +229,10 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(80, 80, 80);
-      doc.text('Date', pageW - margin - 55, y + 5);
+      doc.text(auditDateLabel, pageW - margin - 55, y + 5);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
-      doc.text(formatPHDateTime(submission.submission_date || submission.created_date), pageW - margin - 55, y + 10);
+      doc.text(auditDateText, pageW - margin - 55, y + 10);
 
       // YES/NO/NA counts — omitted from the store-facing summary export; the
       // overall score badge above already conveys the grade without
@@ -471,7 +486,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         y += 42;
       }
 
-      // Footer on every page: accent line, page numbers, generated timestamp
+      // Footer on every page: accent line and page numbers
       const totalPages = doc.internal.getNumberOfPages();
       for (let p = 1; p <= totalPages; p++) {
         doc.setPage(p);
@@ -480,7 +495,6 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7);
         doc.setTextColor(148, 163, 184);
-        doc.text(`Generated ${formatPHDateTime(new Date())}`, margin, pageH - 4);
         doc.text(`Page ${p} of ${totalPages}`, pageW - margin, pageH - 4, { align: 'right' });
       }
 
@@ -507,7 +521,10 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         <CardContent className="p-5 flex flex-wrap gap-6 items-center">
           <ScoreBadge score={score} />
           {submission.is_draft && (
-            <Badge className="bg-amber-100 text-amber-700 border-0 font-bold">Draft — not yet submitted</Badge>
+            <>
+              <AuditResultBadge result={auditResult(score, template)} />
+              <Badge className="bg-amber-100 text-amber-700 border-0 font-bold">Draft — not yet submitted</Badge>
+            </>
           )}
           <div>
             <p className="text-xs text-slate-500">Submitted by</p>
@@ -538,8 +555,8 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
             </div>
           )}
           <div>
-            <p className="text-xs text-slate-500">Date</p>
-            <p className="font-semibold text-slate-900">{formatPHDateTime(submission.submission_date || submission.created_date)}</p>
+            <p className="text-xs text-slate-500">{auditDateLabel}</p>
+            <p className="font-semibold text-slate-900">{auditDateText}</p>
           </div>
           {showLocation && (
             <div>

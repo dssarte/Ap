@@ -115,7 +115,7 @@ export default function Layout({ children, currentPageName }) {
     const loadUnreadFlag = async () => {
       try {
         const notifications = await base44.entities.Notification.filter(
-          { user_email: user.email },
+          { user_email: user.email, is_read: false },
           '-created_date',
           2000
         );
@@ -134,15 +134,22 @@ export default function Layout({ children, currentPageName }) {
     };
 
     loadUnreadFlag();
+    // Reading a ticket marks each of its notifications read as a separate
+    // realtime event — recount once, shortly after the first of a burst,
+    // instead of once per row.
+    let recountTimer = null;
     const unsubscribe = base44.entities.Notification.subscribe((event) => {
       const changedRow = event?.new || event?.old || event?.data;
-      if (String(changedRow?.user_email || '').trim().toLowerCase() === normalizedEmail) {
+      if (String(changedRow?.user_email || '').trim().toLowerCase() !== normalizedEmail || recountTimer) return;
+      recountTimer = setTimeout(() => {
+        recountTimer = null;
         loadUnreadFlag();
-      }
+      }, 300);
     });
 
     return () => {
       active = false;
+      clearTimeout(recountTimer);
       if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, [user]);
