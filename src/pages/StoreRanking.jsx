@@ -9,6 +9,7 @@ import jsPDF from 'jspdf';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { drawPdfText, splitPdfText } from '@/lib/pdfText';
+import { isPassFailGraded } from '@/lib/auditScore';
 import { computeFrontCover } from '@/components/store-ranking/FrontCoverModal';
 import ChipDetailModal from '@/components/store-ranking/ChipDetailModal';
 
@@ -29,6 +30,9 @@ const VISIT_OPTIONS = [
   { value: 'first', label: 'First Visit' },
   { value: 'second', label: 'Second Visit' },
 ];
+
+// PASS / FAIL, or N/A for a location whose checklists aren't graded pass/fail.
+const ratingLabel = (r) => (r.isPassing == null ? 'N/A' : r.isPassing ? 'PASS' : 'FAIL');
 
 function getRankColor(rank) {
   if (rank === 1) return 'bg-yellow-400 text-yellow-900';
@@ -159,6 +163,11 @@ export default function StoreRanking() {
     return map;
   }, [templates]);
 
+  const ungradedTemplateIds = useMemo(
+    () => new Set(templates.filter(t => !isPassFailGraded(t)).map(t => t.id)),
+    [templates]
+  );
+
   // Build ranking grouped by brand+store. Computed straight from raw
   // submissions (not a pre-aggregated summary) so that switching the Audit
   // Type filter re-averages everything on the fly, and so a score can be
@@ -228,17 +237,23 @@ export default function StoreRanking() {
         // scores are blended (weighted by answered items), so a brand with a
         // single QA template simply uses that template's threshold, and a
         // brand with several averages across them proportionally.
-        const weightedThreshold = Object.values(byTemplate).reduce((sum, t) => {
+        // Checklists that aren't graded pass/fail (pass mark 0) are left out
+        // of the blend; a location with only those has no pass mark at all.
+        const gradedTemplates = Object.values(byTemplate).filter(t => !ungradedTemplateIds.has(t.templateId));
+        const gradedAnswered = gradedTemplates.reduce((sum, t) => sum + t.yes + t.no, 0);
+        const weightedThreshold = gradedTemplates.reduce((sum, t) => {
           const items = t.yes + t.no;
           return sum + (templateThresholds[t.templateId] ?? DEFAULT_PASS_THRESHOLD) * items;
         }, 0);
-        const passThreshold = answered > 0 ? weightedThreshold / answered : DEFAULT_PASS_THRESHOLD;
+        const passThreshold = gradedTemplates.length === 0
+          ? null
+          : gradedAnswered > 0 ? weightedThreshold / gradedAnswered : DEFAULT_PASS_THRESHOLD;
 
         const templateScores = Object.values(byTemplate).map(t => ({
           title: t.title,
           avg: (t.yes + t.no) > 0 ? (t.yes / (t.yes + t.no)) * 100 : 0,
           submissions: t.submissions,
-          passThreshold: templateThresholds[t.templateId] ?? DEFAULT_PASS_THRESHOLD,
+          passThreshold: ungradedTemplateIds.has(t.templateId) ? null : templateThresholds[t.templateId] ?? DEFAULT_PASS_THRESHOLD,
         }));
 
         return {
@@ -247,13 +262,14 @@ export default function StoreRanking() {
           templateScores,
           count: g.submissions.length,
           passThreshold,
-          isPassing: avgScore >= passThreshold,
+          isPassing: passThreshold == null ? null : avgScore >= passThreshold,
           submissions: g.submissions,
         };
       })
-      .sort((a, b) => b.avgScore - a.avgScore)
-      .map((item, idx) => ({ ...item, rank: idx + 1 }));
-  }, [rawSubmissions, brands, stores, selectedBrandId, selectedStoreId, selectedAuditType, selectedVisitNumber, qaTemplateIds, templateThresholds]);
+      // Ungraded locations aren't ranked — they follow every ranked store.
+      .sort((a, b) => (a.isPassing == null) - (b.isPassing == null) || b.avgScore - a.avgScore)
+      .map((item, idx) => ({ ...item, rank: item.isPassing == null ? null : idx + 1 }));
+  }, [rawSubmissions, brands, stores, selectedBrandId, selectedStoreId, selectedAuditType, selectedVisitNumber, qaTemplateIds, templateThresholds, ungradedTemplateIds]);
 
   // Get selected brand name for display
   const selectedBrand = brands.find(b => b.id === selectedBrandId);
@@ -283,7 +299,7 @@ export default function StoreRanking() {
         const ts = r.templateScores.find(ts => ts.title === t);
         return ts ? ts.avg.toFixed(2) : '0.00';
       });
-      rows.push([r.rank, r.brand, ...templateCols, r.avgScore.toFixed(2), r.isPassing ? 'PASS' : 'FAIL']);
+      rows.push([r.rank ?? '—', r.brand, ...templateCols, r.avgScore.toFixed(2), ratingLabel(r)]);
     });
     const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -306,13 +322,13 @@ export default function StoreRanking() {
         title: `Store Ranking — ${brandLabel} · ${dateFrom} to ${dateTo}`,
         headers: ['Ranking', 'Stores', ...visibleTemplates, 'Average', 'Rating'],
         rows: rankings.map(r => [
-          r.rank, r.brand,
+          r.rank ?? '—', r.brand,
           ...visibleTemplates.map(t => {
             const ts = r.templateScores.find(ts => ts.title === t);
             return ts ? ts.avg.toFixed(2) : '0.00';
           }),
           r.avgScore.toFixed(2),
-          r.isPassing ? 'PASS' : 'FAIL',
+          ratingLabel(r),
         ]),
       },
       {
@@ -329,7 +345,7 @@ export default function StoreRanking() {
           return [
             ...sectionRows.map((row, idx) => [idx === 0 ? r.brand : '', row.title, row.yes, row.no, row.na]),
             ['', 'TOTAL', totals.yes, totals.no, totals.na],
-            ['', `RATING: ${r.avgScore.toFixed(2)}% (${r.isPassing ? 'PASS' : 'FAIL'})`, '', '', ''],
+            ['', `RATING: ${r.avgScore.toFixed(2)}% (${ratingLabel(r)})`, '', '', ''],
             ['', '', '', '', ''],
           ];
         }),
@@ -429,14 +445,14 @@ export default function StoreRanking() {
         doc.rect(margin, y, tableW, rowH, 'S');
 
         const rowData = [
-          String(r.rank),
+          r.rank == null ? '—' : String(r.rank),
           r.brand,
           ...visibleTemplates.map(t => {
             const ts = r.templateScores.find(ts => ts.title === t);
             return ts ? ts.avg.toFixed(2) : '0.00';
           }),
           r.avgScore.toFixed(2),
-          r.isPassing ? 'PASS' : 'FAIL',
+          ratingLabel(r),
         ];
 
         let x = margin;
@@ -451,8 +467,7 @@ export default function StoreRanking() {
 
           if (i === colHeaders.length - 1) {
             // RATING cell — colored badge
-            const isPass = val === 'PASS';
-            const badgeColor = isPass ? [31, 185, 85] : [239, 68, 68];
+            const badgeColor = val === 'PASS' ? [31, 185, 85] : val === 'FAIL' ? [239, 68, 68] : [148, 163, 184];
             doc.setFillColor(...badgeColor);
             const bw = colWidths[i] - 4, bh = rowH - 3;
             doc.roundedRect(x + 2, y + 1.5, bw, bh, 1.5, 1.5, 'F');
@@ -609,18 +624,20 @@ export default function StoreRanking() {
               <CardContent className="p-5">
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
-                    <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded mb-1 ${item.isPassing ? 'bg-[#1fd655] text-slate-900' : 'bg-red-500 text-white'}`}>
-                      {item.isPassing ? 'PASS' : 'FAIL'}
+                    <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded mb-1 ${item.isPassing == null ? 'bg-slate-200 text-slate-600' : item.isPassing ? 'bg-[#1fd655] text-slate-900' : 'bg-red-500 text-white'}`}>
+                      {ratingLabel(item)}
                     </span>
-                    <span className="ml-2 text-xs text-slate-400">(pass ≥ {Math.round(item.passThreshold * 10) / 10}%)</span>
+                    <span className="ml-2 text-xs text-slate-400">
+                      {item.passThreshold == null ? '(not graded pass/fail)' : `(pass ≥ ${Math.round(item.passThreshold * 10) / 10}%)`}
+                    </span>
                     <p className="text-lg font-bold text-slate-900">{item.brand}</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-x-3 gap-y-2 flex-wrap">
                   <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                    <span className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg font-extrabold ${getRankColor(item.rank)}`}>
-                      {item.rank}
+                    <span className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg font-extrabold ${item.rank == null ? 'bg-slate-200 text-slate-500' : getRankColor(item.rank)}`}>
+                      {item.rank ?? '—'}
                     </span>
                     <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Rank</span>
                   </div>

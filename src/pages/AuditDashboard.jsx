@@ -20,7 +20,7 @@ import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
-import { formatScore, answerCounts } from '@/lib/auditScore';
+import { formatScore, answerCounts, isPassFailGraded } from '@/lib/auditScore';
 import { isQaConductedTemplate } from '@/lib/checklistCategories';
 import { usePagination } from '@/hooks/usePagination';
 import TablePagination from '@/components/TablePagination';
@@ -140,6 +140,18 @@ export default function AuditDashboard() {
     queryFn: () => base44.entities.AuditTemplate.list('title', 500),
   });
   const templates = useMemo(() => templateDefinitions.filter(t => t.is_active === true), [templateDefinitions]);
+
+  // Checklists that aren't graded pass/fail (pass mark 0, e.g. the Mayon
+  // Daily Walkthrough) — their PASS/FAIL shows N/A wherever it's per
+  // checklist, audit, or a store that only has those.
+  const ungradedTemplateIds = useMemo(
+    () => new Set(templateDefinitions.filter(t => !isPassFailGraded(t)).map(t => t.id)),
+    [templateDefinitions]
+  );
+  const ungradedTemplateTitles = useMemo(
+    () => new Set(templateDefinitions.filter(t => ungradedTemplateIds.has(t.id)).map(t => t.title)),
+    [templateDefinitions, ungradedTemplateIds]
+  );
 
   // The checklists a store user's own stores use — inactive ones too, so
   // older history still counts. QA-conducted checklists stay out while
@@ -508,13 +520,19 @@ export default function AuditDashboard() {
   // early-half-vs-late-half comparison as before, just computed via a SQL
   // window function instead of array slicing in JS.
   const storeRows = useMemo(
-    () => (dashboardSummary?.storeRows || []).map(row => ({
-      ...row,
-      avg: row.avg != null ? Number(row.avg) : null,
-      trend: Number(row.trend) || 0,
-      templateScores: (row.templateScores || []).map(t => ({ title: t.title, avg: Number(t.avg) })),
-    })),
-    [dashboardSummary]
+    () => (dashboardSummary?.storeRows || []).map(row => {
+      const templateScores = (row.templateScores || []).map(t => ({ title: t.title, avg: Number(t.avg) }));
+      const notGraded = templateScores.length > 0 && templateScores.every(t => ungradedTemplateTitles.has(t.title));
+      return {
+        ...row,
+        avg: row.avg != null ? Number(row.avg) : null,
+        trend: Number(row.trend) || 0,
+        templateScores,
+        notGraded,
+        isPassing: notGraded ? null : row.isPassing,
+      };
+    }),
+    [dashboardSummary, ungradedTemplateTitles]
   );
 
   const noItemPagination = usePagination(noItemRows);
@@ -546,7 +564,7 @@ export default function AuditDashboard() {
           r.avg != null ? `${r.avg.toFixed(1)}%` : '—',
           r.trend > 1 ? `+${r.trend.toFixed(1)}` : r.trend < -1 ? r.trend.toFixed(1) : '—',
           r.count,
-          r.isPassing == null ? '—' : (r.isPassing ? 'PASS' : 'FAIL'),
+          r.notGraded ? 'N/A' : r.isPassing == null ? '—' : (r.isPassing ? 'PASS' : 'FAIL'),
         ]),
       },
       {
@@ -557,9 +575,9 @@ export default function AuditDashboard() {
           row.title,
           row.avg != null ? `${row.avg.toFixed(1)}%` : '—',
           row.audits,
-          row.passing,
-          row.failing,
-          `${row.passRate.toFixed(1)}%`,
+          ungradedTemplateIds.has(row.id) ? 'N/A' : row.passing,
+          ungradedTemplateIds.has(row.id) ? 'N/A' : row.failing,
+          ungradedTemplateIds.has(row.id) ? 'N/A' : `${row.passRate.toFixed(1)}%`,
           row.noFindings,
           row.tickets,
         ]),
@@ -802,9 +820,15 @@ export default function AuditDashboard() {
                     <td className="px-4 py-3 font-semibold text-slate-800">{row.title}</td>
                     <td className="px-4 py-3 text-center"><ScoreBadge score={row.avg} /></td>
                     <td className="px-4 py-3 text-center">{row.audits}</td>
-                    <td className="px-4 py-3 text-center text-green-600">{row.passing}</td>
-                    <td className="px-4 py-3 text-center text-red-600">{row.failing}</td>
-                    <td className="px-4 py-3 text-center">{row.passRate.toFixed(1)}%</td>
+                    {ungradedTemplateIds.has(row.id) ? (
+                      <td colSpan={3} className="px-4 py-3 text-center text-slate-400">N/A — not graded pass/fail</td>
+                    ) : (
+                      <>
+                        <td className="px-4 py-3 text-center text-green-600">{row.passing}</td>
+                        <td className="px-4 py-3 text-center text-red-600">{row.failing}</td>
+                        <td className="px-4 py-3 text-center">{row.passRate.toFixed(1)}%</td>
+                      </>
+                    )}
                     <td className="px-4 py-3 text-center text-amber-600">{row.noFindings}</td>
                     <td className="px-4 py-3 text-center font-semibold text-violet-600">{row.tickets}</td>
                   </tr>)}</tbody>
@@ -868,9 +892,13 @@ export default function AuditDashboard() {
                         </td>
                         <td className="text-center px-3 py-3 text-slate-400 text-xs">{counts.na}</td>
                         <td className="text-center px-3 py-3">
-                          <Badge className={s.score >= PASS_THRESHOLD ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}>
-                            {s.score >= PASS_THRESHOLD ? 'PASS' : 'FAIL'}
-                          </Badge>
+                          {ungradedTemplateIds.has(s.template_id) ? (
+                            <Badge className="bg-slate-100 text-slate-600 border-slate-200">N/A</Badge>
+                          ) : (
+                            <Badge className={s.score >= PASS_THRESHOLD ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}>
+                              {s.score >= PASS_THRESHOLD ? 'PASS' : 'FAIL'}
+                            </Badge>
+                          )}
                         </td>
                         <td className="text-right px-5 py-3 text-slate-500 text-xs">{formatPHDateTime(s.submission_date || s.created_date)}</td>
                       </tr>
@@ -1018,7 +1046,9 @@ export default function AuditDashboard() {
                         <td className="text-center px-3 py-3 flex justify-center"><TrendIcon trend={r.trend} /></td>
                         <td className="text-center px-3 py-3 text-slate-500 text-xs">{r.count}</td>
                         <td className="text-center px-3 py-3">
-  {r.isPassing == null ? (
+  {r.notGraded ? (
+    <Badge className="bg-slate-100 text-slate-600 border-slate-200">N/A</Badge>
+  ) : r.isPassing == null ? (
     <span className="text-slate-300 text-sm">—</span>
   ) : (
     <Badge className={r.isPassing ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}>

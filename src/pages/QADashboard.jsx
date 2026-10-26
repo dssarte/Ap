@@ -12,8 +12,8 @@ import {
 import { LineChart, Line, BarChart, Bar, Cell, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import moment from 'moment';
 import jsPDF from 'jspdf';
-import { auditBusinessDayKey, formatPHDate, formatPHDateTime } from '@/lib/dateUtils';
-import { formatScore } from '@/lib/auditScore';
+import { auditBusinessDayKey, formatPHDate } from '@/lib/dateUtils';
+import { formatScore, isPassFailGraded } from '@/lib/auditScore';
 import { drawPdfText, splitPdfText } from '@/lib/pdfText';
 import { computeFrontCover } from '@/components/store-ranking/FrontCoverModal';
 import ChipDetailModal from '@/components/store-ranking/ChipDetailModal';
@@ -60,17 +60,27 @@ function classifyStatus(avgScore) {
   return STATUS_BANDS.find(b => b.test(avgScore));
 }
 
+// A location whose audits are all on checklists that aren't graded
+// pass/fail (pass mark 0, e.g. the Mayon Daily Walkthrough) — kept out of
+// the bands above and their counts.
+const UNGRADED_STATUS = { key: 'ungraded', label: 'N/A', icon: Minus, text: 'text-slate-500', badge: 'bg-slate-100 text-slate-600 border-slate-200', solid: 'bg-slate-400', ring: '#94a3b8', hint: 'Not graded pass/fail' };
+
 const ACTION_BY_STATUS = {
   critical: 'Audit + Training',
   watchlist: 'Coaching',
   healthy: 'Maintain',
+  ungraded: '—',
 };
 
 const PRIORITY_BY_STATUS = {
   critical: { label: 'Critical', badge: 'bg-red-100 text-red-700 border-red-200' },
   watchlist: { label: 'Medium', badge: 'bg-amber-100 text-amber-700 border-amber-200' },
   healthy: { label: 'Low', badge: 'bg-slate-100 text-slate-600 border-slate-200' },
+  ungraded: { label: 'N/A', badge: 'bg-slate-100 text-slate-600 border-slate-200' },
 };
+
+// Shared PASS / FAIL / N/A label for an audit history entry.
+const historyResultLabel = (pass) => (pass == null ? 'N/A' : pass ? 'PASS' : 'FAIL');
 
 function TrendIcon({ trend }) {
   if (trend > 1) return <TrendingUp className="w-4 h-4 text-emerald-500" />;
@@ -87,7 +97,7 @@ function scoreAverage(subs) {
 // One point per individual audit (not blended) so a store that failed one
 // visit and passed the next shows as a dip-then-recovery, not just a single
 // averaged number — this is what actually answers "are they improving".
-function buildAuditHistory(submissions, passThreshold) {
+function buildAuditHistory(submissions, passThreshold, ungradedTemplateIds) {
   return [...submissions]
     .sort((a, b) => new Date(a.submission_date || a.created_date) - new Date(b.submission_date || b.created_date))
     .map(s => ({
@@ -95,7 +105,8 @@ function buildAuditHistory(submissions, passThreshold) {
       dateLabel: formatPHDate(s.submission_date || s.created_date),
       rawDate: s.submission_date || s.created_date,
       score: Number(s.score) || 0,
-      pass: (Number(s.score) || 0) >= passThreshold,
+      // null = not graded pass/fail (shows N/A)
+      pass: ungradedTemplateIds.has(s.template_id) || passThreshold == null ? null : (Number(s.score) || 0) >= passThreshold,
       auditType: s.audit_type ? AUDIT_TYPE_LABELS[s.audit_type] || s.audit_type : null,
       templateTitle: s.template_title || null,
     }));
@@ -191,6 +202,11 @@ export default function QADashboard() {
     return map;
   }, [templates]);
 
+  const ungradedTemplateIds = useMemo(
+    () => new Set(templates.filter(t => !isPassFailGraded(t)).map(t => t.id)),
+    [templates]
+  );
+
   const visibleStores = useMemo(() => {
     if (selectedBrandId === 'all') return stores;
     return stores.filter(s => s.brand_id === selectedBrandId);
@@ -263,12 +279,16 @@ export default function QADashboard() {
         byTemplate[s.template_id].yes += Number(s.yes_count || 0);
         byTemplate[s.template_id].no += Number(s.no_count || 0);
       });
-      const answered = Object.values(byTemplate).reduce((sum, t) => sum + t.yes + t.no, 0);
-      const weightedThreshold = Object.entries(byTemplate).reduce((sum, [templateId, t]) => {
+      // Only checklists graded pass/fail count toward the store's pass mark;
+      // a store with none of them has no pass mark at all (status N/A).
+      const gradedTemplates = Object.entries(byTemplate).filter(([templateId]) => !ungradedTemplateIds.has(templateId));
+      const isGraded = gradedTemplates.length > 0;
+      const answered = gradedTemplates.reduce((sum, [, t]) => sum + t.yes + t.no, 0);
+      const weightedThreshold = gradedTemplates.reduce((sum, [templateId, t]) => {
         const items = t.yes + t.no;
         return sum + (templateThresholds[templateId] ?? DEFAULT_PASS_THRESHOLD) * items;
       }, 0);
-      const passThreshold = answered > 0 ? weightedThreshold / answered : DEFAULT_PASS_THRESHOLD;
+      const passThreshold = !isGraded ? null : answered > 0 ? weightedThreshold / answered : DEFAULT_PASS_THRESHOLD;
 
       // Trend: split this store's submissions chronologically in half and
       // compare early vs. recent average score — same convention Audit
@@ -279,7 +299,7 @@ export default function QADashboard() {
       const lateAvg = scoreAverage(sorted.slice(mid)) ?? avgScore;
       const trend = lateAvg - earlyAvg;
 
-      const status = classifyStatus(avgScore);
+      const status = isGraded ? classifyStatus(avgScore) : UNGRADED_STATUS;
 
       const { sectionRows } = computeFrontCover(subs, templatesById);
       const worstSection = sectionRows.length ? [...sectionRows].sort((a, b) => b.no - a.no)[0] : null;
@@ -307,13 +327,16 @@ export default function QADashboard() {
         templatesUsed: [...new Set(subs.map(s => s.template_title))].join(', '),
         submissions: subs,
       };
-    }).sort((a, b) => a.avgScore - b.avgScore); // worst first = priority order
-  }, [filtered, templateThresholds, templatesById, ticketsBySubmissionId, stores]);
+    })
+      // worst first = priority order; ungraded locations after every store
+      .sort((a, b) => (a.status === UNGRADED_STATUS) - (b.status === UNGRADED_STATUS) || a.avgScore - b.avgScore);
+  }, [filtered, templateThresholds, templatesById, ungradedTemplateIds, ticketsBySubmissionId, stores]);
 
   const networkOverview = useMemo(() => {
     const counts = { critical: 0, watchlist: 0, healthy: 0 };
-    storeRows.forEach(r => { counts[r.status.key] += 1; });
-    return { total: storeRows.length, ...counts };
+    const gradedRows = storeRows.filter(r => r.status !== UNGRADED_STATUS);
+    gradedRows.forEach(r => { counts[r.status.key] += 1; });
+    return { total: gradedRows.length, ...counts };
   }, [storeRows]);
 
   // Stores with zero QA submissions in the selected range — a coverage gap
@@ -493,7 +516,7 @@ export default function QADashboard() {
       doc.roundedRect(margin, y, contentW, 22, 2, 2, 'FD');
 
       const statusRgb = {
-        critical: [220, 38, 38], watchlist: [245, 158, 11], healthy: [16, 185, 129],
+        critical: [220, 38, 38], watchlist: [245, 158, 11], healthy: [16, 185, 129], ungraded: [148, 163, 184],
       }[store.status.key];
       doc.setFillColor(...statusRgb);
       doc.roundedRect(margin + 3, y + 3, 28, 16, 2, 2, 'F');
@@ -515,7 +538,7 @@ export default function QADashboard() {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(30, 30, 30);
-      doc.text(`${Math.round(store.passThreshold * 10) / 10}%`, margin + 65, y + 6);
+      doc.text(store.passThreshold == null ? 'N/A' : `${Math.round(store.passThreshold * 10) / 10}%`, margin + 65, y + 6);
       doc.text(store.lastAuditDate ? formatPHDate(store.lastAuditDate) : '—', margin + 65, y + 13);
       doc.text(String(store.count), margin + 140, y + 6);
       doc.setTextColor(...(store.openTickets.length ? [220, 38, 38] : [30, 30, 30]));
@@ -553,7 +576,7 @@ export default function QADashboard() {
       y += 2;
 
       // Audit History
-      const history = buildAuditHistory(store.submissions, store.passThreshold);
+      const history = buildAuditHistory(store.submissions, store.passThreshold, ungradedTemplateIds);
       addPageIfNeeded(14);
       doc.setFillColor(240, 253, 244);
       doc.roundedRect(margin, y, contentW, 7, 1.5, 1.5, 'F');
@@ -593,8 +616,8 @@ export default function QADashboard() {
           drawPdfText(doc, h.auditType || '—', colX[1], y);
           doc.text(formatScore(h.score), colX[2], y);
           doc.setFont('helvetica', 'bold');
-          doc.setTextColor(...(h.pass ? [16, 185, 129] : [239, 68, 68]));
-          doc.text(h.pass ? 'PASS' : 'FAIL', colX[3], y);
+          doc.setTextColor(...(h.pass == null ? [148, 163, 184] : h.pass ? [16, 185, 129] : [239, 68, 68]));
+          doc.text(historyResultLabel(h.pass), colX[3], y);
           y += 5.5;
         });
       }
@@ -625,7 +648,7 @@ export default function QADashboard() {
         y += 2;
         doc.setFillColor(226, 232, 240);
         doc.roundedRect(margin, y, contentW, 2.2, 1, 1, 'F');
-        doc.setFillColor(...(pct >= store.passThreshold ? [16, 185, 129] : [239, 68, 68]));
+        doc.setFillColor(...(store.passThreshold == null ? [148, 163, 184] : pct >= store.passThreshold ? [16, 185, 129] : [239, 68, 68]));
         doc.roundedRect(margin, y, Math.max(2, (pct / 100) * contentW), 2.2, 1, 1, 'F');
         y += 6;
       });
@@ -656,9 +679,6 @@ export default function QADashboard() {
         });
       }
 
-      doc.setFontSize(7);
-      doc.setTextColor(150, 150, 150);
-      doc.text(`Generated ${formatPHDateTime(new Date().toISOString())} — QA Dashboard`, margin, pageH - 6);
 
       doc.save(`qa-store-detail_${store.store.replace(/[^a-z0-9]+/gi, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
     } finally {
@@ -1132,7 +1152,7 @@ export default function QADashboard() {
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Audit History — Improving or Not?</p>
                 <p className="text-xs text-slate-400 mb-2">Every individual audit in the selected date range, not blended — widen the range above for more history.</p>
                 {(() => {
-                  const history = buildAuditHistory(detailStore.submissions, detailStore.passThreshold);
+                  const history = buildAuditHistory(detailStore.submissions, detailStore.passThreshold, ungradedTemplateIds);
                   if (history.length < 2) {
                     return (
                       <p className="text-sm text-slate-400 py-6 text-center border border-dashed border-slate-200 rounded-lg">
@@ -1148,16 +1168,18 @@ export default function QADashboard() {
                           <XAxis dataKey="dateLabel" tick={{ fontSize: 11 }} />
                           <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
                           <Tooltip
-                            formatter={(value, name, props) => [`${value}%${props.payload.auditType ? ` · ${props.payload.auditType}` : ''}`, props.payload.pass ? 'Passed' : 'Failed']}
+                            formatter={(value, name, props) => [`${value}%${props.payload.auditType ? ` · ${props.payload.auditType}` : ''}`, props.payload.pass == null ? 'Not graded' : props.payload.pass ? 'Passed' : 'Failed']}
                           />
-                          <ReferenceLine y={detailStore.passThreshold} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: `Pass ≥ ${Math.round(detailStore.passThreshold * 10) / 10}%`, fontSize: 10, fill: '#94a3b8', position: 'insideTopRight' }} />
+                          {detailStore.passThreshold != null && (
+                            <ReferenceLine y={detailStore.passThreshold} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: `Pass ≥ ${Math.round(detailStore.passThreshold * 10) / 10}%`, fontSize: 10, fill: '#94a3b8', position: 'insideTopRight' }} />
+                          )}
                           <Line
                             type="monotone"
                             dataKey="score"
                             stroke="#1fd655"
                             strokeWidth={2}
                             dot={(props) => (
-                              <circle key={props.payload.id} cx={props.cx} cy={props.cy} r={4} fill={props.payload.pass ? '#10b981' : '#ef4444'} stroke="#fff" strokeWidth={1.5} />
+                              <circle key={props.payload.id} cx={props.cx} cy={props.cy} r={4} fill={props.payload.pass == null ? '#94a3b8' : props.payload.pass ? '#10b981' : '#ef4444'} stroke="#fff" strokeWidth={1.5} />
                             )}
                           />
                         </LineChart>
@@ -1165,7 +1187,7 @@ export default function QADashboard() {
                       <ul className="flex flex-wrap gap-x-2 gap-y-2 mt-2">
                         {history.map(h => (
                           <li key={h.id} className="flex flex-col items-center gap-1">
-                            <span className={`text-xs px-2 py-1 rounded-full border font-semibold ${h.pass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                            <span className={`text-xs px-2 py-1 rounded-full border font-semibold ${h.pass == null ? 'bg-slate-50 text-slate-600 border-slate-200' : h.pass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
                               {h.dateLabel} · {formatScore(h.score)}{h.auditType ? ` · ${h.auditType}` : ''}
                             </span>
                             {h.templateTitle && (
@@ -1192,7 +1214,7 @@ export default function QADashboard() {
                           <span className="text-slate-400">{formatScore(pct)}</span>
                         </div>
                         <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                          <div className={`h-full ${pct >= detailStore.passThreshold ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
+                          <div className={`h-full ${detailStore.passThreshold == null ? 'bg-slate-400' : pct >= detailStore.passThreshold ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
                         </div>
                       </div>
                     );

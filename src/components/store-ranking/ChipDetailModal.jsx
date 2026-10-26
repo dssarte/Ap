@@ -33,7 +33,9 @@ export default function ChipDetailModal({ label, submissions, templatesById, pas
   );
   const answered = totals.yes + totals.no;
   const averageRating = answered > 0 ? (totals.yes / answered) * 100 : 0;
-  const isPassing = averageRating >= passThreshold;
+  // No pass mark = a checklist that isn't graded pass/fail (shows N/A).
+  const isGraded = passThreshold != null;
+  const isPassing = isGraded && averageRating >= passThreshold;
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -91,14 +93,14 @@ export default function ChipDetailModal({ label, submissions, templatesById, pas
               </table>
             </div>
 
-            <div className={`flex items-center justify-between rounded-xl border-2 p-4 ${isPassing ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+            <div className={`flex items-center justify-between rounded-xl border-2 p-4 ${!isGraded ? 'border-slate-200 bg-slate-50' : isPassing ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
               <div>
-                <p className={`text-sm font-bold uppercase tracking-wide ${isPassing ? 'text-emerald-700' : 'text-red-700'}`}>
-                  {isPassing ? 'PASSED' : 'FAILED'} the audit
+                <p className={`text-sm font-bold uppercase tracking-wide ${!isGraded ? 'text-slate-600' : isPassing ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {!isGraded ? 'N/A — not graded pass/fail' : `${isPassing ? 'PASSED' : 'FAILED'} the audit`}
                 </p>
-                <p className="text-xs text-slate-500 mt-0.5">Pass threshold: {Math.round(passThreshold * 10) / 10}%</p>
+                {isGraded && <p className="text-xs text-slate-500 mt-0.5">Pass threshold: {Math.round(passThreshold * 10) / 10}%</p>}
               </div>
-              <span className={`text-2xl font-extrabold ${isPassing ? 'text-emerald-700' : 'text-red-700'}`}>
+              <span className={`text-2xl font-extrabold ${!isGraded ? 'text-slate-700' : isPassing ? 'text-emerald-700' : 'text-red-700'}`}>
                 {averageRating.toFixed(2)}%
               </span>
             </div>

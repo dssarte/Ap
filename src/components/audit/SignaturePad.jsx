@@ -1,10 +1,14 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Upload } from 'lucide-react';
 
-export default function SignaturePad({ value, onChange }) {
+// allowUpload adds an "Upload signature" option beside drawing — the picked
+// image is fitted into the pad and saved exactly like a drawn signature.
+export default function SignaturePad({ value, onChange, allowUpload = false }) {
   const canvasRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [drawing, setDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const lastPos = useRef(null);
 
   // Load existing signature into canvas on mount
@@ -76,6 +80,33 @@ export default function SignaturePad({ value, onChange }) {
     onChange('');
   };
 
+  const uploadSignature = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploadError('');
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Fit inside the pad, keeping the signature's own proportions.
+      const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+      URL.revokeObjectURL(url);
+      setHasDrawn(true);
+      onChange(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      setUploadError("Couldn't read that image — try a PNG or JPG.");
+    };
+    img.src = url;
+  };
+
   return (
     <div className="space-y-1">
       <div className="relative border-2 border-dashed border-slate-300 rounded-md bg-white overflow-hidden">
@@ -98,15 +129,32 @@ export default function SignaturePad({ value, onChange }) {
           </div>
         )}
       </div>
-      {hasDrawn && (
-        <button
-          type="button"
-          onClick={clear}
-          className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
-        >
-          <Trash2 className="w-3 h-3" /> Clear
-        </button>
+      {(hasDrawn || allowUpload) && (
+        <div className="flex items-center gap-4">
+          {allowUpload && (
+            <>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900"
+              >
+                <Upload className="w-3 h-3" /> Upload signature
+              </button>
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={uploadSignature} />
+            </>
+          )}
+          {hasDrawn && (
+            <button
+              type="button"
+              onClick={clear}
+              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
+            >
+              <Trash2 className="w-3 h-3" /> Clear
+            </button>
+          )}
+        </div>
       )}
+      {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
     </div>
   );
 }
