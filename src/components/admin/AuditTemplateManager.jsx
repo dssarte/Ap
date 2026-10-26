@@ -462,7 +462,9 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
       template_group: templateGroup,
       checklist_category: checklistCategory,
       active_ticket: activeTicket,
-      pass_threshold: Number(passThreshold) || 75,
+      // Blank falls back to 75; 0 is kept — it marks a checklist that isn't
+      // graded pass/fail (its result shows N/A).
+      pass_threshold: passThreshold === '' || !Number.isFinite(Number(passThreshold)) ? 75 : Number(passThreshold),
       requires_audit_type: requiresAuditType,
       requires_visit_number: requiresVisitNumber,
       requires_commitment_date: requiresCommitmentDate,
@@ -639,7 +641,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
             <p className="text-xs text-slate-500">When enabled, submitting this audit with any NO answer automatically creates a ticket routed to the handling department head. YES/N/A-only submissions create no ticket.</p>
           </div>
 
-          {/* Pass Threshold — used by Store Ranking to decide PASS/FAIL for this checklist */}
+          {/* Pass Threshold — decides PASS/FAIL for this checklist (0 = not graded, shows N/A) */}
           <div className="space-y-2">
             <label className="text-sm font-semibold text-slate-700">Pass Threshold (%)</label>
             <Input
@@ -650,7 +652,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
               onChange={e => setPassThreshold(e.target.value)}
               className="w-32"
             />
-            <p className="text-xs text-slate-500">The minimum average score a store must hit on this checklist to be marked PASS in Store Ranking. Defaults to 75%.</p>
+            <p className="text-xs text-slate-500">The minimum average score a store must hit on this checklist to be marked PASS. Defaults to 75%. Set it to 0 for a checklist that isn't graded pass/fail — its result then shows N/A.</p>
           </div>
 
           {/* Audit Type — Unannounced / Follow-up / Spot, recorded per submission */}

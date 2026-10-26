@@ -4,7 +4,7 @@ import SignaturePad from '@/components/audit/SignaturePad';
 import CameraCapture from '@/components/audit/CameraCapture';
 import PhotoUploadPreview from '@/components/audit/PhotoUploadPreview';
 import PhotoThumb from '@/components/audit/PhotoThumb';
-import SubmissionDetail, { ScoreBadge } from '@/components/audit/SubmissionDetail';
+import SubmissionDetail, { ScoreBadge, AuditResultBadge } from '@/components/audit/SubmissionDetail';
 import { useDraftStorage } from '@/hooks/useAuditDraft';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,10 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, ClipboardList, CheckCircle2, Eye, ChevronLeft, ChevronDown, Trash2, Pencil, Camera, History, ListChecks, FileEdit, Upload, Search } from "lucide-react";
 import moment from 'moment';
-import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
+import { auditBusinessDayKey, formatPHDateTime, formatPHDateShort } from '@/lib/dateUtils';
 import { getLocation } from '@/lib/getLocation';
 import { compressImage } from '@/lib/compressImage';
-import { roundScore, answerCounts, submissionScore } from '@/lib/auditScore';
+import { roundScore, answerCounts, submissionScore, auditResult } from '@/lib/auditScore';
 import { SectionLoadingSkeleton } from '@/components/PageState';
 import { useToast } from '@/components/ui/use-toast';
 import { parseMysteryShopperFile } from '@/lib/excelImport';
@@ -101,6 +101,17 @@ async function fetchImageBase64(url) {
   }
 }
 
+// Store-name search for History and Drafts — `brand` holds "Brand - Store,
+// Location", so one match covers all three.
+function matchesStoreSearch(sub, query) {
+  const term = query.trim().toLowerCase();
+  return !term || (sub.brand || '').toLowerCase().includes(term);
+}
+
+// Midday Manila time on a picked calendar day, so the saved timestamp
+// always lands on that same business day.
+const manilaNoon = (day) => moment(day, 'YYYY-MM-DD').utcOffset(8, true).startOf('day').add(12, 'hours').toISOString();
+
 async function persistSignature(value, label) {
   if (!value || !value.startsWith('data:')) return value || '';
   const blob = await (await fetch(value)).blob();
@@ -118,6 +129,8 @@ export default function Audit() {
   const [historyDateFrom, setHistoryDateFrom] = useState('');
   const [historyDateTo, setHistoryDateTo] = useState('');
   const [historyStoreFilter, setHistoryStoreFilter] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
+  const [draftSearch, setDraftSearch] = useState('');
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -271,8 +284,14 @@ export default function Audit() {
     ),
     enabled: !!user,
   });
-  const myDrafts = drafts.filter(sub => sub.submitted_by_email === user?.email);
-  const teamDrafts = drafts.filter(sub => sub.submitted_by_email !== user?.email);
+  const myDrafts = drafts.filter(sub => sub.submitted_by_email === user?.email && matchesStoreSearch(sub, draftSearch));
+  const teamDrafts = drafts.filter(sub => sub.submitted_by_email !== user?.email && matchesStoreSearch(sub, draftSearch));
+  const myDraftCount = drafts.filter(sub => sub.submitted_by_email === user?.email).length;
+
+  const templatesById = useMemo(() => Object.fromEntries(allTemplates.map(t => [t.id, t])), [allTemplates]);
+  const isMysteryShopperSubmission = (sub) => (
+    normalizeChecklistCategory(templatesById[sub.template_id]?.checklist_category) === 'mystery_shopper'
+  );
 
   const deleteMutation = useMutation({
     mutationFn: (id) => base44.entities.AuditSubmission.delete(id),
@@ -449,7 +468,7 @@ export default function Audit() {
               </Button>
             )}
             <Button variant="outline" onClick={() => setView('drafts')} className="gap-2">
-              <FileEdit className="w-4 h-4" /> Drafts{myDrafts.length > 0 ? ` (${myDrafts.length})` : ''}
+              <FileEdit className="w-4 h-4" /> Drafts{myDraftCount > 0 ? ` (${myDraftCount})` : ''}
             </Button>
             <Button variant="outline" onClick={() => setView('history')} className="gap-2">
               <Eye className="w-4 h-4" /> History
@@ -629,6 +648,16 @@ export default function Audit() {
                 </Select>
               </>
             )}
+            <div className="relative w-full sm:ml-auto sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={historySearch}
+                onChange={e => setHistorySearch(e.target.value)}
+                placeholder="Search store name..."
+                className="w-full border border-slate-300 rounded-md pl-9 pr-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-[#1fd655]"
+              />
+            </div>
           </div>
 
           {!historyDateFrom || !historyDateTo ? (
@@ -644,12 +673,16 @@ export default function Audit() {
               const businessDay = auditBusinessDayKey(sub);
               const inRange = businessDay >= historyDateFrom && businessDay <= historyDateTo;
               const matchesStore = !historyStoreFilter || (sub.brand || '').includes(historyStoreFilter);
-              return inRange && matchesStore;
+              return inRange && matchesStore && matchesStoreSearch(sub, historySearch);
             });
             return filtered.length === 0 ? (
               <Card className="border-2 border-dashed border-slate-200">
                 <CardContent className="py-16 text-center">
-                  <p className="text-slate-400">No audit submissions found for the selected date range.</p>
+                  <p className="text-slate-400">
+                    {historySearch.trim()
+                      ? `No audits for "${historySearch.trim()}" in the selected date range.`
+                      : 'No audit submissions found for the selected date range.'}
+                  </p>
                 </CardContent>
               </Card>
             ) : (
@@ -663,7 +696,9 @@ export default function Audit() {
                     <p className="font-semibold text-slate-900">{sub.template_title}</p>
                     <p className="text-xs text-slate-500">
                       {sub.brand && <span className="mr-2">📍 {sub.brand}</span>}
-                      By {sub.submitted_by_name || sub.submitted_by_email} · {formatPHDateTime(sub.submission_date || sub.created_date)}
+                      By {sub.submitted_by_name || sub.submitted_by_email} · {isMysteryShopperSubmission(sub)
+                        ? `Conducted ${formatPHDateShort(sub.submission_date || sub.created_date)}`
+                        : formatPHDateTime(sub.submission_date || sub.created_date)}
                     </p>
                   </div>
                   <ScoreBadge score={sub.score} />
@@ -707,6 +742,23 @@ export default function Audit() {
           </Card>
         ) : (
           <div className="space-y-6">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={draftSearch}
+                onChange={e => setDraftSearch(e.target.value)}
+                placeholder="Search store name..."
+                className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-[#1fd655]"
+              />
+            </div>
+            {myDrafts.length === 0 && teamDrafts.length === 0 && (
+              <Card className="border-2 border-dashed border-slate-200">
+                <CardContent className="py-12 text-center">
+                  <p className="text-slate-400">No drafts for "{draftSearch.trim()}".</p>
+                </CardContent>
+              </Card>
+            )}
             {[
               { key: 'mine', title: 'My Drafts', rows: myDrafts },
               { key: 'team', title: "Other QA Members' Drafts", rows: teamDrafts },
@@ -725,18 +777,20 @@ export default function Audit() {
                   return (
                     <Card key={sub.id} className="border-2 border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => (isMine ? resumeDraft(sub) : viewSubmission(sub))}>
                       <CardContent className="p-4 flex items-center gap-4">
+                        {/* Store first, then the checklist — drafts are found by store. */}
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-slate-900">{sub.template_title}</p>
+                          <p className="font-semibold text-slate-900">📍 {sub.brand || 'No store selected'}</p>
                           <p className="text-xs text-slate-500">
-                            {sub.brand && <span className="mr-2">📍 {sub.brand}</span>}
-                            {!isMine && <>By {sub.submitted_by_name || sub.submitted_by_email} · </>}
-                            Last saved {formatPHDateTime(sub.updated_date || sub.created_date)}
+                            <span className="font-medium text-slate-600">{sub.template_title}</span>
+                            {!isMine && <> · By {sub.submitted_by_name || sub.submitted_by_email}</>}
+                            {' · '}Last saved {formatPHDateTime(sub.updated_date || sub.created_date)}
                           </p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {counts.yes + counts.no > 0 && (
                             <>
                               <ScoreBadge score={submissionScore(sub)} />
+                              <AuditResultBadge result={auditResult(submissionScore(sub), templatesById[sub.template_id])} />
                               <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-2.5 py-1">
                                 {counts.no} NCF
                               </span>
@@ -749,6 +803,10 @@ export default function Audit() {
                         <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
                           {isMine ? (
                             <>
+                              {/* View opens the detailed/summary report; Resume continues filling it in. */}
+                              <Button variant="ghost" size="sm" className="gap-1.5 text-slate-600 hover:text-[#1fd655]" onClick={() => viewSubmission(sub)}>
+                                <Eye className="w-4 h-4" /> View
+                              </Button>
                               <Button variant="ghost" size="sm" className="gap-1.5 text-slate-600 hover:text-[#1fd655]" onClick={() => resumeDraft(sub)}>
                                 <Pencil className="w-4 h-4" /> Resume
                               </Button>
@@ -937,6 +995,14 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
   const [auditType, setAuditType] = useState(existingSubmission?.audit_type || '');
   const [visitNumber, setVisitNumber] = useState(existingSubmission?.visit_number || '');
   const [commitmentDate, setCommitmentDate] = useState(existingSubmission?.commitment_date || '');
+  // Mystery Shopper: the day the shopper actually visited — saved as the
+  // audit's date instead of the day it was uploaded. Blank on a new one so
+  // it has to be picked.
+  const [conductedDate, setConductedDate] = useState(() => (
+    isMysteryShopper && existingSubmission?.submission_date
+      ? moment(existingSubmission.submission_date).utcOffset(8).format('YYYY-MM-DD')
+      : ''
+  ));
   const [answers, setAnswers] = useState(initialImport?.answers || existingSubmission?.answers || {});
   const [noComments, setNoComments] = useState(initialImport?.noComments || existingSubmission?.no_comments || {});
   const [itemPhotos, setItemPhotos] = useState(existingSubmission?.item_photos || {});
@@ -989,6 +1055,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
     selectedBrandId, selectedStoreId, answers, noComments, itemPhotos,
     others, concernsRecs, deviationsPhotos, updates, updatesAttachments,
     sig1Photo, sig1Name, sig1Position, sig2Photo, sig2Name, sig2Position,
+    conductedDate,
   };
   const hasProgress = useMemo(() =>
     Object.keys(answers).length > 0 ||
@@ -1038,6 +1105,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
     if (pendingDraft.sig2Photo) setSig2Photo(pendingDraft.sig2Photo);
     if (pendingDraft.sig2Name != null) setSig2Name(pendingDraft.sig2Name);
     if (pendingDraft.sig2Position != null) setSig2Position(pendingDraft.sig2Position);
+    if (pendingDraft.conductedDate) setConductedDate(pendingDraft.conductedDate);
     setPendingDraft(null);
   };
 
@@ -1215,6 +1283,11 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
         : 'Please select the Audit Type (Unannounced, Follow-up, or Spot).');
       return;
     }
+    if (isMysteryShopper && !conductedDate) {
+      setErrorItemId(null);
+      setPhotoError('Please enter the Date Conducted — the day the mystery shopper visited.');
+      return;
+    }
     if (template.requires_visit_number && !visitNumber) {
       setErrorItemId(null);
       setPhotoError('Please select the Visit (First Visit or Second Visit).');
@@ -1286,8 +1359,12 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
       signature2_position: sig2Position.trim(),
     };
 
-    if (existingSubmission?.id && isAdmin) {
-      payload.submission_date = moment(submissionDate, 'YYYY-MM-DD').utcOffset(8, true).startOf('day').add(12, 'hours').toISOString();
+    // A Mystery Shopper audit is dated by the shopper's visit; otherwise only
+    // an admin correcting a submission moves its date.
+    if (isMysteryShopper) {
+      payload.submission_date = manilaNoon(conductedDate);
+    } else if (existingSubmission?.id && isAdmin) {
+      payload.submission_date = manilaNoon(submissionDate);
     }
 
     try {
@@ -1449,13 +1526,15 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
         signature2_position: sig2Position.trim(),
         is_draft: true,
       };
+      // A Mystery Shopper draft carries the visit date too, once it's picked.
+      if (isMysteryShopper && conductedDate) draftPayload.submission_date = manilaNoon(conductedDate);
 
       if (existingSubmission?.id && existingSubmission.is_draft) {
         await base44.entities.AuditSubmission.update(existingSubmission.id, draftPayload);
       } else {
         await base44.entities.AuditSubmission.create({
           ...draftPayload,
-          submission_date: new Date().toISOString(),
+          submission_date: draftPayload.submission_date || new Date().toISOString(),
           created_by: user.email,
         });
       }
@@ -1614,7 +1693,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
       </Card>
 
       {/* Audit Type — only for templates that opted in */}
-      {(template.requires_audit_type || template.requires_visit_number || template.requires_commitment_date) && (
+      {(template.requires_audit_type || template.requires_visit_number || template.requires_commitment_date || isMysteryShopper) && (
         <Card className="border-2 border-slate-200">
           <CardContent className="flex flex-wrap items-center gap-6 p-4">
             {template.requires_audit_type && (
@@ -1639,6 +1718,18 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
                     )}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {isMysteryShopper && (
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Date Conducted:</label>
+                <input
+                  type="date"
+                  value={conductedDate}
+                  max={moment().utcOffset(8).format('YYYY-MM-DD')}
+                  onChange={e => setConductedDate(e.target.value)}
+                  className="border border-slate-300 rounded-md px-2 py-1.5 h-9 text-sm text-slate-700 focus:outline-none focus:border-[#1fd655]"
+                />
               </div>
             )}
             {template.requires_visit_number && (
@@ -1670,8 +1761,8 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
         </Card>
       )}
 
-      {/* Admin-editable audit date */}
-      {existingSubmission && isAdmin && (
+      {/* Admin-editable audit date (a Mystery Shopper audit uses Date Conducted above) */}
+      {existingSubmission && isAdmin && !isMysteryShopper && (
         <Card className="border-2 border-slate-200">
           <CardContent className="p-4 flex items-center gap-3">
             <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Audit Date:</label>
@@ -1916,7 +2007,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
             <div className="space-y-2 border-2 border-slate-200 rounded-lg p-4">
               <label className="text-sm font-semibold text-slate-700">Signature 1 <span className="text-red-500">*</span></label>
-              <SignaturePad value={sig1Photo} onChange={setSig1Photo} />
+              <SignaturePad value={sig1Photo} onChange={setSig1Photo} allowUpload={isQaChecklist} />
               <Input placeholder="Enter your name here" value={sig1Name} onChange={e => setSig1Name(e.target.value)} className="h-9 text-sm" />
               <Input placeholder="Enter your position here" value={sig1Position} onChange={e => setSig1Position(e.target.value)} className="h-9 text-sm" />
             </div>
@@ -1924,7 +2015,7 @@ function AuditFillForm({ template, user, brands, stores, departments = [], exist
               <label className="text-sm font-semibold text-slate-700">
                 Signature 2 {template.requires_audit_type ? <span className="text-red-500">*</span> : <span className="text-slate-400 text-xs font-normal">(optional)</span>}
               </label>
-              <SignaturePad value={sig2Photo} onChange={setSig2Photo} />
+              <SignaturePad value={sig2Photo} onChange={setSig2Photo} allowUpload={isQaChecklist} />
               <Input placeholder="Enter your name here" value={sig2Name} onChange={e => setSig2Name(e.target.value)} className="h-9 text-sm" />
               <Input placeholder="Enter your position here" value={sig2Position} onChange={e => setSig2Position(e.target.value)} className="h-9 text-sm" />
             </div>
