@@ -134,9 +134,10 @@ const wrapLine = (doc, paragraph, maxWidth) => {
   return lines;
 };
 
-// Drop-in for doc.splitTextToSize().
+// Drop-in for doc.splitTextToSize(). Tabs become spaces: the PDF fonts have
+// no tab character, so a line indented with one would lose its indent.
 export function splitPdfText(doc, text, maxWidth) {
-  const value = String(text ?? '');
+  const value = String(text ?? '').replace(/\t/g, '    ');
   if (isPlainText(value)) return doc.splitTextToSize(value, maxWidth);
   return value.split(/\r\n|\r|\n/).flatMap((paragraph) => wrapLine(doc, paragraph, maxWidth));
 }

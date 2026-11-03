@@ -54,6 +54,10 @@ function toRomanNumeral(num) {
   return result;
 }
 
+// A note the way it was typed — QA lay theirs out with line breaks, blank
+// lines and indents — minus blank lines before or after it.
+const noteText = (value) => String(value || '').replace(/^\s*\n/, '').trimEnd();
+
 export function ScoreBadge({ score }) {
   if (score == null) return null;
   const color = score >= 80 ? 'bg-green-100 text-green-700' : score >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
@@ -144,6 +148,33 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         if (y + needed > pageH - 10) {
           doc.addPage();
           y = 12;
+        }
+      };
+
+      // Wrapped text, a page's worth at a time: lines that don't fit above
+      // the footer carry on to the next page, rather than the whole block
+      // being drawn in one go and running over the footer. `top` is the gap
+      // from y to the first baseline, `bottom` the gap left below the last;
+      // `fill` paints a background behind each page's share of the lines.
+      const drawLines = (lines, x, { top = 4, bottom = 2, fill } = {}) => {
+        const lineH = (doc.getFontSize() * doc.getLineHeightFactor()) / doc.internal.scaleFactor;
+        let rest = lines;
+        while (rest.length) {
+          addPageIfNeeded(top + bottom);
+          const fits = Math.max(1, Math.floor((pageH - 10 - y - top - bottom) / lineH) + 1);
+          const part = rest.slice(0, fits);
+          rest = rest.slice(part.length);
+          const height = top + (part.length - 1) * lineH + bottom;
+          if (fill) {
+            doc.setFillColor(...fill);
+            doc.rect(margin, y, contentW, height, 'F');
+          }
+          drawPdfText(doc, part, x, y + top);
+          y += height;
+          if (rest.length) {
+            doc.addPage();
+            y = 12;
+          }
         }
       };
 
@@ -296,7 +327,9 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       // Sections
       if (template?.sections) {
         for (const { sec, items, hasDeviation } of sectionsWithDeviations) {
-          addPageIfNeeded(12);
+          // Room for the heading plus its first line, so it isn't left alone
+          // at the foot of a page.
+          addPageIfNeeded(20);
           doc.setFillColor(240, 253, 244);
           doc.roundedRect(margin, y, contentW, 8, 1.5, 1.5, 'F');
           doc.setDrawColor(187, 247, 208);
@@ -316,26 +349,24 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
               doc.text('No noted deviation.', margin + 2, y + 4);
               y += 8;
             } else {
+              // Each finding is QA's own note on it, numbered per area — not
+              // the checklist question it was raised under.
               for (const { item, num } of items.filter(i => i.isNo)) {
-                addPageIfNeeded(8);
+                const note = noteText(submission.no_comments?.[item.id]);
+                const numeral = `${toRomanNumeral(num)}.`;
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'bold');
+                const indent = doc.getTextWidth(numeral) + 1.5;
+                doc.setFont('helvetica', note ? 'normal' : 'italic');
+                const noteLines = splitPdfText(doc, note || 'No notes added.', contentW - 4 - indent);
+                // The numeral goes on the same page as the note's first line.
+                addPageIfNeeded(6);
                 doc.setTextColor(30, 30, 30);
                 doc.setFont('helvetica', 'bold');
-                doc.setFontSize(8);
-                const label = `${toRomanNumeral(num)}. ${item.label}`;
-                const wrappedLabel = splitPdfText(doc, label, contentW - 4);
-                drawPdfText(doc, wrappedLabel, margin + 2, y + 4);
-                y += wrappedLabel.length * 4 + 2;
-
-                const noComment = submission.no_comments?.[item.id];
-                if (noComment) {
-                  doc.setTextColor(80, 80, 80);
-                  doc.setFont('helvetica', 'normal');
-                  doc.setFontSize(8);
-                  const reasonWrapped = splitPdfText(doc, `- ${noComment}`, contentW - 8);
-                  addPageIfNeeded(reasonWrapped.length * 4 + 2);
-                  drawPdfText(doc, reasonWrapped, margin + 4, y + 4);
-                  y += reasonWrapped.length * 4 + 2;
-                }
+                doc.text(numeral, margin + 2, y + 4);
+                doc.setFont('helvetica', note ? 'normal' : 'italic');
+                if (!note) doc.setTextColor(100, 116, 139);
+                drawLines(noteLines, margin + 2 + indent);
 
                 const itemPhotoUrls = submission.item_photos?.[item.id];
                 if (itemPhotoUrls?.length) await drawItemPhotoGrid(itemPhotoUrls);
@@ -345,7 +376,13 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
           } else {
             for (const [idx, item] of (sec.items || []).entries()) {
               const ans = submission.answers?.[item.id];
-              const rowH = 8;
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(8);
+              const label = `${idx + 1}. ${item.label}`;
+              const wrappedLabel = splitPdfText(doc, label, contentW - 25);
+              // Taller for a question that wraps, so the background, the
+              // divider and the page-break check cover every line of it.
+              const rowH = 8 + (wrappedLabel.length - 1) * 3.5;
               addPageIfNeeded(rowH + 2);
 
               const bg = idx % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
@@ -355,10 +392,6 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
               doc.line(margin, y + rowH, margin + contentW, y + rowH);
 
               doc.setTextColor(60, 60, 60);
-              doc.setFont('helvetica', 'normal');
-              doc.setFontSize(8);
-              const label = `${idx + 1}. ${item.label}`;
-              const wrappedLabel = splitPdfText(doc, label, contentW - 25);
               drawPdfText(doc, wrappedLabel, margin + 2, y + 5);
 
               // Answer badge
@@ -366,27 +399,24 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
                 const badgeColor = ans === 'YES' ? [220, 252, 231] : ans === 'NO' ? [254, 226, 226] : [241, 245, 249];
                 const textColor = ans === 'YES' ? [22, 163, 74] : ans === 'NO' ? [220, 38, 38] : [100, 116, 139];
                 doc.setFillColor(...badgeColor);
-                doc.roundedRect(pageW - margin - 15, y + 1.5, 13, rowH - 3, 1.5, 1.5, 'F');
+                doc.roundedRect(pageW - margin - 15, y + 1.5, 13, 5, 1.5, 1.5, 'F');
                 doc.setTextColor(...textColor);
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(7);
                 doc.text(ans === 'NA' ? 'N/A' : ans, pageW - margin - 8.5, y + 5.5, { align: 'center' });
               }
 
-              y += rowH + (wrappedLabel.length > 1 ? (wrappedLabel.length - 1) * 3.5 : 0);
+              y += rowH;
 
               // NO comment
-              const noComment = submission.no_comments?.[item.id];
+              const noComment = noteText(submission.no_comments?.[item.id]);
               if (ans === 'NO' && noComment) {
-                addPageIfNeeded(6);
-                doc.setFillColor(254, 242, 242);
-                const commentWrapped = splitPdfText(doc, `  >> ${noComment}`, contentW - 4);
-                doc.rect(margin, y, contentW, commentWrapped.length * 4 + 2, 'F');
                 doc.setTextColor(220, 38, 38);
                 doc.setFont('helvetica', 'italic');
                 doc.setFontSize(7);
-                drawPdfText(doc, commentWrapped, margin + 2, y + 3.5);
-                y += commentWrapped.length * 4 + 4;
+                const commentWrapped = splitPdfText(doc, `  >> ${noComment}`, contentW - 4);
+                drawLines(commentWrapped, margin + 2, { top: 3.5, bottom: 1.5, fill: [254, 242, 242] });
+                y += 2;
               }
 
               // Item photos
@@ -400,7 +430,10 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
 
       // Extra fields
       const addTextField = (label, value) => {
-        if (!value) return;
+        const text = noteText(value);
+        if (!text) return;
+        // The label plus the first line, so the label isn't left alone at
+        // the foot of a page.
         addPageIfNeeded(14);
         doc.setTextColor(100, 116, 139);
         doc.setFont('helvetica', 'bold');
@@ -410,9 +443,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
         doc.setTextColor(60, 60, 60);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
-        const wrapped = splitPdfText(doc, value, contentW);
-        drawPdfText(doc, wrapped, margin, y + 4);
-        y += wrapped.length * 4 + 4;
+        drawLines(splitPdfText(doc, text, contentW), margin, { bottom: 4 });
       };
 
       addTextField('Others', submission.others);
@@ -422,13 +453,14 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
       // Deviation photos
       const addPhotos = async (label, urls) => {
         if (!urls?.length) return;
-        addPageIfNeeded(10);
+        const imgW = 42, imgH = 32, gap = 4;
+        // The label and the first row of photos start on the same page.
+        addPageIfNeeded(8 + imgH + 4);
         doc.setTextColor(100, 116, 139);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7);
         doc.text(label.toUpperCase(), margin, y + 4);
         y += 8;
-        const imgW = 42, imgH = 32, gap = 4;
         let x = margin;
         for (const url of urls) {
           addPageIfNeeded(imgH + 4);
@@ -609,12 +641,16 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
                 ) : (
                   <div className="space-y-3">
                     {items.filter(i => i.isNo).map(({ item, num }) => {
-                      const noComment = submission.no_comments?.[item.id];
+                      const note = noteText(submission.no_comments?.[item.id]);
                       const photos = submission.item_photos?.[item.id];
                       return (
                         <div key={item.id}>
-                          <p className="text-sm text-slate-900"><span className="font-bold">{toRomanNumeral(num)}. {item.label}</span></p>
-                          {noComment && <p className="mt-0.5 text-sm text-slate-600">- {noComment}</p>}
+                          <div className="flex gap-1.5 text-sm text-slate-900">
+                            <span className="shrink-0 font-bold">{toRomanNumeral(num)}.</span>
+                            {note
+                              ? <p className="min-w-0 whitespace-pre-wrap break-words">{note}</p>
+                              : <p className="italic text-slate-400">No notes added.</p>}
+                          </div>
                           {photos?.length > 0 && (
                             <div className="flex flex-wrap gap-2 mt-2">
                               {photos.map((url, i) => (
@@ -640,7 +676,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
             <CardContent className="px-5 pb-4 space-y-1">
               {(sec.items || []).map((item, idx) => {
                 const ans = submission.answers?.[item.id];
-                const noComment = submission.no_comments?.[item.id];
+                const noComment = noteText(submission.no_comments?.[item.id]);
                 const photos = submission.item_photos?.[item.id];
                 return (
                   <div key={item.id} className="py-2 border-b border-slate-100 last:border-0">
@@ -656,7 +692,7 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
                       </span>
                     </div>
                     {ans === 'NO' && noComment && (
-                      <p className="mt-1 text-xs text-red-600 bg-red-50 rounded px-2 py-1">{noComment}</p>
+                      <p className="mt-1 text-xs text-red-600 bg-red-50 rounded px-2 py-1 whitespace-pre-wrap break-words">{noComment}</p>
                     )}
                     {photos?.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">

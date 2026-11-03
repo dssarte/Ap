@@ -42,3 +42,9 @@ export function isQaConductedTemplate(template) {
   return !!template?.requires_audit_type
     || QA_ONLY_CATEGORIES.has(normalizeChecklistCategory(template?.checklist_category));
 }
+
+// QA audits stay hidden from store users (store managers and store
+// accounts) while QA is still testing — only QA, admins and directors see
+// them. Covers the Audit Dashboard's QA Audits tab and Conduct Audit →
+// History. Set to true when QA goes live.
+export const QA_AUDITS_VISIBLE_TO_STORES = false;
