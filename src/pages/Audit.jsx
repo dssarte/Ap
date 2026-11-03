@@ -23,7 +23,7 @@ import { roundScore, answerCounts, submissionScore, auditResult } from '@/lib/au
 import { SectionLoadingSkeleton } from '@/components/PageState';
 import { useToast } from '@/components/ui/use-toast';
 import { parseMysteryShopperFile } from '@/lib/excelImport';
-import { CHECKLIST_CATEGORIES, normalizeChecklistCategory, isQaConductedTemplate } from '@/lib/checklistCategories';
+import { CHECKLIST_CATEGORIES, normalizeChecklistCategory, isQaConductedTemplate, QA_AUDITS_VISIBLE_TO_STORES } from '@/lib/checklistCategories';
 
 function formatTimeLabel(hhmm) {
   if (!hhmm) return '';
@@ -255,6 +255,20 @@ export default function Audit() {
   // up) — so once both ends of the range are picked, fetch that date window
   // directly from the server instead of filtering the small recent batch.
   const historyRangeSelected = view === 'history' && !!historyDateFrom && !!historyDateTo;
+  // QA's audits on a store stay out of that store's History until QA goes
+  // live (QA_AUDITS_VISIBLE_TO_STORES). Told apart by checklist, inactive
+  // ones included.
+  const hideQaAudits = !QA_AUDITS_VISIBLE_TO_STORES && !isAdmin
+    && user?.department_name !== 'Quality Assurance' && effectiveStores.length > 0;
+  const { data: templateKinds, isPending: loadingTemplateKinds } = useQuery({
+    queryKey: ['audit-template-kinds'],
+    queryFn: () => base44.audit.listTemplateKinds(),
+    enabled: hideQaAudits && historyRangeSelected,
+  });
+  const qaTemplateIds = useMemo(
+    () => new Set((templateKinds || []).filter(isQaConductedTemplate).map(t => t.id)),
+    [templateKinds]
+  );
   const { data: historySubmissions = [], isLoading: loadingHistorySubmissions } = useQuery({
     queryKey: ['audit-submissions-history', isAdmin, effectiveStores.join(','), user?.email, historyDateFrom, historyDateTo],
     queryFn: () => {
@@ -269,7 +283,7 @@ export default function Audit() {
     : effectiveStores.length > 0
       ? historySubmissions.filter(sub => effectiveStores.some(name => sub.brand?.includes(name)))
       : historySubmissions.filter(sub => sub.submitted_by_email === user?.email)
-  ).filter(sub => !sub.is_draft);
+  ).filter(sub => !sub.is_draft && !(hideQaAudits && qaTemplateIds.has(sub.template_id)));
 
   // Everyone resumes only their own drafts. QA members (and admins) can
   // also open the rest of the team's drafts, view-only — the read policy
@@ -666,7 +680,7 @@ export default function Audit() {
                 <p className="text-slate-400">Please select a date range to view audit history.</p>
               </CardContent>
             </Card>
-          ) : loadingHistorySubmissions ? (
+          ) : loadingHistorySubmissions || (hideQaAudits && loadingTemplateKinds) ? (
           <SectionLoadingSkeleton rows={4} label="Loading audit history" />
         ) : (() => {
             const filtered = historySubmissionsScoped.filter(sub => {

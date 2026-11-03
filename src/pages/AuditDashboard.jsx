@@ -17,20 +17,18 @@ import NoAnswerTracker from '@/components/audit/NoAnswerTracker';
 import TemplateMultiSelect from '@/components/audit/TemplateMultiSelect';
 import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
 import SubmissionDetail from '@/components/audit/SubmissionDetail';
+import QaAuditsPanel, { buildQaAuditRows } from '@/components/audit/QaAuditsPanel';
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { formatScore, answerCounts, isPassFailGraded } from '@/lib/auditScore';
-import { isQaConductedTemplate, normalizeChecklistCategory } from '@/lib/checklistCategories';
+import { isQaConductedTemplate, normalizeChecklistCategory, QA_AUDITS_VISIBLE_TO_STORES } from '@/lib/checklistCategories';
 import { usePagination } from '@/hooks/usePagination';
 import TablePagination from '@/components/TablePagination';
 
 const PASS_THRESHOLD = 75;
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100];
-
-// Store users see the QA audits done on their own stores (QA went live
-// Nov 2026) — set to true to hide QA results from stores again.
-const HIDE_QA_AUDITS_FROM_STORES = false;
 
 // QA checklists for facilities, never for a store's own results.
 const FACILITY_CATEGORIES = new Set(['commissary', 'warehouse', 'mayon']);
@@ -40,6 +38,22 @@ const FACILITY_CATEGORIES = new Set(['commissary', 'warehouse', 'mayon']);
 function templateRestrictions(t) {
   if (t.store_restrictions?.length > 0) return t.store_restrictions;
   return t.store_name ? [{ store_name: t.store_name, brand_id: t.brand_id, store_id: t.store_id }] : [];
+}
+
+// Brand / store / checklist / business-day filters, shared by both tabs.
+function filterDashboardRows(rows, { allowedStores, brand, store, templateIds, dateFrom, dateTo }) {
+  return rows.filter(s => {
+    if (s.score == null) return false;
+    // Store users stay on their own stores
+    if (allowedStores && !allowedStores.some(name => s.brand?.includes(name))) return false;
+    if (brand && !s.brand?.startsWith(brand.brand_name)) return false;
+    if (store && !s.brand?.includes(store.store_name)) return false;
+    if (templateIds.length && !templateIds.includes(s.template_id)) return false;
+    const day = auditBusinessDayKey(s);
+    if (dateFrom && day < dateFrom) return false;
+    if (dateTo && day > dateTo) return false;
+    return true;
+  });
 }
 
 function ScoreBadge({ score }) {
@@ -95,6 +109,10 @@ export default function AuditDashboard() {
   const [selectedBrandId, setSelectedBrandId] = useState('all');
   const [selectedStoreId, setSelectedStoreId] = useState('all');
   const [selectedTemplateIds, setSelectedTemplateIds] = useState([]); // [] = all templates
+  // Store checklists and QA audits are graded differently (75% vs each QA
+  // checklist's own pass mark) and come at very different volumes, so they
+  // never share numbers — each gets its own tab.
+  const [dashboardTab, setDashboardTab] = useState('store'); // 'store' | 'qa'
   const [dateFrom, setDateFrom] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
   const [dateTo, setDateTo] = useState(() => moment().utcOffset(8).format('YYYY-MM-DD'));
   const [page, setPage] = useState(1);
@@ -155,39 +173,51 @@ export default function AuditDashboard() {
     [templateDefinitions, ungradedTemplateIds]
   );
 
-  // The checklists a store user's own stores use — inactive ones too, so
-  // older history still counts — plus, unless HIDE_QA_AUDITS_FROM_STORES,
-  // the QA checklists done at stores: one scoped to their stores, or a
-  // general one with no store scoping (never a facility or department
-  // checklist). The database still limits every row to their own stores.
-  const storeTemplateIds = useMemo(() => {
-    if (!allowedStores) return null;
-    const ownStores = new Set(allowedStores.map(name => String(name).trim().toLowerCase()));
-    const isForOwnStore = (t) => templateRestrictions(t).some(r => ownStores.has(String(r.store_name || '').trim().toLowerCase()));
-    return new Set(templateDefinitions
-      .filter(t => {
-        if (!isQaConductedTemplate(t)) return isForOwnStore(t);
-        if (HIDE_QA_AUDITS_FROM_STORES) return false;
-        return isForOwnStore(t) || (
-          templateRestrictions(t).length === 0
-          && !t.requires_department
-          && !FACILITY_CATEGORIES.has(normalizeChecklistCategory(t.checklist_category))
-        );
-      })
-      .map(t => t.id));
-  }, [allowedStores, templateDefinitions]);
+  const templateDefinitionsById = useMemo(
+    () => Object.fromEntries(templateDefinitions.map(t => [t.id, t])),
+    [templateDefinitions]
+  );
 
-  // A store user's data is always narrowed to those checklists, which is
-  // also what keeps QA audits out of every number on the page — so their
-  // queries wait for the template list instead of ever running unscoped.
-  // An empty list would mean "no filter" to the database, so a store with
-  // no checklists skips the queries instead.
-  const queryTemplateIds = selectedTemplateIds.length
+  // Which checklists belong to which tab — inactive ones too, so older
+  // history still counts. A store user gets only their own stores'
+  // checklists, plus (once QA_AUDITS_VISIBLE_TO_STORES) the QA checklists
+  // done at stores: one scoped to their stores, or a general one with no
+  // store scoping — never a facility or department checklist. The database
+  // still limits every row to their own stores.
+  const { storeChecklistIds, qaChecklistIds } = useMemo(() => {
+    const ownStores = allowedStores && new Set(allowedStores.map(name => String(name).trim().toLowerCase()));
+    const isForOwnStore = (t) => templateRestrictions(t).some(r => ownStores.has(String(r.store_name || '').trim().toLowerCase()));
+    const storeIds = new Set();
+    const qaIds = new Set();
+    templateDefinitions.forEach(t => {
+      if (!isQaConductedTemplate(t)) {
+        if (!ownStores || isForOwnStore(t)) storeIds.add(t.id);
+      } else if (!ownStores) {
+        qaIds.add(t.id);
+      } else if (QA_AUDITS_VISIBLE_TO_STORES && (isForOwnStore(t) || (
+        templateRestrictions(t).length === 0
+        && !t.requires_department
+        && !FACILITY_CATEGORIES.has(normalizeChecklistCategory(t.checklist_category))
+      ))) {
+        qaIds.add(t.id);
+      }
+    });
+    return { storeChecklistIds: storeIds, qaChecklistIds: qaIds };
+  }, [allowedStores, templateDefinitions]);
+  const showQaTab = !allowedStores || QA_AUDITS_VISIBLE_TO_STORES;
+
+  // The Store Checklists tab's queries are always narrowed to store
+  // checklists — that's what keeps QA audits out of its numbers — so they
+  // wait for the template list instead of ever running unscoped. An empty
+  // list would mean "no filter" to the database, so a user with no store
+  // checklists skips the queries instead.
+  const queryTemplateIds = selectedTemplateIds.length && dashboardTab === 'store'
     ? selectedTemplateIds
-    : storeTemplateIds ? [...storeTemplateIds] : null;
-  const queryTemplateKey = queryTemplateIds ? queryTemplateIds.join(',') : 'all';
-  const noStoreChecklists = queryTemplateIds?.length === 0;
-  const scopeReady = !!user && (!allowedStores || !loadingTemplates);
+    : [...storeChecklistIds];
+  const queryTemplateKey = queryTemplateIds.join(',');
+  const noStoreChecklists = queryTemplateIds.length === 0;
+  const scopeReady = !!user && !loadingTemplates;
+  const storeTabReady = scopeReady && dashboardTab === 'store';
   const storesKey = allowedStores ? allowedStores.join(',') : 'all';
 
   // The summary query below returns quickly, so the page renders before this
@@ -206,7 +236,24 @@ export default function AuditDashboard() {
       maxRows: 25000,
       fields: 'summaryWithAnswers',
     })),
-    enabled: scopeReady,
+    enabled: storeTabReady,
+  });
+
+  // QA Audits tab — only fetched once the tab is opened. QA audits are a
+  // handful a day, so every QA checklist in range comes back in one go and
+  // the checklist filter is applied in the browser.
+  const qaTemplateList = useMemo(() => [...qaChecklistIds], [qaChecklistIds]);
+  const { data: qaSubmissions = [], isPending: loadingQaSubmissions } = useQuery({
+    queryKey: ['audit-dashboard-qa', dateFrom, dateTo, qaTemplateList.join(','), storesKey],
+    queryFn: () => (qaTemplateList.length === 0 ? [] : base44.audit.listSubmissions({
+      dateFrom,
+      dateTo,
+      stores: allowedStores,
+      templateIds: qaTemplateList,
+      maxRows: 5000,
+      fields: 'summaryWithAnswers',
+    })),
+    enabled: scopeReady && dashboardTab === 'qa',
   });
 
   // Resolved name strings (not ids) for the summary RPC's brand/store
@@ -230,7 +277,7 @@ export default function AuditDashboard() {
       storeName: storeNameFilter,
       templateIds: queryTemplateIds,
     })),
-    enabled: scopeReady,
+    enabled: storeTabReady,
     // A timeout is often just a cold cache on the first hit for a given
     // set of filters — retrying (react-query's default) lets a borderline
     // query succeed on a warmed second attempt instead of failing outright.
@@ -311,14 +358,14 @@ export default function AuditDashboard() {
     return allowedStores ? ownStoreRecords : stores;
   }, [selectedBrandId, selectedStoreId, stores, visibleStores, allowedStores, ownStoreRecords]);
 
-  // Templates scoped to the current brand/store selection, for the filter
-  // dropdown — for a store user, only their own stores' checklists.
-  // Unrestricted (QA-wide) templates have no store_restrictions and no
-  // store_name, so they always stay visible under "All Brands" but don't
-  // mix into a specific brand's own template list.
+  // Templates scoped to the current tab and brand/store selection, for the
+  // filter dropdown. Unrestricted (QA-wide) templates have no
+  // store_restrictions and no store_name, so they always stay visible under
+  // "All Brands" but don't mix into a specific brand's own template list.
+  const tabChecklistIds = dashboardTab === 'qa' ? qaChecklistIds : storeChecklistIds;
   const filterTemplates = useMemo(() => {
     return templates.filter(t => {
-      if (storeTemplateIds && !storeTemplateIds.has(t.id)) return false;
+      if (!tabChecklistIds.has(t.id)) return false;
       const restrictions = templateRestrictions(t);
       if (selectedStoreId !== 'all') {
         return restrictions.some(r => r.store_id === selectedStoreId) || t.store_id === selectedStoreId;
@@ -328,7 +375,7 @@ export default function AuditDashboard() {
       }
       return true;
     });
-  }, [templates, selectedBrandId, selectedStoreId, storeTemplateIds]);
+  }, [templates, selectedBrandId, selectedStoreId, tabChecklistIds]);
 
   // Store-restricted templates scoped to the current brand/store selection —
   // what the Checklist Completion Rate card should actually count as "N
@@ -338,7 +385,7 @@ export default function AuditDashboard() {
   const scopedCompletionTemplates = useMemo(() => {
     if (selectedTemplateIds.length) return completionTemplates.filter(t => selectedTemplateIds.includes(t.id));
     return completionTemplates.filter(t => {
-      if (storeTemplateIds && !storeTemplateIds.has(t.id)) return false;
+      if (!storeChecklistIds.has(t.id)) return false;
       const restrictions = templateRestrictions(t);
       if (selectedStoreId !== 'all') {
         return restrictions.some(r => r.store_id === selectedStoreId) || t.store_id === selectedStoreId;
@@ -348,39 +395,28 @@ export default function AuditDashboard() {
       }
       return true;
     });
-  }, [completionTemplates, selectedBrandId, selectedStoreId, selectedTemplateIds, storeTemplateIds]);
+  }, [completionTemplates, selectedBrandId, selectedStoreId, selectedTemplateIds, storeChecklistIds]);
 
   useEffect(() => { setSelectedStoreId('all'); }, [selectedBrandId]);
-  useEffect(() => { setSelectedTemplateIds([]); }, [selectedBrandId, selectedStoreId]);
+  useEffect(() => { setSelectedTemplateIds([]); }, [selectedBrandId, selectedStoreId, dashboardTab]);
 
-  // Filter submissions
-  const filtered = useMemo(() => {
-    let subs = submissions.filter(s => s.score != null);
-    // Scope store users to their own stores
-    if (allowedStores) {
-      subs = subs.filter(s => allowedStores.some(name => s.brand?.includes(name)));
-    }
-    if (selectedBrandId !== 'all') {
-      const brand = brands.find(b => b.id === selectedBrandId);
-      if (brand) subs = subs.filter(s => s.brand && s.brand.startsWith(brand.brand_name));
-    }
-    if (selectedStoreId !== 'all') {
-      const store = stores.find(s => s.id === selectedStoreId);
-      if (store) subs = subs.filter(s => s.brand?.includes(store.store_name));
-    }
-    if (selectedTemplateIds.length) {
-      subs = subs.filter(s => selectedTemplateIds.includes(s.template_id));
-    }
-    if (dateFrom || dateTo) {
-      subs = subs.filter(s => {
-        const k = auditBusinessDayKey(s);
-        if (dateFrom && k < dateFrom) return false;
-        if (dateTo && k > dateTo) return false;
-        return true;
-      });
-    }
-    return subs;
-  }, [submissions, brands, stores, allowedStores, selectedBrandId, selectedStoreId, selectedTemplateIds, dateFrom, dateTo]);
+  // Filter submissions — the checklist selection belongs to whichever tab is open.
+  const rowFilters = useMemo(() => ({
+    allowedStores,
+    brand: selectedBrandId === 'all' ? null : brands.find(b => b.id === selectedBrandId),
+    store: selectedStoreId === 'all' ? null : stores.find(s => s.id === selectedStoreId),
+    templateIds: selectedTemplateIds,
+    dateFrom,
+    dateTo,
+  }), [allowedStores, brands, stores, selectedBrandId, selectedStoreId, selectedTemplateIds, dateFrom, dateTo]);
+  const filtered = useMemo(
+    () => filterDashboardRows(submissions, dashboardTab === 'store' ? rowFilters : { ...rowFilters, templateIds: [] }),
+    [submissions, rowFilters, dashboardTab]
+  );
+  const qaFiltered = useMemo(
+    () => filterDashboardRows(qaSubmissions, dashboardTab === 'qa' ? rowFilters : { ...rowFilters, templateIds: [] }),
+    [qaSubmissions, rowFilters, dashboardTab]
+  );
 
 
   useEffect(() => { setPage(1); }, [filtered.length, pageSize, selectedBrandId, selectedStoreId, selectedTemplateIds, dateFrom, dateTo]);
@@ -558,8 +594,9 @@ export default function AuditDashboard() {
     return out;
   }, [storeRows]);
 
+  const brandLabel = selectedBrandId === 'all' ? 'All Brands' : (brands.find(b => b.id === selectedBrandId)?.brand_name || 'All Brands');
+
   const handleExportExcel = () => {
-    const brandLabel = selectedBrandId === 'all' ? 'All Brands' : (brands.find(b => b.id === selectedBrandId)?.brand_name || 'All Brands');
     const sheets = [
       {
         name: 'Store Performance',
@@ -623,6 +660,18 @@ export default function AuditDashboard() {
     exportSheetsToExcel('Audit_Dashboard_Store_Performance', sheets);
   };
 
+  const handleExportQaExcel = () => {
+    exportSheetsToExcel('Audit_Dashboard_QA_Audits', [{
+      name: 'QA Audits',
+      title: `QA Audits — ${brandLabel} · ${dateFrom} to ${dateTo}`,
+      headers: ['Date', 'Store', 'Checklist', 'Audit Type', 'Score', 'NCF', 'Result'],
+      rows: buildQaAuditRows(qaFiltered, templateDefinitionsById).map(r => [
+        r.dateText, r.submission.brand || '—', r.submission.template_title, r.auditType,
+        formatScore(r.submission.score), r.ncf, r.result || '—',
+      ]),
+    }]);
+  };
+
   return (
     <div className="app-page">
       {/* Header */}
@@ -631,11 +680,35 @@ export default function AuditDashboard() {
           <p className="app-page-eyebrow">Quality intelligence</p>
           <div>
             <h1 className="app-page-heading">Audit Dashboard</h1>
-            <p className="app-page-description">Store quality performance summary.</p>
+            <p className="app-page-description">
+              {dashboardTab === 'qa'
+                ? "QA audit results, each graded on its own checklist's pass mark."
+                : 'Store quality performance summary.'}
+            </p>
           </div>
         </div>
-        <ExcelExportButton onClick={handleExportExcel} disabled={filtered.length === 0} />
+        {dashboardTab === 'qa'
+          ? <ExcelExportButton onClick={handleExportQaExcel} disabled={qaFiltered.length === 0} />
+          : <ExcelExportButton onClick={handleExportExcel} disabled={filtered.length === 0} />}
       </div>
+
+      {showQaTab && (
+        <Tabs value={dashboardTab} onValueChange={setDashboardTab}>
+          <div className="overflow-x-auto">
+            <TabsList className="flex h-auto w-max gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+              {[{ value: 'store', label: 'Store Checklists' }, { value: 'qa', label: 'QA Audits' }].map(tab => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="rounded-lg px-4 h-9 text-slate-600 transition-all hover:text-slate-900 data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold data-[state=active]:shadow-sm"
+                >
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+        </Tabs>
+      )}
 
       {/* Filters */}
       <div className="app-filter-bar">
@@ -676,7 +749,14 @@ export default function AuditDashboard() {
         </div>
       </div>
 
-      {loadingSummary ? (
+      {dashboardTab === 'qa' ? (
+        <QaAuditsPanel
+          submissions={qaFiltered}
+          templatesById={templateDefinitionsById}
+          loading={loadingQaSubmissions}
+          onOpen={setSelectedSubmission}
+        />
+      ) : loadingSummary ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : summaryError ? (
         <Card className="border-2 border-dashed border-red-200">
@@ -1097,7 +1177,7 @@ export default function AuditDashboard() {
               <SubmissionDetail
                 ref={submissionDetailRef}
                 submission={selectedSubmission}
-                templates={templates}
+                templates={templateDefinitions}
                 user={user}
                 hideExportButton
                 onExportingChange={setExportingSubmissionPdf}

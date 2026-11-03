@@ -353,6 +353,13 @@ const auditData = {
     });
   },
 
+  // Every checklist's id plus the two fields isQaConductedTemplate() reads —
+  // inactive checklists too, so an older QA audit is still recognized —
+  // without each template's sections and items.
+  async listTemplateKinds() {
+    return unwrap(await supabase.from('audit_templates').select('id,requires_audit_type,checklist_category')) || [];
+  },
+
   async storeTemplateSummary({ dateFrom = null, dateTo = null, stores = null } = {}) {
     const { data, error } = await supabase.rpc('audit_store_template_summary', {
       p_date_from: dateFrom || null,
