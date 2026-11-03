@@ -21,17 +21,19 @@ import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { formatScore, answerCounts, isPassFailGraded } from '@/lib/auditScore';
-import { isQaConductedTemplate } from '@/lib/checklistCategories';
+import { isQaConductedTemplate, normalizeChecklistCategory } from '@/lib/checklistCategories';
 import { usePagination } from '@/hooks/usePagination';
 import TablePagination from '@/components/TablePagination';
 
 const PASS_THRESHOLD = 75;
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100];
 
-// QA-conducted audits stay hidden from store users until QA results are
-// cleared to be shared with stores — flip to false then, and store users
-// will also see the QA audits done on their own stores.
-const HIDE_QA_AUDITS_FROM_STORES = true;
+// Store users see the QA audits done on their own stores (QA went live
+// Nov 2026) — set to true to hide QA results from stores again.
+const HIDE_QA_AUDITS_FROM_STORES = false;
+
+// QA checklists for facilities, never for a store's own results.
+const FACILITY_CATEGORIES = new Set(['commissary', 'warehouse', 'mayon']);
 
 // A template's store scoping: its store_restrictions list, or the single
 // store_name/brand_id/store_id fields older templates still use.
@@ -154,16 +156,24 @@ export default function AuditDashboard() {
   );
 
   // The checklists a store user's own stores use — inactive ones too, so
-  // older history still counts. QA-conducted checklists stay out while
-  // HIDE_QA_AUDITS_FROM_STORES is on; with it off, QA audits show up too
-  // (the database already limits every row to the user's own stores).
+  // older history still counts — plus, unless HIDE_QA_AUDITS_FROM_STORES,
+  // the QA checklists done at stores: one scoped to their stores, or a
+  // general one with no store scoping (never a facility or department
+  // checklist). The database still limits every row to their own stores.
   const storeTemplateIds = useMemo(() => {
     if (!allowedStores) return null;
     const ownStores = new Set(allowedStores.map(name => String(name).trim().toLowerCase()));
+    const isForOwnStore = (t) => templateRestrictions(t).some(r => ownStores.has(String(r.store_name || '').trim().toLowerCase()));
     return new Set(templateDefinitions
-      .filter(t => (isQaConductedTemplate(t)
-        ? !HIDE_QA_AUDITS_FROM_STORES
-        : templateRestrictions(t).some(r => ownStores.has(String(r.store_name || '').trim().toLowerCase()))))
+      .filter(t => {
+        if (!isQaConductedTemplate(t)) return isForOwnStore(t);
+        if (HIDE_QA_AUDITS_FROM_STORES) return false;
+        return isForOwnStore(t) || (
+          templateRestrictions(t).length === 0
+          && !t.requires_department
+          && !FACILITY_CATEGORIES.has(normalizeChecklistCategory(t.checklist_category))
+        );
+      })
       .map(t => t.id));
   }, [allowedStores, templateDefinitions]);
 
