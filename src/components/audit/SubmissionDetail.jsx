@@ -135,7 +135,10 @@ const SubmissionDetail = forwardRef(function SubmissionDetail(
     if (loadingFull) return;
     setExportingPdf(true);
     try {
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      // Letter, the paper QA prints on: an A4 page printed on Letter loses
+      // its bottom edge (the last lines and the page footer), while a Letter
+      // page still prints whole on A4.
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
       const margin = 12;

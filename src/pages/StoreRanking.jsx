@@ -358,7 +358,8 @@ export default function StoreRanking() {
   const handleExportPdf = async () => {
     setExportingPdf(true);
     try {
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      // Letter, not A4: an A4 page printed on Letter paper loses its bottom edge.
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
       const logoBase64 = await fetchImageBase64(LOGO_URL);

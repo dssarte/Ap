@@ -470,7 +470,8 @@ export default function QADashboard() {
   const handleExportStoreDetailPdf = async (store) => {
     setExportingDetailPdf(true);
     try {
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      // Letter, not A4: an A4 page printed on Letter paper loses its bottom edge.
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
       const margin = 12;

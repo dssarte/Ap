@@ -3,7 +3,8 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
+import Spinner from '@/components/Spinner';
 import moment from 'moment';
 import { auditBusinessDayKey } from '@/lib/dateUtils';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
@@ -33,6 +34,9 @@ export default function NoAnswerTracker({
   dateFrom: providedDateFrom = null,
   dateTo: providedDateTo = null,
   loading: providedLoading = false,
+  // Inside one of the Audit Dashboard's collapsible report cards, which
+  // already shows the title — so no card or header of its own.
+  embedded = false,
 }) {
   const isControlled = providedSubmissions != null;
   const [selectedBrandId, setSelectedBrandId] = useState('all');
@@ -210,14 +214,16 @@ export default function NoAnswerTracker({
   };
 
   return (
-    <Card className="border border-slate-200 shadow-sm">
-      <CardHeader className="pb-2 pt-5 px-5">
-        <p className="font-bold text-slate-800 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-red-500" /> NO Answer Tracker</p>
-        <p className="text-xs text-slate-500">
-          Monitor checklist items marked NO per day, per store, to see if they get resolved to YES
-          {isControlled && ' — uses the dashboard\'s date range and filters above.'}
-        </p>
-      </CardHeader>
+    <Card className={embedded ? 'border-0 bg-transparent shadow-none' : 'border border-slate-200 shadow-sm'}>
+      {!embedded && (
+        <CardHeader className="pb-2 pt-5 px-5">
+          <p className="font-bold text-slate-800 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-red-500" /> NO Answer Tracker</p>
+          <p className="text-xs text-slate-500">
+            Monitor checklist items marked NO per day, per store, to see if they get resolved to YES
+            {isControlled && ' — uses the dashboard\'s date range and filters above.'}
+          </p>
+        </CardHeader>
+      )}
       <CardContent className="px-5 pb-5 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           {showFilters && !isControlled && (
@@ -255,7 +261,7 @@ export default function NoAnswerTracker({
         </div>
 
         {isLoading ? (
-          <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+          <div className="flex justify-center py-16"><Spinner /></div>
         ) : noItemColumns.length === 0 ? (
           <p className="text-center text-slate-400 py-12 text-sm">No NO answers found for the selected filters and date range.</p>
         ) : (

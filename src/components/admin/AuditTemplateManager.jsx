@@ -652,7 +652,7 @@ function TemplateDialog({ open, onClose, initial, group, onSave, saving, auditCa
               onChange={e => setPassThreshold(e.target.value)}
               className="w-32"
             />
-            <p className="text-xs text-slate-500">The minimum average score a store must hit on this checklist to be marked PASS. Defaults to 75%. Set it to 0 for a checklist that isn't graded pass/fail — its result then shows N/A.</p>
+            <p className="text-xs text-slate-500">The minimum average score a store must hit on this QA checklist to be marked PASS. Defaults to 75%. Store checklists always pass at 95%, whatever is set here. Set it to 0 for a checklist that isn't graded pass/fail — its result then shows N/A.</p>
           </div>
 
           {/* Audit Type — Unannounced / Follow-up / Spot, recorded per submission */}
