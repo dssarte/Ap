@@ -8,6 +8,7 @@ import { Loader2, ClipboardCheck, CheckCircle2, XCircle, Store, CalendarDays } f
 import moment from 'moment';
 import { auditBusinessDayKey, formatPHDate } from '@/lib/dateUtils';
 import { templateAppliesToStore } from '@/lib/auditTemplateMatch';
+import { COMPLETION_TARGET } from '@/lib/checklistCompletion';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { BarChart, Bar, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -423,7 +424,7 @@ export default function DailySummary() {
             <Card className="border border-slate-200 shadow-sm">
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Overall Rate</p>
-                <p className={`text-3xl font-extrabold ${summary.avg >= 75 ? 'text-green-600' : 'text-red-600'}`}>{summary.avg}%</p>
+                <p className={`text-3xl font-extrabold ${summary.avg >= COMPLETION_TARGET ? 'text-green-600' : 'text-red-600'}`}>{summary.avg}%</p>
               </CardContent>
             </Card>
           </div>

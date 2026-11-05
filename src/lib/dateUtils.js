@@ -72,6 +72,17 @@ export function isClosingAudit(templateTitle) {
   return /\bclosing\b/i.test(String(templateTitle || ''));
 }
 
+// Built once and reused: auditBusinessDayKey runs for every row of a date
+// range (thousands at a time), and creating the formatter is the slow part.
+const MANILA_DATE_HOUR = new Intl.DateTimeFormat('en-CA', {
+  timeZone: PH_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  hourCycle: 'h23',
+});
+
 /**
  * Operational reporting date for an audit in Asia/Manila.
  * Closing audits submitted from midnight through 4:59:59 AM belong to the
@@ -90,14 +101,7 @@ export function auditBusinessDayKey(submissionOrDate, templateTitle = '') {
   const date = safeDate(value);
   if (!date) return '';
 
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: PH_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
+  const parts = MANILA_DATE_HOUR.formatToParts(date);
   const getPart = (type) => parts.find(part => part.type === type)?.value;
   const year = Number(getPart('year'));
   const month = Number(getPart('month'));
