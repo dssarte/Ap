@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Loader2, ClipboardCheck } from "lucide-react";
+import { ClipboardCheck } from "lucide-react";
+import Spinner from '@/components/Spinner';
 import { AuditResultBadge } from '@/components/audit/SubmissionDetail';
 import TablePagination from '@/components/TablePagination';
 import { usePagination } from '@/hooks/usePagination';
@@ -53,7 +54,7 @@ export default function QaAuditsPanel({ submissions, templatesById, loading, onO
   const pagination = usePagination(rows);
 
   if (loading) {
-    return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
+    return <div className="flex justify-center py-20"><Spinner /></div>;
   }
 
   if (rows.length === 0) {

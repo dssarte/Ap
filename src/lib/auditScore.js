@@ -7,6 +7,12 @@ export function roundScore(percent) {
 // Pass mark for a checklist that doesn't set its own (QA checklists set 92.5%).
 export const DEFAULT_PASS_THRESHOLD = 75;
 
+// Store checklists — a store's own daily checklists, as opposed to QA
+// audits — pass at 95% whatever their template says. The Audit Dashboard's
+// Store Checklists tab grades with it, and so does its database summary
+// (audit_dashboard_summary), which has the same 95 written in.
+export const STORE_PASS_THRESHOLD = 95;
+
 // A pass mark of 0 means the checklist isn't graded PASS/FAIL at all (e.g. the
 // Mayon Daily Walkthrough) — its result shows N/A; its score still shows.
 export function isPassFailGraded(template) {

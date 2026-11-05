@@ -219,6 +219,9 @@ const AUDIT_SUBMISSION_FIELDS = {
   full: '*',
   summary: AUDIT_SUMMARY_COLUMNS,
   summaryWithAnswers: `${AUDIT_SUMMARY_COLUMNS},answers`,
+  // Checklist completion only needs which checklist each store did on
+  // which day (plus the paging cursor).
+  completion: 'id,template_id,template_title,brand,submission_date,created_date,business_date',
 };
 
 const auditData = {
@@ -272,7 +275,9 @@ const auditData = {
   // store's daily operational checklists too and discarding most of them
   // client-side — those vastly outnumber QA submissions, so skipping them
   // server-side is what keeps a wide date range from timing out.
-  async listSubmissions({ dateFrom = null, dateTo = null, stores = null, templateId = null, templateIds = null, maxRows = 25000, fields = 'full' } = {}) {
+  // `signal` (react-query's) stops paging once the caller no longer wants
+  // the result — e.g. the dashboard's date range changed mid-load.
+  async listSubmissions({ dateFrom = null, dateTo = null, stores = null, templateId = null, templateIds = null, maxRows = 25000, fields = 'full', withMeta = false, signal = null } = {}) {
     const columns = AUDIT_SUBMISSION_FIELDS[fields] || '*';
     const pageSize = 1000;
     const rows = [];
@@ -292,6 +297,7 @@ const auditData = {
     let fallbackOffset = 0; // only used by the pre-migration fallback below
 
     while (rows.length < maxRows) {
+      signal?.throwIfAborted?.();
       const limit = Math.min(pageSize, maxRows - rows.length);
       let request = supabase.rpc('list_audit_submissions', {
         p_date_from: dateFrom || null,
@@ -305,6 +311,7 @@ const auditData = {
         p_before_id: cursor?.id || null,
       });
       if (columns !== '*') request = request.select(columns);
+      if (signal) request = request.abortSignal(signal);
       const { data, error } = await request;
 
       if (error) {
@@ -345,12 +352,15 @@ const auditData = {
       cursor = { date: last.business_date, id: last.id };
     }
 
-    return rows.filter(row => {
+    const inRange = rows.filter(row => {
       const businessDay = auditBusinessDayKey(row);
       if (dateFrom && businessDay < dateFrom) return false;
       if (dateTo && businessDay > dateTo) return false;
       return true;
     });
+    // withMeta: also say whether maxRows cut the list short — rows come
+    // newest first, so it's the earliest days that are incomplete.
+    return withMeta ? { rows: inRange, truncated: rows.length >= maxRows } : inRange;
   },
 
   // Every checklist's id plus the two fields isQaConductedTemplate() reads —
