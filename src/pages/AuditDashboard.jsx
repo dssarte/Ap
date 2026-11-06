@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryClientInstance } from '@/lib/query-client';
 import { useToast } from '@/components/ui/use-toast';
 import Spinner from '@/components/Spinner';
@@ -19,6 +19,7 @@ import NoAnswerTracker from '@/components/audit/NoAnswerTracker';
 import TemplateMultiSelect from '@/components/audit/TemplateMultiSelect';
 import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
 import NoFindingsByTemplateCard from '@/components/audit/NoFindingsByTemplateCard';
+import NoFindingsByCategoryCard from '@/components/audit/NoFindingsByCategoryCard';
 import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import QaAuditsPanel, { buildQaAuditRows } from '@/components/audit/QaAuditsPanel';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -663,6 +664,32 @@ export default function AuditDashboard() {
     [templateRows]
   );
 
+  // NO Findings by Category — one checklist at a time, picked from those
+  // with NO findings in range (the one with the most to start with). Its
+  // item counts come back with its id, so while another checklist loads the
+  // previous chart stays up (dimmed) with its own sections.
+  const categoryOptions = useMemo(() => noTemplateRows.filter(row => row.noFindings > 0), [noTemplateRows]);
+  const [categoryTemplateId, setCategoryTemplateId] = useState(null);
+  const categoryTemplateIdShown = (categoryOptions.find(row => row.id === categoryTemplateId) || categoryOptions[0])?.id || null;
+  const { data: categoryResult, isPending: categoryPending, isPlaceholderData: categoryStale, error: categoryError } = useQuery({
+    queryKey: ['audit-no-findings-by-item', categoryTemplateIdShown, dateFrom, dateTo, brandNameFilter, storeNameFilter, storesKey, ownershipFilter],
+    queryFn: async ({ signal }) => ({
+      templateId: categoryTemplateIdShown,
+      items: await base44.audit.noFindingsByItem({
+        templateId: categoryTemplateIdShown,
+        dateFrom,
+        dateTo,
+        brandName: brandNameFilter,
+        storeName: storeNameFilter,
+        ownership: ownershipFilter,
+        signal,
+      }),
+    }),
+    enabled: storeTabReady && !!categoryTemplateIdShown,
+    placeholderData: keepPreviousData,
+    retry: (failures, error) => !error?.missingRpc && failures < 2,
+  });
+
   const auditItemLookup = useMemo(() => {
     const lookup = new Map();
     templateDefinitions.forEach(template => {
@@ -1232,6 +1259,16 @@ export default function AuditDashboard() {
           {stats && (
             <>
               <NoFindingsByTemplateCard rows={noTemplateRows} />
+              <NoFindingsByCategoryCard
+                options={categoryOptions}
+                value={categoryTemplateIdShown}
+                onChange={setCategoryTemplateId}
+                template={templateDefinitionsById[categoryResult?.templateId] || null}
+                itemCounts={categoryResult?.items || null}
+                loading={categoryPending}
+                stale={categoryStale}
+                error={categoryError}
+              />
               <ReportSection id="daily" title="Daily Audit and Ticket Summary" icon={<CalendarDays className="h-4 w-4 text-[#1fd655]" />} description="Audits submitted and tickets generated each day." open={openReports.has('daily')} onToggle={toggleReport}>
                 <CardContent className="px-2 pb-5">
                   <ResponsiveContainer width="100%" height={280}>

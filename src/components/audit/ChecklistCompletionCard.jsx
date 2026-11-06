@@ -82,6 +82,11 @@ const DAY_GAP = 14;
 // scrolls the rest within that same height rather than growing the card.
 const LOWEST_SHOWN = 10;
 const LOWEST_ROW_H = 28;
+// Completion by store: a brand with more stores than this scrolls inside
+// its own box (about this many rows tall) instead of stretching the page.
+const GRID_ROWS_SHOWN = 20;
+const GRID_ROW_H = 33;
+const GRID_HEAD_H = 37;
 const isOnTarget = (row) => row.rate != null && row.rate >= COMPLETION_TARGET;
 const isBelowTarget = (row) => row.rate != null && row.rate < COMPLETION_TARGET;
 
@@ -529,19 +534,24 @@ export default function ChecklistCompletionCard({
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="px-0 pb-2">
-                    <div className="overflow-x-auto">
+                    {/* Past GRID_ROWS_SHOWN stores the table scrolls in its own
+                        box; the day numbers and store names stay in view. */}
+                    <div
+                      className="overflow-auto"
+                      style={brand.shown.length > GRID_ROWS_SHOWN ? { maxHeight: `min(${GRID_HEAD_H + GRID_ROWS_SHOWN * GRID_ROW_H}px, 70vh)` } : undefined}
+                    >
                       <table className="text-sm">
                         <thead>
                           <tr className="border-b border-slate-100 bg-slate-50">
-                            <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">Store</th>
+                            <th className="sticky left-0 top-0 z-30 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 shadow-[inset_0_-1px_0_#f1f5f9]">Store</th>
                             {days.map((day, i) => (
-                              <th key={day} className="px-0 py-2 text-center text-[10px] font-medium text-slate-400" title={moment(day).format('ddd, MMM D, YYYY')}>
+                              <th key={day} className="sticky top-0 z-20 bg-slate-50 px-0 py-2 text-center text-[10px] font-medium text-slate-400 shadow-[inset_0_-1px_0_#f1f5f9]" title={moment(day).format('ddd, MMM D, YYYY')}>
                                 {days.length <= 31 || i % 7 === 0 ? moment(day).format('D') : ''}
                               </th>
                             ))}
-                            <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">Done</th>
-                            <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">Missed</th>
-                            <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">Rate</th>
+                            <th className="sticky top-0 z-20 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600 shadow-[inset_0_-1px_0_#f1f5f9]">Done</th>
+                            <th className="sticky top-0 z-20 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600 shadow-[inset_0_-1px_0_#f1f5f9]">Missed</th>
+                            <th className="sticky top-0 z-20 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600 shadow-[inset_0_-1px_0_#f1f5f9]">Rate</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -574,6 +584,9 @@ export default function ChecklistCompletionCard({
                         </tbody>
                       </table>
                     </div>
+                    {brand.shown.length > GRID_ROWS_SHOWN && (
+                      <p className="px-3 pt-2 text-xs text-slate-400">{brand.shown.length} stores — scroll the list to see them all.</p>
+                    )}
                   </AccordionContent>
                 </AccordionItem>
               ))}
