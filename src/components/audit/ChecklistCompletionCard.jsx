@@ -72,7 +72,12 @@ function Segmented({ options, value, onChange }) {
   );
 }
 
-const TREND_VIEWS = [{ value: 'chart', label: 'Chart' }, { value: 'table', label: 'Table' }];
+const TREND_VIEWS = [{ value: 'line', label: 'Line' }, { value: 'bar', label: 'Bar' }];
+// The bar view keeps each day's bars at least this wide (one per brand) and
+// scrolls sideways past what fits, rather than squeezing them to slivers.
+const MIN_BAR = 8;
+const BAR_GAP = 2;
+const DAY_GAP = 14;
 // The lowest-completion chart starts with this many stores; "Show all"
 // scrolls the rest within that same height rather than growing the card.
 const LOWEST_SHOWN = 10;
@@ -158,7 +163,7 @@ export default function ChecklistCompletionCard({
   capped = false,
 }) {
   const [showManager, setShowManager] = useState(false);
-  const [trendView, setTrendView] = useState('chart');
+  const [trendView, setTrendView] = useState('line');
   // A brand picked in the legend stays in color; the rest go gray.
   const [highlighted, setHighlighted] = useState(null);
   const [pointed, setPointed] = useState(null);
@@ -224,6 +229,8 @@ export default function ChecklistCompletionCard({
   const focusName = series.some(s => s.name === highlighted) ? highlighted : null;
   // The highlighted brand is drawn last, on top of the gray ones.
   const drawOrder = series.map((s, i) => ({ ...s, i })).sort((a, b) => (a.name === focusName) - (b.name === focusName));
+  const seriesColor = (s) => (focusName && focusName !== s.name ? INK.axis : s.color);
+  const barChartMinWidth = trendData.length * (series.length * (MIN_BAR + BAR_GAP) + DAY_GAP) + 60;
   const openStoreCount = stores.filter(s => s.cells.some(c => c.open && c.done < c.required)).length;
   const gridStates = inProgress ? Object.keys(CELL_STATES) : Object.keys(CELL_STATES).filter(k => k !== 'open');
 
@@ -328,7 +335,7 @@ export default function ChecklistCompletionCard({
                 </div>
                 {trendData.length === 0 ? (
                   <p className="py-8 text-center text-sm text-slate-400">The trend covers finished days — pick a date range that includes days before today.</p>
-                ) : trendView === 'chart' ? (
+                ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
                       {series.length > 1 && series.map(s => (
@@ -339,7 +346,7 @@ export default function ChecklistCompletionCard({
                           onClick={() => setHighlighted(h => (h === s.name ? null : s.name))}
                           className={`inline-flex items-center gap-1.5 rounded px-1 py-0.5 transition-opacity hover:bg-slate-100 ${focusName && focusName !== s.name ? 'opacity-50' : ''} ${focusName === s.name ? 'font-semibold text-slate-900' : ''}`}
                         >
-                          <span className="h-0.5 w-4 rounded-full" style={{ backgroundColor: s.color }} />{s.name}
+                          <span className={trendView === 'bar' ? 'h-2.5 w-2.5 rounded-[2px]' : 'h-0.5 w-4 rounded-full'} style={{ backgroundColor: s.color }} />{s.name}
                         </button>
                       ))}
                       <span className="inline-flex items-center gap-1.5 px-1 text-slate-500">
@@ -347,67 +354,61 @@ export default function ChecklistCompletionCard({
                       </span>
                       {series.length > 1 && <span className="text-slate-400">Click a brand to highlight it.</span>}
                     </div>
-                    <ResponsiveContainer width="100%" height={280}>
-                      <LineChart data={trendData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                        <CartesianGrid stroke={INK.grid} vertical={false} />
-                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: INK.text }} tickLine={false} axisLine={{ stroke: INK.axis }} minTickGap={16} />
-                        <YAxis domain={trendScale.domain} ticks={trendScale.ticks} allowDataOverflow tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: INK.text }} tickLine={false} axisLine={false} width={44} />
-                        <ReferenceLine y={COMPLETION_TARGET} stroke={INK.muted} />
-                        <Tooltip content={<TrendTooltip series={series} />} cursor={{ stroke: INK.axis, strokeWidth: 1 }} />
-                        {drawOrder.map(s => {
-                          const color = focusName && focusName !== s.name ? INK.axis : s.color;
-                          return (
-                            <Line
-                              key={s.name}
-                              type="linear"
-                              dataKey={row => row.rates[s.i]}
-                              name={s.name}
-                              stroke={color}
-                              strokeWidth={2}
-                              dot={showDots ? { r: 4, fill: color, stroke: '#fff', strokeWidth: 2 } : false}
-                              activeDot={{ r: 5, fill: s.color, stroke: '#fff', strokeWidth: 2 }}
-                              isAnimationActive={false}
-                            />
-                          );
-                        })}
-                      </LineChart>
-                    </ResponsiveContainer>
+                    {trendView === 'line' ? (
+                      <ResponsiveContainer width="100%" height={280}>
+                        <LineChart data={trendData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid stroke={INK.grid} vertical={false} />
+                          <XAxis dataKey="label" tick={{ fontSize: 11, fill: INK.text }} tickLine={false} axisLine={{ stroke: INK.axis }} minTickGap={16} />
+                          <YAxis domain={trendScale.domain} ticks={trendScale.ticks} allowDataOverflow tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: INK.text }} tickLine={false} axisLine={false} width={44} />
+                          <ReferenceLine y={COMPLETION_TARGET} stroke={INK.muted} />
+                          <Tooltip content={<TrendTooltip series={series} />} cursor={{ stroke: INK.axis, strokeWidth: 1 }} />
+                          {drawOrder.map(s => {
+                            const color = focusName && focusName !== s.name ? INK.axis : s.color;
+                            return (
+                              <Line
+                                key={s.name}
+                                type="linear"
+                                dataKey={row => row.rates[s.i]}
+                                name={s.name}
+                                stroke={color}
+                                strokeWidth={2}
+                                dot={showDots ? { r: 4, fill: color, stroke: '#fff', strokeWidth: 2 } : false}
+                                activeDot={{ r: 5, fill: s.color, stroke: '#fff', strokeWidth: 2 }}
+                                isAnimationActive={false}
+                              />
+                            );
+                          })}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      // Bars start at 0% — a bar cut off above zero would
+                      // exaggerate the gaps. Long ranges scroll sideways.
+                      <div className="overflow-x-auto">
+                        <div style={{ minWidth: barChartMinWidth }}>
+                          <ResponsiveContainer width="100%" height={280}>
+                            <BarChart data={trendData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} barGap={BAR_GAP} barCategoryGap={DAY_GAP / 2}>
+                              <CartesianGrid stroke={INK.grid} vertical={false} />
+                              <XAxis dataKey="label" tick={{ fontSize: 11, fill: INK.text }} tickLine={false} axisLine={{ stroke: INK.axis }} minTickGap={8} />
+                              <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: INK.text }} tickLine={false} axisLine={false} width={44} />
+                              <Tooltip content={<TrendTooltip series={series} />} cursor={{ fill: INK.grid, fillOpacity: 0.5 }} />
+                              {series.map((s, i) => (
+                                <Bar
+                                  key={s.name}
+                                  dataKey={row => row.rates[i]}
+                                  name={s.name}
+                                  fill={seriesColor(s)}
+                                  radius={[4, 4, 0, 0]}
+                                  maxBarSize={24}
+                                  isAnimationActive={false}
+                                />
+                              ))}
+                              <ReferenceLine y={COMPLETION_TARGET} stroke={INK.muted} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
                   </>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50">
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">Date</th>
-                          {series.length > 1 && <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">All</th>}
-                          {series.map(s => <th key={s.name} className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600 whitespace-nowrap">{s.name}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {trendData.map((row, r) => (
-                          <tr key={row.day} className={`border-b border-slate-100 ${r % 2 ? 'bg-slate-50/50' : ''}`}>
-                            <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{moment(row.day).format('MMM D, YYYY')}</td>
-                            {series.length > 1 && (
-                              <td className="px-3 py-2 text-right tabular-nums">
-                                <span className={`font-bold ${rateClass(row.overall.rate)}`}>{formatRate(row.overall.rate)}</span>
-                                <span className="ml-1 text-xs text-slate-400">{row.overall.done}/{row.overall.required}</span>
-                              </td>
-                            )}
-                            {row.stats.map((stat, i) => (
-                              <td key={series[i].name} className="px-3 py-2 text-right tabular-nums">
-                                {stat.required ? (
-                                  <>
-                                    <span className={`font-bold ${rateClass(stat.rate)}`}>{formatRate(stat.rate)}</span>
-                                    <span className="ml-1 text-xs text-slate-400">{stat.done}/{stat.required}</span>
-                                  </>
-                                ) : <span className="text-slate-300">—</span>}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
                 )}
               </div>
             </>

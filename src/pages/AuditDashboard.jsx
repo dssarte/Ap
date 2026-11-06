@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryClientInstance } from '@/lib/query-client';
 import { useToast } from '@/components/ui/use-toast';
 import Spinner from '@/components/Spinner';
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import moment from 'moment';
 import NoAnswerTracker from '@/components/audit/NoAnswerTracker';
 import TemplateMultiSelect from '@/components/audit/TemplateMultiSelect';
 import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
+import NoFindingsByTemplateCard from '@/components/audit/NoFindingsByTemplateCard';
 import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import QaAuditsPanel, { buildQaAuditRows } from '@/components/audit/QaAuditsPanel';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -28,13 +29,15 @@ import { auditBusinessDayKey, formatPHDateTime } from '@/lib/dateUtils';
 import { formatScore, answerCounts, isPassFailGraded, STORE_PASS_THRESHOLD } from '@/lib/auditScore';
 import { isQaConductedTemplate, normalizeChecklistCategory, QA_AUDITS_VISIBLE_TO_STORES } from '@/lib/checklistCategories';
 import { computeCompletion, completionCellState, completionRateScale, brandSeriesColor, roundRate, COMPLETION_TARGET } from '@/lib/checklistCompletion';
+import { OWNERSHIP_OPTIONS, storeOwnership, labelOwnership, ownershipLabel } from '@/lib/storeOwnership';
 import { usePagination } from '@/hooks/usePagination';
 import TablePagination from '@/components/TablePagination';
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100];
-// The most checklists the Store Checklists tab loads for one range: with
-// every answer for the reports, and as a light who-did-what list for
-// completion.
+// The most checklists the Store Checklists tab loads with every answer for
+// one range, for the reports. Completion arrives grouped by the database;
+// only its fallback for a database without that function lists checklists,
+// up to MAX_COMPLETION_ROWS.
 const MAX_SUBMISSION_ROWS = 25000;
 const MAX_COMPLETION_ROWS = 40000;
 const NO_ROWS = [];
@@ -58,12 +61,15 @@ function templateRestrictions(t) {
   return t.store_name ? [{ store_name: t.store_name, brand_id: t.brand_id, store_id: t.store_id }] : [];
 }
 
-// Brand / store / checklist / business-day filters, shared by both tabs.
-function filterDashboardRows(rows, { allowedStores, brand, store, templateIds, dateFrom, dateTo }) {
+// Ownership / brand / store / checklist / business-day filters, shared by
+// both tabs.
+function filterDashboardRows(rows, { allowedStores, ownership, ownershipOf, brand, store, templateIds, dateFrom, dateTo }) {
   return rows.filter(s => {
     if (s.score == null) return false;
     // Store users stay on their own stores
     if (allowedStores && !allowedStores.some(name => s.brand?.includes(name))) return false;
+    // The Corporate / Franchise tab
+    if (ownership && ownershipOf(s.brand) !== ownership) return false;
     if (brand && !s.brand?.startsWith(brand.brand_name)) return false;
     if (store && !s.brand?.includes(store.store_name)) return false;
     if (templateIds.length && !templateIds.includes(s.template_id)) return false;
@@ -213,6 +219,8 @@ export default function AuditDashboard() {
   // checklist's own pass mark) and come at very different volumes, so they
   // never share numbers — each gets its own tab.
   const [dashboardTab, setDashboardTab] = useState('store'); // 'store' | 'qa'
+  // Corporate and franchise stores are reported separately.
+  const [ownership, setOwnership] = useState('corporate'); // 'corporate' | 'franchise'
   // The range the page shows, and what the date boxes hold — the boxes
   // apply half a second after the last change, once they form a real
   // range, so picking or typing dates doesn't fire a fetch per keystroke.
@@ -252,6 +260,10 @@ export default function AuditDashboard() {
     if (user.store_name) return [user.store_name];
     return null; // null = no restriction
   }, [user]);
+  // Store users only ever see their own stores, so they get no
+  // Corporate / Franchise choice — everyone else sees one at a time (once
+  // it's known who's signed in, so a store user never sees the tabs flash).
+  const ownershipFilter = user && !allowedStores ? ownership : null;
 
   const { data: brands = [] } = useQuery({
     queryKey: ['brands-active'],
@@ -260,7 +272,7 @@ export default function AuditDashboard() {
 
   const { data: stores = [] } = useQuery({
     queryKey: ['stores-active'],
-    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 500),
+    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 2000),
   });
 
   // One fetch for every template — inactive ones included, to resolve
@@ -390,13 +402,14 @@ export default function AuditDashboard() {
   // private.can_access_audit already restricts the underlying rows to what
   // this user can see, the same way it does for the raw `submissions` fetch.
   const { data: dashboardSummary, isPending: loadingSummary, isError: summaryError, error: summaryErrorDetail, refetch: refetchSummary } = useQuery({
-    queryKey: ['audit-dashboard-summary', dateFrom, dateTo, brandNameFilter, storeNameFilter, queryTemplateKey, storesKey],
+    queryKey: ['audit-dashboard-summary', dateFrom, dateTo, brandNameFilter, storeNameFilter, queryTemplateKey, storesKey, ownershipFilter],
     queryFn: () => (noStoreChecklists ? null : base44.audit.dashboardSummary({
       dateFrom,
       dateTo,
       brandName: brandNameFilter,
       storeName: storeNameFilter,
       templateIds: queryTemplateIds,
+      ownership: ownershipFilter,
     })),
     enabled: storeTabReady,
     // A timeout is often just a cold cache on the first hit for a given
@@ -445,28 +458,47 @@ export default function AuditDashboard() {
   const handleSelectAll = () => persistConfig(completionTemplates.map(t => t.id));
   const handleClearAll = () => persistConfig([]);
 
-  // This user's own store records — used to resolve their assigned store
-  // names to actual brand_id/store_id links instead of guessing via
-  // substring matches on the name.
+  // Corporate or franchise for a submission's "Brand - Store" label.
+  const ownershipOf = useMemo(() => labelOwnership(stores), [stores]);
+  const ownershipCounts = useMemo(() => {
+    const counts = { corporate: 0, franchise: 0 };
+    stores.forEach(s => { counts[storeOwnership(s)] += 1; });
+    return counts;
+  }, [stores]);
+
+  // The store records this page covers: a store user's own — resolved to
+  // their actual brand_id/store_id links instead of guessing via substring
+  // matches on the name — or everyone else's open Corporate / Franchise tab.
   const ownStoreRecords = useMemo(() => {
-    if (!allowedStores) return stores;
+    if (!allowedStores) return stores.filter(s => storeOwnership(s) === ownershipFilter);
     return stores.filter(s => allowedStores.includes(s.store_name));
-  }, [stores, allowedStores]);
+  }, [stores, allowedStores, ownershipFilter]);
 
-  // Brands visible to this user (store users only see brands tied to their own stores)
+  // Brands to pick from: a store user's own stores' brands. Otherwise the
+  // open tab's — on Corporate, also a brand with no store records at all
+  // (a facility), as before the split.
   const visibleBrands = useMemo(() => {
-    if (!allowedStores) return brands;
     const ownBrandIds = new Set(ownStoreRecords.map(s => s.brand_id));
-    return brands.filter(b => ownBrandIds.has(b.id));
-  }, [brands, allowedStores, ownStoreRecords]);
+    if (allowedStores) return brands.filter(b => ownBrandIds.has(b.id));
+    const brandsWithStores = new Set(stores.map(s => s.brand_id));
+    return brands.filter(b => ownBrandIds.has(b.id) || (ownershipFilter === 'corporate' && !brandsWithStores.has(b.id)));
+  }, [brands, stores, allowedStores, ownStoreRecords, ownershipFilter]);
 
-  // Stores visible under the current brand selection (store users stay
-  // scoped to their own stores regardless of brand).
+  // Stores visible under the current brand selection.
   const visibleStores = useMemo(() => {
-    const base = allowedStores ? ownStoreRecords : stores;
-    if (selectedBrandId === 'all') return base;
-    return base.filter(s => s.brand_id === selectedBrandId);
-  }, [stores, ownStoreRecords, allowedStores, selectedBrandId]);
+    if (selectedBrandId === 'all') return ownStoreRecords;
+    return ownStoreRecords.filter(s => s.brand_id === selectedBrandId);
+  }, [ownStoreRecords, selectedBrandId]);
+
+  // A brand with stores on the other tab too stays picked; a store is on
+  // one tab only, so that resets.
+  const changeOwnership = (value) => {
+    setOwnership(value);
+    setSelectedStoreId('all');
+    if (selectedBrandId !== 'all' && !stores.some(s => s.brand_id === selectedBrandId && storeOwnership(s) === value)) {
+      setSelectedBrandId('all');
+    }
+  };
 
   // Store records (not just names) for the Checklist Completion Rate card —
   // it needs to track completion per store, not just an allowlist.
@@ -476,8 +508,8 @@ export default function AuditDashboard() {
       return store ? [store] : [];
     }
     if (selectedBrandId !== 'all') return visibleStores;
-    return allowedStores ? ownStoreRecords : stores;
-  }, [selectedBrandId, selectedStoreId, stores, visibleStores, allowedStores, ownStoreRecords]);
+    return ownStoreRecords;
+  }, [selectedBrandId, selectedStoreId, stores, visibleStores, ownStoreRecords]);
 
   // Templates scoped to the current tab and brand/store selection, for the
   // filter dropdown. Unrestricted (QA-wide) templates have no
@@ -533,26 +565,27 @@ export default function AuditDashboard() {
   );
   const completionTemplateIds = activeCompletionTemplates.map(t => t.id);
 
-  // Which store did which of those checklists on which day — a light list
-  // without answers, so the completion section loads with the page.
+  // Which store did which of those checklists on which day, grouped by the
+  // database — a small download however long the range, so the completion
+  // section loads with the page. Both tabs share it; each counts its own
+  // stores. (The database already limits a store user to their stores.)
   const { data: completionResult, isPending: completionPending } = useQuery({
     queryKey: ['audit-dashboard-completion', dateFrom, dateTo, completionTemplateIds.join(','), storesKey],
-    queryFn: ({ signal }) => (completionTemplateIds.length === 0 ? { rows: [], truncated: false } : base44.audit.listSubmissions({
+    queryFn: ({ signal }) => (completionTemplateIds.length === 0 ? { done: [], truncated: false } : base44.audit.completionDays({
       dateFrom,
       dateTo,
-      stores: allowedStores,
       templateIds: completionTemplateIds,
       maxRows: MAX_COMPLETION_ROWS,
-      fields: 'completion',
-      withMeta: true,
       signal,
     })),
     enabled: storeTabReady && !loadingConfig,
   });
-  const loadingCompletion = storeTabReady && (loadingConfig || completionPending);
-  const completionRows = completionResult?.rows ?? NO_ROWS;
-  // Past the row limit the earliest days come back incomplete — completion
-  // would count their checklists as missed, so it says so instead.
+  // Until it's known who's signed in there's nothing to count yet — a
+  // spinner, not a 0%.
+  const loadingCompletion = !scopeReady || (storeTabReady && (loadingConfig || completionPending));
+  // Only the fallback list can hit its row limit; then the earliest days
+  // come back incomplete — completion would count their checklists as
+  // missed, so it says so instead.
   const completionCapped = !!completionResult?.truncated;
 
   // Checklist completion per store per day — shared by the completion
@@ -561,11 +594,12 @@ export default function AuditDashboard() {
   const completion = useMemo(() => computeCompletion({
     stores: checklistCompletionStores,
     templates: activeCompletionTemplates,
-    submissions: completionRows,
+    done: completionResult?.done ?? null,
+    submissions: completionResult?.submissions ?? NO_ROWS,
     dateFrom,
     dateTo,
     brandNameById,
-  }), [checklistCompletionStores, activeCompletionTemplates, completionRows, dateFrom, dateTo, brandNameById]);
+  }), [checklistCompletionStores, activeCompletionTemplates, completionResult, dateFrom, dateTo, brandNameById]);
 
   useEffect(() => { setSelectedStoreId('all'); }, [selectedBrandId]);
   useEffect(() => { setSelectedTemplateIds([]); }, [selectedBrandId, selectedStoreId, dashboardTab]);
@@ -590,12 +624,14 @@ export default function AuditDashboard() {
   // Filter submissions — the checklist selection belongs to whichever tab is open.
   const rowFilters = useMemo(() => ({
     allowedStores,
+    ownership: ownershipFilter,
+    ownershipOf,
     brand: selectedBrandId === 'all' ? null : brands.find(b => b.id === selectedBrandId),
     store: selectedStoreId === 'all' ? null : stores.find(s => s.id === selectedStoreId),
     templateIds: selectedTemplateIds,
     dateFrom,
     dateTo,
-  }), [allowedStores, brands, stores, selectedBrandId, selectedStoreId, selectedTemplateIds, dateFrom, dateTo]);
+  }), [allowedStores, ownershipFilter, ownershipOf, brands, stores, selectedBrandId, selectedStoreId, selectedTemplateIds, dateFrom, dateTo]);
   const filtered = useMemo(
     () => filterDashboardRows(answerRows, dashboardTab === 'store' ? rowFilters : { ...rowFilters, templateIds: [] }),
     [answerRows, rowFilters, dashboardTab]
@@ -606,7 +642,7 @@ export default function AuditDashboard() {
   );
 
 
-  useEffect(() => { setPage(1); }, [filtered.length, pageSize, selectedBrandId, selectedStoreId, selectedTemplateIds, dateFrom, dateTo]);
+  useEffect(() => { setPage(1); }, [filtered.length, pageSize, ownershipFilter, selectedBrandId, selectedStoreId, selectedTemplateIds, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pagedSubmissions = useMemo(() => {
@@ -728,6 +764,9 @@ export default function AuditDashboard() {
   }, [storeRows]);
 
   const brandLabel = selectedBrandId === 'all' ? 'All Brands' : (brands.find(b => b.id === selectedBrandId)?.brand_name || 'All Brands');
+  // Export titles and file names say which stores: "Franchise · All Brands".
+  const scopeLabel = ownershipFilter ? `${ownershipLabel(ownershipFilter)} · ${brandLabel}` : brandLabel;
+  const fileScope = ownershipFilter ? `_${ownershipLabel(ownershipFilter)}` : '';
 
   // "Brand - Store, Location" → its brand and the rest, matched against the
   // brand list first since brand names can hold dashes ("Tien-mas").
@@ -749,11 +788,11 @@ export default function AuditDashboard() {
     const rate = (value) => (value == null ? null : roundRate(value));
     const dayText = (day) => moment(day, 'YYYY-MM-DD').format('MMM D, YYYY');
     const incomplete = completionCapped
-      ? ` · INCOMPLETE: over ${MAX_SUBMISSION_ROWS.toLocaleString()} checklists in range, export a shorter range`
+      ? ` · INCOMPLETE: over ${MAX_COMPLETION_ROWS.toLocaleString()} checklists in range, export a shorter range`
       : '';
     const scope = (finishedDays.length
-      ? `${brandLabel} · ${dayText(finishedDays[0])} to ${dayText(finishedDays[finishedDays.length - 1])}`
-      : `${brandLabel} · no finished days in range`) + incomplete;
+      ? `${scopeLabel} · ${dayText(finishedDays[0])} to ${dayText(finishedDays[finishedDays.length - 1])}`
+      : `${scopeLabel} · no finished days in range`) + incomplete;
     const status = (value) => (value == null ? '—' : value >= COMPLETION_TARGET
       ? { value: 'On target', styleId: 'pass' }
       : { value: 'Below target', styleId: 'fail' });
@@ -829,7 +868,7 @@ export default function AuditDashboard() {
       },
       {
         name: 'Completion Grid',
-        title: `Checklists Done per Store per Day — ${brandLabel} · ${dayText(days[0])} to ${dayText(days[days.length - 1])}${incomplete}`,
+        title: `Checklists Done per Store per Day — ${scopeLabel} · ${dayText(days[0])} to ${dayText(days[days.length - 1])}${incomplete}`,
         headers: ['Brand', 'Store', ...days.map((day, i) => `${moment(day, 'YYYY-MM-DD').format('MMM D')}${daily[i].open ? ' (so far)' : ''}`), 'Completion %'],
         columnWidths: [120, 170, ...days.map(() => 64), 90],
         rows: completion.stores.map(r => [
@@ -865,7 +904,7 @@ export default function AuditDashboard() {
       ...buildCompletionSheets(),
       {
         name: 'Store Performance',
-        title: `Store Performance Breakdown — ${brandLabel} · ${dateFrom} to ${dateTo}`,
+        title: `Store Performance Breakdown — ${scopeLabel} · ${dateFrom} to ${dateTo}`,
         headers: ['Brand', 'Store', ...visibleTemplates, 'Avg', 'Trend', 'Audits', 'Status'],
         rows: storeRows
           .map(r => ({ r, ...splitStoreLabel(r.store) }))
@@ -885,7 +924,7 @@ export default function AuditDashboard() {
       },
       {
         name: 'Template Analytics',
-        title: `Audit Template Analytics — ${brandLabel} · ${dateFrom} to ${dateTo}`,
+        title: `Audit Template Analytics — ${scopeLabel} · ${dateFrom} to ${dateTo}`,
         headers: ['Template', 'Average Score', 'Audits', 'Passing', 'Failing', 'Pass Rate', 'NO Findings', 'Generated Tickets'],
         rows: templateRows.map(row => [
           row.title,
@@ -900,7 +939,7 @@ export default function AuditDashboard() {
       },
       {
         name: 'NO Analysis',
-        title: `NO Findings by Template — ${brandLabel} · ${dateFrom} to ${dateTo}`,
+        title: `NO Findings by Template — ${scopeLabel} · ${dateFrom} to ${dateTo}`,
         headers: ['NO Rank', 'Template', 'NO Findings', 'Generated Tickets', 'Audits', 'Average Score'],
         rows: noTemplateRows.map((row, index) => [
           index + 1,
@@ -913,7 +952,7 @@ export default function AuditDashboard() {
       },
       {
         name: 'NO Item Details',
-        title: `Checklist Item NO Summary — ${brandLabel} · ${dateFrom} to ${dateTo}`,
+        title: `Checklist Item NO Summary — ${scopeLabel} · ${dateFrom} to ${dateTo}`,
         headers: ['NO Rank', 'Area / Section', 'Checklist Item', 'Templates', 'Total NO', 'Stores Affected', 'Store Breakdown'],
         rows: exportNoItemRows.map((row, index) => [
           index + 1,
@@ -926,7 +965,7 @@ export default function AuditDashboard() {
         ]),
       },
     ];
-    exportSheetsToXlsx('Audit_Dashboard_Store_Checklists', sheets);
+    exportSheetsToXlsx(`Audit_Dashboard${fileScope}_Store_Checklists`, sheets);
   };
 
   // Not until the dates typed in have been applied and the page has
@@ -967,9 +1006,9 @@ export default function AuditDashboard() {
   );
 
   const handleExportQaExcel = () => {
-    exportSheetsToExcel('Audit_Dashboard_QA_Audits', [{
+    exportSheetsToExcel(`Audit_Dashboard${fileScope}_QA_Audits`, [{
       name: 'QA Audits',
-      title: `QA Audits — ${brandLabel} · ${dateFrom} to ${dateTo}`,
+      title: `QA Audits — ${scopeLabel} · ${dateFrom} to ${dateTo}`,
       headers: ['Date', 'Store', 'Checklist', 'Audit Type', 'Score', 'NCF', 'Result'],
       rows: buildQaAuditRows(qaFiltered, templateDefinitionsById).map(r => [
         r.dateText, r.submission.brand || '—', r.submission.template_title, r.auditType,
@@ -989,7 +1028,7 @@ export default function AuditDashboard() {
             <p className="app-page-description">
               {dashboardTab === 'qa'
                 ? "QA audit results, each graded on its own checklist's pass mark."
-                : 'Store quality performance summary.'}
+                : `${ownershipFilter ? `${ownershipLabel(ownershipFilter)} stores'` : 'Store'} quality performance summary.`}
             </p>
           </div>
         </div>
@@ -1004,22 +1043,45 @@ export default function AuditDashboard() {
           )}
       </div>
 
-      {showQaTab && (
-        <Tabs value={dashboardTab} onValueChange={setDashboardTab}>
-          <div className="overflow-x-auto">
-            <TabsList className="flex h-auto w-max gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-              {[{ value: 'store', label: 'Store Checklists' }, { value: 'qa', label: 'QA Audits' }].map(tab => (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className="rounded-lg px-4 h-9 text-slate-600 transition-all hover:text-slate-900 data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold data-[state=active]:shadow-sm"
-                >
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-        </Tabs>
+      {(showQaTab || ownershipFilter) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {showQaTab && (
+            <Tabs value={dashboardTab} onValueChange={setDashboardTab} className="max-w-full">
+              <div className="overflow-x-auto">
+                <TabsList className="flex h-auto w-max gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                  {[{ value: 'store', label: 'Store Checklists' }, { value: 'qa', label: 'QA Audits' }].map(tab => (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      className="rounded-lg px-4 h-9 text-slate-600 transition-all hover:text-slate-900 data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold data-[state=active]:shadow-sm"
+                    >
+                      {tab.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+            </Tabs>
+          )}
+          {/* Corporate and franchise stores never share numbers — one at a time. */}
+          {ownershipFilter && (
+            <Tabs value={ownershipFilter} onValueChange={changeOwnership} className="max-w-full">
+              <div className="overflow-x-auto">
+                <TabsList aria-label="Store ownership" className="flex h-auto w-max gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                  {OWNERSHIP_OPTIONS.map(option => (
+                    <TabsTrigger
+                      key={option.value}
+                      value={option.value}
+                      className="rounded-lg px-4 h-9 text-slate-600 transition-all hover:text-slate-900 data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold data-[state=active]:shadow-sm"
+                    >
+                      {option.label}
+                      <span className="ml-1.5 text-xs font-normal opacity-70">{ownershipCounts[option.value]}</span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+            </Tabs>
+          )}
+        </div>
       )}
 
       {/* Filters */}
@@ -1169,25 +1231,7 @@ export default function AuditDashboard() {
               until opened, and load then. */}
           {stats && (
             <>
-              <Card className="border border-slate-200 shadow-sm">
-                <CardHeader className="pb-2 pt-5 px-5">
-                  <p className="font-bold text-slate-800 flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-red-500" /> NO Findings by Template</p>
-                  <p className="text-xs text-slate-500">All templates ranked from the most NO findings to the least.</p>
-                </CardHeader>
-                <CardContent className="px-2 pb-5">
-                  <ResponsiveContainer width="100%" height={Math.max(260, noTemplateRows.length * 40)}>
-                    <BarChart data={noTemplateRows} layout="vertical" margin={{ left: 12, right: 42 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="title" width={170} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(value, name) => [value, name === 'noFindings' ? 'NO findings' : name]} />
-                      <Bar dataKey="noFindings" name="NO findings" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11 }}>
-                        {noTemplateRows.map((row, index) => <Cell key={row.id} fill={index === 0 && row.noFindings > 0 ? '#dc2626' : row.noFindings > 0 ? '#f97316' : '#cbd5e1'} />)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+              <NoFindingsByTemplateCard rows={noTemplateRows} />
               <ReportSection id="daily" title="Daily Audit and Ticket Summary" icon={<CalendarDays className="h-4 w-4 text-[#1fd655]" />} description="Audits submitted and tickets generated each day." open={openReports.has('daily')} onToggle={toggleReport}>
                 <CardContent className="px-2 pb-5">
                   <ResponsiveContainer width="100%" height={280}>

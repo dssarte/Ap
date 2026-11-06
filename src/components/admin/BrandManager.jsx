@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Pencil, Trash2, Loader2, Store, Tag } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
 import AdminSearchBar from './AdminSearchBar';
+import { OWNERSHIP_OPTIONS, storeOwnership, ownershipLabel } from '@/lib/storeOwnership';
 
 // ─── Brand CRUD ────────────────────────────────────────────────────────────────
 function BrandsTab() {
@@ -132,7 +133,9 @@ function BrandsTab() {
 // ─── Store CRUD ────────────────────────────────────────────────────────────────
 function StoresTab() {
   const qc = useQueryClient();
-  const emptyForm = { brand_id: '', brand_name: '', store_name: '', location: '', is_active: true };
+  // Ownership: corporate (company-owned) or franchise — the Audit Dashboard
+  // reports the two separately.
+  const emptyForm = { brand_id: '', brand_name: '', store_name: '', location: '', ownership: 'corporate', is_active: true };
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -166,7 +169,7 @@ function StoresTab() {
   });
 
   const startEdit = (s) => {
-    setForm({ brand_id: s.brand_id, brand_name: s.brand_name, store_name: s.store_name, location: s.location || '', is_active: s.is_active });
+    setForm({ brand_id: s.brand_id, brand_name: s.brand_name, store_name: s.store_name, location: s.location || '', ownership: storeOwnership(s), is_active: s.is_active });
     setEditingId(s.id);
     setShowForm(true);
   };
@@ -191,6 +194,7 @@ function StoresTab() {
   );
   const { search, setSearch, page, setPage, totalPages, pageItems, filteredCount } = useSearchAndPaginate(
     sortedStores, (s, q) => s.store_name?.toLowerCase().includes(q) || s.brand_name?.toLowerCase().includes(q) || s.location?.toLowerCase().includes(q)
+      || ownershipLabel(storeOwnership(s)).toLowerCase().includes(q)
   );
 
   return (
@@ -208,7 +212,7 @@ function StoresTab() {
         <Card className="border-2 border-[#1fd655]/40">
           <CardContent className="p-4 space-y-3">
             <h3 className="font-semibold text-slate-800">{editingId ? 'Edit' : 'New'} Store</h3>
-            <div className="grid sm:grid-cols-3 gap-3">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="text-xs font-semibold text-slate-600 mb-1 block">Brand *</label>
                 <Select value={form.brand_id} onValueChange={handleBrandSelect}>
@@ -227,6 +231,17 @@ function StoresTab() {
               <div>
                 <label className="text-xs font-semibold text-slate-600 mb-1 block">Location</label>
                 <Input placeholder="e.g. Makati" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 mb-1 block">Ownership</label>
+                <Select value={form.ownership} onValueChange={value => setForm(f => ({ ...f, ownership: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {OWNERSHIP_OPTIONS.map(option => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="flex gap-2 justify-end">
@@ -250,7 +265,7 @@ function StoresTab() {
         </Card>
       ) : (
         <>
-        <AdminSearchBar value={search} onChange={setSearch} placeholder="Search stores by name, brand, or location..." wrapperClassName="relative" />
+        <AdminSearchBar value={search} onChange={setSearch} placeholder="Search stores by name, brand, location, or corporate / franchise..." wrapperClassName="relative" />
         {filteredCount === 0 ? (
           <p className="text-center text-slate-400 py-8">No stores match "{search}"</p>
         ) : (
@@ -266,6 +281,9 @@ function StoresTab() {
                     <p className="font-semibold text-slate-900">{s.store_name}</p>
                     {s.location && <p className="text-xs text-slate-500">{s.location}</p>}
                   </div>
+                  <Badge variant="outline" className={`text-xs ${storeOwnership(s) === 'franchise' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-600'}`}>
+                    {ownershipLabel(storeOwnership(s))}
+                  </Badge>
                   <Badge
                     className={`cursor-pointer text-xs ${s.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}
                     onClick={() => toggleMutation.mutate({ id: s.id, is_active: !s.is_active })}

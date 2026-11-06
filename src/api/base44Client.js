@@ -363,6 +363,35 @@ const auditData = {
     return withMeta ? { rows: inRange, truncated: rows.length >= maxRows } : inRange;
   },
 
+  // Checklist completion for the Audit Dashboard: which checklists each store
+  // label did on which business days, grouped by the database
+  // (audit_completion_days) — one small result however long the range.
+  // Returns { done: [{ label, templateId, days: ['YYYY-MM-DD', …] }] }, or,
+  // until that function exists, { submissions } paged the older way, with
+  // `truncated` when maxRows cut that list short.
+  async completionDays({ dateFrom, dateTo, templateIds = null, maxRows = 40000, signal = null } = {}) {
+    let request = supabase.rpc('audit_completion_days', {
+      p_date_from: dateFrom,
+      p_date_to: dateTo,
+      p_template_ids: templateIds?.length ? templateIds : null,
+    });
+    if (signal) request = request.abortSignal(signal);
+    const { data, error } = await request;
+    if (!error) {
+      const done = (data || []).map(entry => ({
+        label: entry.label || '',
+        templateId: entry.template_id,
+        days: (entry.days || []).map(offset => addIsoDateDays(dateFrom, offset)),
+      }));
+      return { done, truncated: false };
+    }
+    if (!isMissingRpc(error)) throw error;
+    const { rows, truncated } = await auditData.listSubmissions({
+      dateFrom, dateTo, templateIds, fields: 'completion', maxRows, withMeta: true, signal,
+    });
+    return { submissions: rows, truncated };
+  },
+
   // Every checklist's id plus the two fields isQaConductedTemplate() reads —
   // inactive checklists too, so an older QA audit is still recognized —
   // without each template's sections and items.
@@ -407,17 +436,22 @@ const auditData = {
   // per-month, per-store) server-side via GROUP BY instead of fetching
   // every raw submission to the browser — see the migration for why that
   // raw-fetch approach timed out on a month of daily operational checklists.
-  async dashboardSummary({ dateFrom = null, dateTo = null, brandName = null, storeName = null, templateIds = null } = {}) {
+  // `ownership`: 'corporate' or 'franchise' stores only (sent only when set,
+  // so calls without it also work against the older function).
+  async dashboardSummary({ dateFrom = null, dateTo = null, brandName = null, storeName = null, templateIds = null, ownership = null } = {}) {
     const { data, error } = await supabase.rpc('audit_dashboard_summary', {
       p_date_from: dateFrom || null,
       p_date_to: dateTo || null,
       p_brand_name: brandName || null,
       p_store_name: storeName || null,
       p_template_ids: templateIds?.length ? templateIds : null,
+      ...(ownership ? { p_ownership: ownership } : {}),
     });
     if (error) {
       if (isMissingRpc(error)) {
-        throw new Error('audit_dashboard_summary is not available yet — run its migration in Supabase, then reload the schema cache (NOTIFY pgrst, \'reload schema\';).');
+        throw new Error(ownership
+          ? 'The Corporate / Franchise split needs the latest Audit Dashboard migration (store ownership and faster reporting) — run it in Supabase, then reload the schema cache (NOTIFY pgrst, \'reload schema\';).'
+          : 'audit_dashboard_summary is not available yet — run its migration in Supabase, then reload the schema cache (NOTIFY pgrst, \'reload schema\';).');
       }
       throw error;
     }

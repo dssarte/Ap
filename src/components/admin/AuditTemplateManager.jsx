@@ -121,8 +121,10 @@ export default function AuditTemplateManager() {
   });
 
   const { data: stores = [] } = useQuery({
-    queryKey: ['stores-active'],
-    queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 200),
+    // Every kind of store (facilities too) — its own key, since
+    // ['stores-active'] holds store-kind ones only.
+    queryKey: ['stores-active', 'any-kind'],
+    queryFn: () => base44.entities.Store.filter({ is_active: true }, 'store_name', 2000),
   });
 
   const saveMutation = useMutation({
