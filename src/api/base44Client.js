@@ -458,6 +458,30 @@ const auditData = {
     return data || { stats: null, templateRows: [], dailyRows: [], trendData: [], storeRows: [] };
   },
 
+  // For one checklist: how many times each of its items was answered NO in
+  // range — the same audits, access and filters as dashboardSummary.
+  async noFindingsByItem({ templateId, dateFrom = null, dateTo = null, brandName = null, storeName = null, ownership = null, signal = null }) {
+    let request = supabase.rpc('audit_no_findings_by_item', {
+      p_template_id: templateId,
+      p_date_from: dateFrom || null,
+      p_date_to: dateTo || null,
+      p_brand_name: brandName || null,
+      p_store_name: storeName || null,
+      p_ownership: ownership || null,
+    });
+    if (signal) request = request.abortSignal(signal);
+    const { data, error } = await request;
+    if (error) {
+      if (isMissingRpc(error)) {
+        const missing = new Error('NO Findings by Category needs the latest Audit Dashboard migration (NO findings by item) — run it in Supabase, then reload the schema cache (NOTIFY pgrst, \'reload schema\';).');
+        missing.missingRpc = true;
+        throw missing;
+      }
+      throw error;
+    }
+    return (data || []).map(row => ({ itemId: String(row.item), times: Number(row.no) || 0 }));
+  },
+
   async submitBundle(submission, tickets = []) {
     const { data, error } = await supabase.rpc('submit_audit_bundle', {
       p_submission: cleanPayload(submission),
