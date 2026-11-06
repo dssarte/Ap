@@ -74,9 +74,11 @@ const totalsOf = (cells) => {
  * stores        store records — { id, store_name, brand_id, brand_name, created_date }
  * templates     the checklists that count, each due daily wherever it applies
  * submissions   finalized checklists — { template_id, template_title, brand, submission_date }
+ * done          or the same already grouped by the database — { label, templateId, days }
+ *               (audit_completion_days); used instead of `submissions` when given
  * brandNameById each brand's current name, ahead of the copy saved on the store
  */
-export function computeCompletion({ stores, templates, submissions, dateFrom, dateTo, brandNameById = new Map(), now = new Date() }) {
+export function computeCompletion({ stores, templates, submissions = [], done = null, dateFrom, dateTo, brandNameById = new Map(), now = new Date() }) {
   const today = auditBusinessDayKey(now);
   const openFrom = auditBusinessDayKey(now, 'Closing');
   const days = daysInRange(dateFrom, dateTo < today ? dateTo : today);
@@ -87,11 +89,18 @@ export function computeCompletion({ stores, templates, submissions, dateFrom, da
   // business day worked out once, so a store checks the few distinct
   // labels rather than every submission.
   const byLabel = new Map();
-  submissions.forEach(s => {
-    const label = s.brand || '';
+  const rowsFor = (label) => {
     if (!byLabel.has(label)) byLabel.set(label, []);
-    byLabel.get(label).push({ day: auditBusinessDayKey(s), templateId: s.template_id });
-  });
+    return byLabel.get(label);
+  };
+  if (done) {
+    done.forEach(entry => {
+      const rows = rowsFor(entry.label || '');
+      entry.days.forEach(day => rows.push({ day, templateId: entry.templateId }));
+    });
+  } else {
+    submissions.forEach(s => rowsFor(s.brand || '').push({ day: auditBusinessDayKey(s), templateId: s.template_id }));
+  }
 
   const templateStart = new Map(templates.map(t => [t.id, startDayOf(t)]));
 

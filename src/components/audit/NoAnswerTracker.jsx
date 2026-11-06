@@ -75,7 +75,7 @@ export default function NoAnswerTracker({
 
   const { data: allStores = [] } = useQuery({
     queryKey: ['audit-stores-no-tracker'],
-    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 500),
+    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 2000),
     enabled: !!allowedStores && !isControlled,
   });
 

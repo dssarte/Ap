@@ -154,7 +154,7 @@ export default function QADashboard() {
 
   const { data: stores = [] } = useQuery({
     queryKey: ['stores-active-qa-dashboard'],
-    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 500),
+    queryFn: () => base44.entities.Store.filter({ is_active: true, kind: 'store' }, 'store_name', 2000),
   });
 
   const { data: templates = [] } = useQuery({
