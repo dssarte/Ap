@@ -20,6 +20,7 @@ import TemplateMultiSelect from '@/components/audit/TemplateMultiSelect';
 import ChecklistCompletionCard from '@/components/audit/ChecklistCompletionCard';
 import NoFindingsByTemplateCard from '@/components/audit/NoFindingsByTemplateCard';
 import NoFindingsByCategoryCard from '@/components/audit/NoFindingsByCategoryCard';
+import { useStoreHolidays } from '@/hooks/useStoreHolidays';
 import SubmissionDetail from '@/components/audit/SubmissionDetail';
 import QaAuditsPanel, { buildQaAuditRows } from '@/components/audit/QaAuditsPanel';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -589,6 +590,9 @@ export default function AuditDashboard() {
   // missed, so it says so instead.
   const completionCapped = !!completionResult?.truncated;
 
+  // Holidays (Administration › Holidays): those days aren't due.
+  const holidays = useStoreHolidays();
+
   // Checklist completion per store per day — shared by the completion
   // section and the Excel export. Counted from every finalized submission
   // in range (not just scored ones).
@@ -600,7 +604,8 @@ export default function AuditDashboard() {
     dateFrom,
     dateTo,
     brandNameById,
-  }), [checklistCompletionStores, activeCompletionTemplates, completionResult, dateFrom, dateTo, brandNameById]);
+    holidays,
+  }), [checklistCompletionStores, activeCompletionTemplates, completionResult, dateFrom, dateTo, brandNameById, holidays]);
 
   useEffect(() => { setSelectedStoreId('all'); }, [selectedBrandId]);
   useEffect(() => { setSelectedTemplateIds([]); }, [selectedBrandId, selectedStoreId, dashboardTab]);
@@ -823,7 +828,7 @@ export default function AuditDashboard() {
     const status = (value) => (value == null ? '—' : value >= COMPLETION_TARGET
       ? { value: 'On target', styleId: 'pass' }
       : { value: 'Below target', styleId: 'fail' });
-    const gridStyles = { done: 'cellDone', halfOrMore: 'cellPartial', underHalf: 'cellUnderHalf', none: 'cellNone', open: 'cellOpen', closed: 'cellNotDue', notDue: 'cellNotDue' };
+    const gridStyles = { done: 'cellDone', halfOrMore: 'cellPartial', underHalf: 'cellUnderHalf', none: 'cellNone', open: 'cellOpen', holiday: 'cellNotDue', closed: 'cellNotDue', notDue: 'cellNotDue' };
     const finishedIndexes = daily.flatMap((d, i) => (d.open ? [] : [i]));
 
     // Native Excel charts on a sheet of their own, drawn from the sheets
@@ -901,7 +906,7 @@ export default function AuditDashboard() {
         rows: completion.stores.map(r => [
           r.brandName,
           r.storeName,
-          ...r.cells.map(cell => ({ value: cell.closed ? 'Closed' : cell.required ? `${cell.done}/${cell.required}` : '—', styleId: gridStyles[completionCellState(cell)] })),
+          ...r.cells.map(cell => ({ value: cell.holiday ? 'Holiday' : cell.closed ? 'Closed' : cell.required ? `${cell.done}/${cell.required}` : '—', styleId: gridStyles[completionCellState(cell)] })),
           rate(r.rate),
         ]),
       },

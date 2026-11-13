@@ -10,6 +10,8 @@ import { auditBusinessDayKey, formatPHDate } from '@/lib/dateUtils';
 import { templateAppliesToStore } from '@/lib/auditTemplateMatch';
 import { COMPLETION_TARGET } from '@/lib/checklistCompletion';
 import { describeOpenDays, isStoreOpenOn, storeOpenDays } from '@/lib/storeOpenDays';
+import { holidayOn } from '@/lib/storeHolidays';
+import { useStoreHolidays } from '@/hooks/useStoreHolidays';
 import ExcelExportButton from '@/components/ExcelExportButton';
 import { exportSheetsToExcel } from '@/lib/exportExcel';
 import { BarChart, Bar, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -194,10 +196,16 @@ export default function DailySummary() {
     return list;
   }, [ownScopedStores, filterBrandId, filterStoreId]);
 
-  // Per-store completion rows. A store closed that weekday (its open days
-  // in Admin › Stores) has nothing due — it's listed as closed, not missing.
+  // Holidays (Administration › Holidays).
+  const holidays = useStoreHolidays();
+
+  // Per-store completion rows. A store on holiday or closed that weekday
+  // (its open days in Admin › Stores) has nothing due — it's listed as such,
+  // not missing.
   const rows = useMemo(() => {
     return scopedStores.map(store => {
+      const holiday = holidayOn(holidays, store, selectedDate);
+      if (holiday) return { store, required: 0, completed: 0, rate: 0, missing: [], holiday };
       if (!isStoreOpenOn(store, selectedDate)) {
         return { store, required: 0, completed: 0, rate: 0, missing: [], closed: true };
       }
@@ -215,7 +223,7 @@ export default function DailySummary() {
         missing: missing.map(t => t.title),
       };
     });
-  }, [scopedStores, requiredTemplates, daySubs, selectedDate]);
+  }, [scopedStores, requiredTemplates, daySubs, selectedDate, holidays]);
 
   // Stores with at least one required checklist today — used for the KPI
   // cards and aggregate charts, so a brand with nothing configured yet
@@ -265,7 +273,9 @@ export default function DailySummary() {
   // driven entirely by requiredTemplates, so any checklist added later shows
   // up here automatically with no code changes.
   const templateCompletionData = useMemo(() => requiredTemplates.map(t => {
-    const applicableStores = scopedStores.filter(store => isStoreOpenOn(store, selectedDate) && templateAppliesToStore(t, store));
+    // Not counting stores on holiday or closed that weekday.
+    const applicableStores = scopedStores.filter(store => !holidayOn(holidays, store, selectedDate)
+      && isStoreOpenOn(store, selectedDate) && templateAppliesToStore(t, store));
     const completed = applicableStores.filter(store =>
       daySubs.some(s => s.template_id === t.id && s.brand?.includes(store.store_name))
     ).length;
@@ -276,7 +286,7 @@ export default function DailySummary() {
       notStarted: Math.max(0, applicableStores.length - completed),
       total: applicableStores.length,
     };
-  }).filter(item => item.total > 0), [requiredTemplates, scopedStores, daySubs, selectedDate]);
+  }).filter(item => item.total > 0), [requiredTemplates, scopedStores, daySubs, selectedDate, holidays]);
 
   // Overall per-store status across ALL required checklists for the day —
   // distinct from templateCompletionData, which breaks it down per checklist.
@@ -313,8 +323,8 @@ export default function DailySummary() {
         headers: ['Store', 'Required', 'Completed', 'Rate %', 'Status', 'Missing Checklists'],
         rows: sortedRows.map(r => [
           r.store.store_name, r.required, r.completed, r.rate,
-          r.closed ? 'CLOSED TODAY' : r.required === 0 ? 'NO CHECKLISTS REQUIRED' : r.rate >= PASS_THRESHOLD ? 'COMPLETE' : (r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'),
-          r.closed ? `Open ${describeOpenDays(storeOpenDays(r.store))}` : r.missing.join(' | '),
+          r.holiday ? 'HOLIDAY' : r.closed ? 'CLOSED TODAY' : r.required === 0 ? 'NO CHECKLISTS REQUIRED' : r.rate >= PASS_THRESHOLD ? 'COMPLETE' : (r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'),
+          r.holiday ? r.holiday.name : r.closed ? `Open ${describeOpenDays(storeOpenDays(r.store))}` : r.missing.join(' | '),
         ]),
       },
       {
@@ -522,12 +532,13 @@ export default function DailySummary() {
                         <article key={r.store.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                           <div className="flex items-start justify-between gap-3">
                             <div><h3 className="font-semibold text-slate-900">{r.store.store_name}</h3>{r.store.location && <p className="mt-0.5 text-xs text-slate-400">{r.store.location}</p>}</div>
-                            <Badge className={noneRequired ? 'border-slate-200 bg-slate-100 text-slate-500' : complete ? 'border-green-200 bg-green-100 text-green-700' : r.completed === 0 ? 'border-red-200 bg-red-100 text-red-700' : 'border-amber-200 bg-amber-100 text-amber-700'}>{r.closed ? 'Closed today' : noneRequired ? 'No checklists required' : complete ? 'Complete' : r.completed === 0 ? 'Not started' : 'In progress'}</Badge>
+                            <Badge className={r.holiday ? 'border-violet-200 bg-violet-100 text-violet-700' : noneRequired ? 'border-slate-200 bg-slate-100 text-slate-500' : complete ? 'border-green-200 bg-green-100 text-green-700' : r.completed === 0 ? 'border-red-200 bg-red-100 text-red-700' : 'border-amber-200 bg-amber-100 text-amber-700'}>{r.holiday ? 'Holiday' : r.closed ? 'Closed today' : noneRequired ? 'No checklists required' : complete ? 'Complete' : r.completed === 0 ? 'Not started' : 'In progress'}</Badge>
                           </div>
                           <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
                             <div><p className="text-xs text-slate-500">Completed</p><p className="mt-1 font-semibold text-slate-800">{r.completed} / {r.required}</p></div>
                             <div><p className="text-xs text-slate-500">Completion rate</p><p className={`mt-1 font-bold ${noneRequired ? 'text-slate-400' : complete ? 'text-green-600' : r.rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{noneRequired ? '—' : `${r.rate}%`}</p></div>
                           </div>
+                          {r.holiday && <p className="mt-3 text-xs text-slate-500">{r.holiday.name} — nothing due today.</p>}
                           {r.closed && <p className="mt-3 text-xs text-slate-500">Open {describeOpenDays(storeOpenDays(r.store))} — nothing due today.</p>}
                           {r.missing.length > 0 && <div className="mt-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Missing</p><p className="mt-1 text-xs leading-5 text-slate-600">{r.missing.join(' · ')}</p></div>}
                         </article>
@@ -576,12 +587,14 @@ export default function DailySummary() {
                               </span>
                             </td>
                             <td className="text-center px-3 py-3">
-                              <Badge className={noneRequired ? 'bg-slate-100 text-slate-500 border-slate-200' : complete ? 'bg-green-100 text-green-700 border-green-200' : r.completed === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}>
-                                {r.closed ? 'CLOSED TODAY' : noneRequired ? 'NO CHECKLISTS REQUIRED' : complete ? 'COMPLETE' : r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'}
+                              <Badge className={r.holiday ? 'bg-violet-100 text-violet-700 border-violet-200' : noneRequired ? 'bg-slate-100 text-slate-500 border-slate-200' : complete ? 'bg-green-100 text-green-700 border-green-200' : r.completed === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}>
+                                {r.holiday ? 'HOLIDAY' : r.closed ? 'CLOSED TODAY' : noneRequired ? 'NO CHECKLISTS REQUIRED' : complete ? 'COMPLETE' : r.completed === 0 ? 'NOT STARTED' : 'IN PROGRESS'}
                               </Badge>
                             </td>
                             <td className="px-5 py-3 text-xs text-slate-500">
-                              {r.closed
+                              {r.holiday
+                                ? <span className="text-violet-600">{r.holiday.name}</span>
+                                : r.closed
                                 ? <span className="text-slate-400">Open {describeOpenDays(storeOpenDays(r.store))}</span>
                                 : noneRequired
                                   ? <span className="text-slate-400">—</span>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Building2, Users, Loader2, ShieldAlert, Tags, Clock, Zap, GitBranch, ClipboardList, Store, CalendarCheck, Database } from "lucide-react";
+import { Building2, Users, Loader2, ShieldAlert, Tags, Clock, Zap, GitBranch, ClipboardList, Store, CalendarCheck, Database, Flag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import DepartmentManager from "@/components/admin/DepartmentManager";
 import UserManager from "@/components/admin/UserManager";
@@ -14,6 +14,7 @@ import AuditTemplateManager from "@/components/admin/AuditTemplateManager";
 import BrandManager from "@/components/admin/BrandManager";
 import AuditAssignmentManager from "@/components/admin/AuditAssignmentManager";
 import ChecklistCompletionManager from "@/components/admin/ChecklistCompletionManager";
+import HolidayManager from "@/components/admin/HolidayManager";
 
 export default function Admin() {
   const [user, setUser] = useState(null);
@@ -133,6 +134,10 @@ export default function Admin() {
               <CalendarCheck className="w-5 h-5 mr-2" />
               Checklist Completion
             </TabsTrigger>
+            <TabsTrigger value="holidays" className="data-[state=active]:bg-[#1fd655] data-[state=active]:text-slate-900 data-[state=active]:font-bold rounded-lg px-6 h-11 transition-all">
+              <Flag className="w-5 h-5 mr-2" />
+              Holidays
+            </TabsTrigger>
           </TabsList>
           </div>
 
@@ -174,6 +179,10 @@ export default function Admin() {
 
           <TabsContent value="checklist-completion">
             <ChecklistCompletionManager />
+          </TabsContent>
+
+          <TabsContent value="holidays">
+            <HolidayManager />
           </TabsContent>
         </Tabs>
       </div>
