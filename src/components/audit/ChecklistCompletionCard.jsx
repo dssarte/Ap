@@ -11,20 +11,32 @@ import {
 } from 'recharts';
 import moment from 'moment';
 import { COMPLETION_TARGET, roundRate, completionCellState, completionRateScale, BRAND_SERIES_COLORS, brandSeriesColor } from '@/lib/checklistCompletion';
+import { describeOpenDays, storeOpenDays } from '@/lib/storeOpenDays';
 
 const BAR_COLOR = BRAND_SERIES_COLORS[0];
 // Chart chrome in the page's own slate ink.
 const INK = { text: '#475569', muted: '#94a3b8', grid: '#e2e8f0', axis: '#cbd5e1' };
 
-// A store's day on the grid, in the reserved status colors — each shown
-// with its label in the legend, and "none done" also carries an ✕.
+// A store's day on the grid, in status colors from all done to none done —
+// each shown with its label in the legend, and "none done" also carries an
+// ✕. Amber and orange tell 2 of 3 done from 1 of 3 without pointing at the
+// day. Every pair of these status colors was checked apart for normal and
+// color-blind vision (OKLab distance ≥ 15 and ≥ 8).
 const CELL_STATES = {
   done: { label: 'All done', className: 'bg-[#0ca30c]' },
-  partial: { label: 'Some missed', className: 'bg-[#fab219]' },
-  none: { label: 'None done', className: 'bg-[#d03b3b]' },
+  halfOrMore: { label: 'Half or more done', className: 'bg-[#fab219]' },
+  underHalf: { label: 'Less than half done', className: 'bg-[#ff5b00]' },
+  none: { label: 'None done', className: 'bg-[#b91c1c]' },
   open: { label: 'In progress', className: 'bg-[#cde2fb]' },
+  // Striped, so a day the store doesn't open never reads as one it missed.
+  closed: { label: 'Closed', className: 'bg-slate-50', style: { backgroundImage: 'repeating-linear-gradient(135deg, #cbd5e1 0 1.5px, transparent 1.5px 4px)' } },
   notDue: { label: 'Not due', className: 'bg-slate-100' },
 };
+// Lowest completion first; nothing due yet (no rate) last; then the most
+// missed, then by name.
+const byLowestRate = (a, b) => (a.rate ?? Infinity) - (b.rate ?? Infinity)
+  || b.missed - a.missed
+  || (a.storeName || a.brandName).localeCompare(b.storeName || b.brandName);
 
 const formatRate = (rate) => (rate == null ? '—' : `${roundRate(rate)}%`);
 const rateClass = (rate) => (rate == null ? 'text-slate-400' : rate >= COMPLETION_TARGET ? 'text-green-600' : 'text-red-600');
@@ -134,6 +146,7 @@ const describeChecklist = (row) => ({
 // What a grid day says when pointed at or tapped.
 function describeCell({ row, cell }) {
   const where = `${moment(cell.day).format('ddd, MMM D')} · ${row.storeName} (${row.brandName})`;
+  if (cell.closed) return `${where} — closed (open ${describeOpenDays(storeOpenDays(row.store))}), nothing due.`;
   if (!cell.required) return `${where} — nothing due yet.`;
   if (cell.done === cell.required) return `${where} — all ${cell.required} done.`;
   const names = cell.missing.map(t => t.title).join(', ');
@@ -144,7 +157,7 @@ function describeCell({ row, cell }) {
 
 function CellSwatch({ state, className = 'h-4 w-4' }) {
   return (
-    <span className={`inline-flex items-center justify-center rounded-[3px] ${className} ${CELL_STATES[state].className}`}>
+    <span className={`inline-flex items-center justify-center rounded-[3px] ${className} ${CELL_STATES[state].className}`} style={CELL_STATES[state].style}>
       {state === 'none' && <X className="h-3 w-3 text-white" strokeWidth={3} />}
     </span>
   );
@@ -210,10 +223,15 @@ export default function ChecklistCompletionCard({
     .map(s => ({ ...s, rateValue: roundRate(s.rate) })), [stores]);
   const lowestShown = showAllBelow ? storesBelowTarget : storesBelowTarget.slice(0, LOWEST_SHOWN);
 
-  // The store grid, narrowed by the filter; brands with no store left drop out.
+  // The store grid, narrowed by the filter, lowest completion first — the
+  // brands too, so the one furthest behind is the one open at first. Brands
+  // with no store left drop out.
   const gridBrands = useMemo(() => {
     const keep = storeFilter === 'below' ? isBelowTarget : storeFilter === 'onTarget' ? isOnTarget : () => true;
-    return brands.map(b => ({ ...b, shown: b.stores.filter(keep) })).filter(b => b.shown.length);
+    return brands
+      .map(b => ({ ...b, shown: b.stores.filter(keep).sort(byLowestRate) }))
+      .filter(b => b.shown.length)
+      .sort(byLowestRate);
   }, [brands, storeFilter]);
   const storeFilters = [
     { value: 'all', label: `All stores (${stores.length})` },
@@ -237,7 +255,9 @@ export default function ChecklistCompletionCard({
   const seriesColor = (s) => (focusName && focusName !== s.name ? INK.axis : s.color);
   const barChartMinWidth = trendData.length * (series.length * (MIN_BAR + BAR_GAP) + DAY_GAP) + 60;
   const openStoreCount = stores.filter(s => s.cells.some(c => c.open && c.done < c.required)).length;
-  const gridStates = inProgress ? Object.keys(CELL_STATES) : Object.keys(CELL_STATES).filter(k => k !== 'open');
+  // The legend lists "In progress" and "Closed" only when the grid has them.
+  const hasClosed = stores.some(row => row.cells.some(cell => cell.closed));
+  const gridStates = Object.keys(CELL_STATES).filter(k => (k !== 'open' || inProgress) && (k !== 'closed' || hasClosed));
 
   return (
     <>
@@ -565,7 +585,7 @@ export default function ChecklistCompletionCard({
                                   <td key={cell.day} className="p-0">
                                     <button
                                       type="button"
-                                      aria-label={`${moment(cell.day).format('MMM D')}: ${cell.done} of ${cell.required} done`}
+                                      aria-label={`${moment(cell.day).format('MMM D')}: ${cell.closed ? 'closed' : `${cell.done} of ${cell.required} done`}`}
                                       onMouseEnter={() => setPointed({ row, cell })}
                                       onFocus={() => setPointed({ row, cell })}
                                       onClick={() => setPointed({ row, cell })}

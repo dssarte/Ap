@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from './utils';
 import { base44 } from '@/api/base44Client';
 import { getUserDisplayName } from '@/lib/userDisplayName';
+import { canConductAudits } from '@/lib/auditAccess';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -159,6 +160,8 @@ export default function Layout({ children, currentPageName }) {
   const isAdmin = user?.user_type === 'admin';
   const isQADept = user?.department_name === 'Quality Assurance';
   const isQA = isQADept || isAdmin;
+  // SOD and Quality Assurance only (plus admins and directors).
+  const mayConductAudits = canConductAudits(user);
 
   let navItems = [{ name: 'Overview', icon: Home, page: 'Home', badge: hasUnreadTicketUpdates ? 1 : null }];
 
@@ -168,7 +171,7 @@ export default function Layout({ children, currentPageName }) {
     if (user.assigned_stores?.length) {
       navItems.push(
         { name: 'Approval Queue', icon: Inbox, page: 'ApprovalQueue', badge: pendingApprovalCount || null },
-        { name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' },
+        ...(mayConductAudits ? [{ name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' }] : []),
         { name: 'Daily Summary', icon: CalendarCheck, page: 'DailySummary' },
         { name: 'Audit Dashboard', icon: ShieldCheck, page: 'AuditDashboard' },
       );
@@ -204,7 +207,7 @@ export default function Layout({ children, currentPageName }) {
         { name: 'QA Dashboard', icon: Gauge, page: 'QADashboard' },
       );
     }
-    if ((isQA || hasAuditAssignments) && user?.user_type !== 'director') {
+    if ((isQA || hasAuditAssignments) && mayConductAudits && user?.user_type !== 'director') {
       navItems.push({ name: 'Conduct Audit', icon: ClipboardList, page: 'Audit' });
     }
     // Store accounts get the same store-scoped Audit Dashboard; admins and
