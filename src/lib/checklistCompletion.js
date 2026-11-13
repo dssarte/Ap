@@ -1,6 +1,7 @@
 import moment from 'moment';
 import { auditBusinessDayKey } from '@/lib/dateUtils';
 import { templateAppliesToStore } from '@/lib/auditTemplateMatch';
+import { isStoreOpenOn } from '@/lib/storeOpenDays';
 
 // A store is on target only when every checklist due was done.
 export const COMPLETION_TARGET = 100;
@@ -30,13 +31,18 @@ export function completionRateScale(values) {
 
 const rateOf = (done, required) => (required > 0 ? (done / required) * 100 : null);
 
-// How one store's day reads on the completion grid: 'done', 'partial',
-// 'none', 'open' (still in progress) or 'notDue' (nothing assigned yet).
+// How one store's day reads on the completion grid: 'done'; some missed,
+// split so the grid shows how many without pointing at it — 'halfOrMore'
+// (e.g. 2 of 3 done) or 'underHalf' (e.g. 1 of 3); 'none'; 'open' (still
+// in progress); 'closed' (the store doesn't open that weekday) or 'notDue'
+// (nothing assigned yet).
 export function completionCellState(cell) {
+  if (cell.closed) return 'closed';
   if (!cell.required) return 'notDue';
   if (cell.done === cell.required) return 'done';
   if (cell.open) return 'open';
-  return cell.done === 0 ? 'none' : 'partial';
+  if (cell.done === 0) return 'none';
+  return cell.done * 2 >= cell.required ? 'halfOrMore' : 'underHalf';
 }
 
 function daysInRange(dateFrom, dateTo) {
@@ -63,7 +69,9 @@ const totalsOf = (cells) => {
 
 /**
  * Checklist completion per store per business day — every assigned
- * checklist is due once a day.
+ * checklist is due once a day, on the days the store is open
+ * (stores.open_days). A closed day has nothing due: it shows as closed and
+ * leaves the store's rate and missed counts alone.
  *
  * Today is still under way, and so is yesterday until 5 AM while its
  * closing checklists can come in: a checklist not done yet on those days is
@@ -118,6 +126,7 @@ export function computeCompletion({ stores, templates, submissions = [], done = 
       });
     });
     const cells = days.map((day, i) => {
+      if (!isStoreOpenOn(store, day)) return { day, required: 0, done: 0, missing: [], open: false, closed: true };
       const due = day < storeStart ? [] : assigned.filter(t => templateStart.get(t.id) <= day);
       const doneIds = doneByDay.get(day);
       const missing = due.filter(t => !doneIds?.has(t.id));

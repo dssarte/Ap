@@ -8,6 +8,7 @@ import PageNotFound from './lib/PageNotFound';
 import Login from './pages/Login';
 import React, { lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { canConductAudits } from '@/lib/auditAccess';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import AppErrorBoundary from '@/components/AppErrorBoundary';
 import { PageLoadingSkeleton } from '@/components/PageState';
@@ -45,13 +46,25 @@ const StoreScopeRequired = () => (
   </div>
 );
 
+// Conduct Audit opened by its address from a department that doesn't audit.
+const AuditDepartmentOnly = () => (
+  <div className="app-page flex min-h-[60vh] items-center justify-center">
+    <div className="max-w-lg rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+      <h1 className="text-xl font-bold text-slate-900">Conduct Audit is for SOD and Quality Assurance</h1>
+      <p className="mt-2 text-sm leading-6 text-slate-600">
+        Your department doesn't conduct audits. If it should, ask an administrator to check your department in Administration › Users.
+      </p>
+    </div>
+  </div>
+);
+
 const LayoutWrapper = ({ children, currentPageName }) => {
   const { user } = useAuth();
   const isUnassignedStoreManager = user?.user_type === 'store_manager'
     && (!Array.isArray(user.assigned_stores) || user.assigned_stores.length === 0);
-  const content = isUnassignedStoreManager && STORE_SCOPED_PAGES.has(currentPageName)
-    ? <StoreScopeRequired />
-    : children;
+  let content = children;
+  if (isUnassignedStoreManager && STORE_SCOPED_PAGES.has(currentPageName)) content = <StoreScopeRequired />;
+  else if (currentPageName === 'Audit' && user && !canConductAudits(user)) content = <AuditDepartmentOnly />;
 
   return Layout
     ? <Layout currentPageName={currentPageName}>{content}</Layout>

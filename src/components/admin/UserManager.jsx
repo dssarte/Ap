@@ -294,7 +294,10 @@ HelpDesk Support Team`
     setFormData({
       display_name: user.display_name || user.full_name || '',
       user_type: user.user_type === 'approver' ? 'department_head' : (user.user_type || 'user'),
-      department_id: user.department_id || '', 
+      // A profile with only a department name still shows (and keeps) it.
+      department_id: user.department_id
+        || departments.find(d => (d.name || '').trim().toLowerCase() === (user.department_name || '').trim().toLowerCase())?.id
+        || '',
       phone: user.phone || '',
       brand_id: matchedStore?.brand_id || '',
       store_name: user.store_name || '',
@@ -479,7 +482,6 @@ HelpDesk Support Team`
                   <Select
                     value={addData.department_id}
                     onValueChange={(v) => setAddData({ ...addData, department_id: v })}
-                    disabled={addData.user_type === 'store_manager'}
                   >
                     <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
                     <SelectContent>
@@ -758,7 +760,6 @@ HelpDesk Support Team`
                 <Select
                   value={formData.department_id}
                   onValueChange={(value) => setFormData({ ...formData, department_id: value })}
-                  disabled={formData.user_type === 'store_manager'}
                 >
                   <SelectTrigger className="border-slate-300 h-11">
                     <SelectValue placeholder="Select department" />
@@ -771,6 +772,9 @@ HelpDesk Support Team`
                 </Select>
                 {formData.user_type === 'department_head' && (
                   <p className="text-xs text-slate-500">Department heads can only process tickets for their assigned department</p>
+                )}
+                {!['admin', 'director'].includes(formData.user_type) && (
+                  <p className="text-xs text-slate-500">Only SOD and Quality Assurance see Conduct Audit (admins and directors always do).</p>
                 )}
               </div>
 
