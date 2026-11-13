@@ -823,7 +823,7 @@ export default function AuditDashboard() {
     const status = (value) => (value == null ? '—' : value >= COMPLETION_TARGET
       ? { value: 'On target', styleId: 'pass' }
       : { value: 'Below target', styleId: 'fail' });
-    const gridStyles = { done: 'cellDone', partial: 'cellPartial', none: 'cellNone', open: 'cellOpen', notDue: 'cellNotDue' };
+    const gridStyles = { done: 'cellDone', halfOrMore: 'cellPartial', underHalf: 'cellUnderHalf', none: 'cellNone', open: 'cellOpen', closed: 'cellNotDue', notDue: 'cellNotDue' };
     const finishedIndexes = daily.flatMap((d, i) => (d.open ? [] : [i]));
 
     // Native Excel charts on a sheet of their own, drawn from the sheets
@@ -901,7 +901,7 @@ export default function AuditDashboard() {
         rows: completion.stores.map(r => [
           r.brandName,
           r.storeName,
-          ...r.cells.map(cell => ({ value: cell.required ? `${cell.done}/${cell.required}` : '—', styleId: gridStyles[completionCellState(cell)] })),
+          ...r.cells.map(cell => ({ value: cell.closed ? 'Closed' : cell.required ? `${cell.done}/${cell.required}` : '—', styleId: gridStyles[completionCellState(cell)] })),
           rate(r.rate),
         ]),
       },

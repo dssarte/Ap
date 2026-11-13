@@ -7,10 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, Loader2, Store, Tag } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Store, Tag, CalendarDays } from "lucide-react";
 import { useSearchAndPaginate } from '@/hooks/useSearchAndPaginate';
 import AdminSearchBar from './AdminSearchBar';
 import { OWNERSHIP_OPTIONS, storeOwnership, ownershipLabel } from '@/lib/storeOwnership';
+import { WEEKDAYS, EVERY_DAY, describeOpenDays, isEveryDay, openDaysValue, storeOpenDays } from '@/lib/storeOpenDays';
+
+// Quick picks for a store's open days.
+const OPEN_DAY_PRESETS = [
+  { label: 'Every day', days: EVERY_DAY },
+  { label: 'Mon–Fri', days: [1, 2, 3, 4, 5] },
+  { label: 'Mon–Sat', days: [1, 2, 3, 4, 5, 6] },
+];
 
 // ─── Brand CRUD ────────────────────────────────────────────────────────────────
 function BrandsTab() {
@@ -134,8 +142,8 @@ function BrandsTab() {
 function StoresTab() {
   const qc = useQueryClient();
   // Ownership: corporate (company-owned) or franchise — the Audit Dashboard
-  // reports the two separately.
-  const emptyForm = { brand_id: '', brand_name: '', store_name: '', location: '', ownership: 'corporate', is_active: true };
+  // reports the two separately. Open days: checklists are only due then.
+  const emptyForm = { brand_id: '', brand_name: '', store_name: '', location: '', ownership: 'corporate', is_active: true, open_days: EVERY_DAY };
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -169,21 +177,32 @@ function StoresTab() {
   });
 
   const startEdit = (s) => {
-    setForm({ brand_id: s.brand_id, brand_name: s.brand_name, store_name: s.store_name, location: s.location || '', ownership: storeOwnership(s), is_active: s.is_active });
+    setForm({ brand_id: s.brand_id, brand_name: s.brand_name, store_name: s.store_name, location: s.location || '', ownership: storeOwnership(s), is_active: s.is_active, open_days: storeOpenDays(s) });
     setEditingId(s.id);
     setShowForm(true);
+    saveMutation.reset();
   };
-  const cancel = () => { setForm(emptyForm); setEditingId(null); setShowForm(false); };
+  const cancel = () => { setForm(emptyForm); setEditingId(null); setShowForm(false); saveMutation.reset(); };
 
   const handleBrandSelect = (brandId) => {
     const brand = brands.find(b => b.id === brandId);
     setForm(f => ({ ...f, brand_id: brandId, brand_name: brand?.brand_name || '' }));
   };
 
+  // Open days go in only when they're set or being changed, so saving a store
+  // that's open every day doesn't depend on the open_days column.
   const handleSave = () => {
-    if (!form.brand_id || !form.store_name.trim()) return;
-    saveMutation.mutate(form);
+    if (!form.brand_id || !form.store_name.trim() || !form.open_days.length) return;
+    const { open_days: openDays, ...fields } = form;
+    const before = editingId ? stores.find(s => s.id === editingId) : null;
+    const saved = Array.isArray(before?.open_days) ? openDaysValue(storeOpenDays(before)) : null;
+    const value = openDaysValue(openDays);
+    saveMutation.mutate(JSON.stringify(value) !== JSON.stringify(saved) ? { ...fields, open_days: value } : fields);
   };
+  const toggleOpenDay = (day) => setForm(f => {
+    const next = f.open_days.includes(day) ? f.open_days.filter(d => d !== day) : [...f.open_days, day].sort((a, b) => a - b);
+    return next.length ? { ...f, open_days: next } : f; // at least one day
+  });
 
   // Sorted flat (not grouped) so search + 10-per-page pagination behave
   // like every other admin tab — brand headers are still inserted inline
@@ -244,6 +263,44 @@ function StoresTab() {
                 </Select>
               </div>
             </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600 mb-1 block">Open days</label>
+              <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Open days">
+                {WEEKDAYS.map(day => {
+                  const on = form.open_days.includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggleOpenDay(day.value)}
+                      className={`h-8 w-11 rounded-md border text-xs font-semibold transition-colors ${on ? 'border-[#1fd655] bg-[#1fd655]/15 text-slate-900' : 'border-slate-200 bg-white text-slate-400 line-through'}`}
+                    >
+                      {day.short}
+                    </button>
+                  );
+                })}
+                <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden="true" />
+                {OPEN_DAY_PRESETS.map(preset => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, open_days: preset.days }))}
+                    className="h-8 rounded-md px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {isEveryDay(form.open_days)
+                  ? 'Checklists are due every day.'
+                  : `Checklists are due ${describeOpenDays(form.open_days)} only — closed days don't count as missed.`}
+              </p>
+            </div>
+            {saveMutation.isError && (
+              <p className="text-sm text-red-600">Couldn't save the store: {saveMutation.error?.message}</p>
+            )}
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={cancel}>Cancel</Button>
               <Button onClick={handleSave} disabled={saveMutation.isPending} className="bg-[#1fd655] hover:bg-[#1bc14c] text-slate-900 font-semibold">
@@ -281,6 +338,11 @@ function StoresTab() {
                     <p className="font-semibold text-slate-900">{s.store_name}</p>
                     {s.location && <p className="text-xs text-slate-500">{s.location}</p>}
                   </div>
+                  {!isEveryDay(storeOpenDays(s)) && (
+                    <Badge variant="outline" className="gap-1 border-sky-200 bg-sky-50 text-xs text-sky-700" title="Checklists are only due on these days">
+                      <CalendarDays className="h-3 w-3" /> {describeOpenDays(storeOpenDays(s))}
+                    </Badge>
+                  )}
                   <Badge variant="outline" className={`text-xs ${storeOwnership(s) === 'franchise' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-600'}`}>
                     {ownershipLabel(storeOwnership(s))}
                   </Badge>
