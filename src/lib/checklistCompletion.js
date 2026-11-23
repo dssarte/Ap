@@ -2,6 +2,7 @@ import moment from 'moment';
 import { auditBusinessDayKey } from '@/lib/dateUtils';
 import { templateAppliesToStore } from '@/lib/auditTemplateMatch';
 import { isStoreOpenOn } from '@/lib/storeOpenDays';
+import { holidayOn } from '@/lib/storeHolidays';
 
 // A store is on target only when every checklist due was done.
 export const COMPLETION_TARGET = 100;
@@ -34,9 +35,10 @@ const rateOf = (done, required) => (required > 0 ? (done / required) * 100 : nul
 // How one store's day reads on the completion grid: 'done'; some missed,
 // split so the grid shows how many without pointing at it — 'halfOrMore'
 // (e.g. 2 of 3 done) or 'underHalf' (e.g. 1 of 3); 'none'; 'open' (still
-// in progress); 'closed' (the store doesn't open that weekday) or 'notDue'
-// (nothing assigned yet).
+// in progress); 'holiday' (one of the store's holidays); 'closed' (the
+// store doesn't open that weekday) or 'notDue' (nothing assigned yet).
 export function completionCellState(cell) {
+  if (cell.holiday) return 'holiday';
   if (cell.closed) return 'closed';
   if (!cell.required) return 'notDue';
   if (cell.done === cell.required) return 'done';
@@ -70,8 +72,9 @@ const totalsOf = (cells) => {
 /**
  * Checklist completion per store per business day — every assigned
  * checklist is due once a day, on the days the store is open
- * (stores.open_days). A closed day has nothing due: it shows as closed and
- * leaves the store's rate and missed counts alone.
+ * (stores.open_days) and not on its holidays (store_holidays). A closed day
+ * or holiday has nothing due: it shows as such and leaves the store's rate
+ * and missed counts alone.
  *
  * Today is still under way, and so is yesterday until 5 AM while its
  * closing checklists can come in: a checklist not done yet on those days is
@@ -85,8 +88,9 @@ const totalsOf = (cells) => {
  * done          or the same already grouped by the database — { label, templateId, days }
  *               (audit_completion_days); used instead of `submissions` when given
  * brandNameById each brand's current name, ahead of the copy saved on the store
+ * holidays      store_holidays rows — { name, date_from, date_to, all_stores, store_ids }
  */
-export function computeCompletion({ stores, templates, submissions = [], done = null, dateFrom, dateTo, brandNameById = new Map(), now = new Date() }) {
+export function computeCompletion({ stores, templates, submissions = [], done = null, dateFrom, dateTo, brandNameById = new Map(), now = new Date(), holidays = [] }) {
   const today = auditBusinessDayKey(now);
   const openFrom = auditBusinessDayKey(now, 'Closing');
   const days = daysInRange(dateFrom, dateTo < today ? dateTo : today);
@@ -111,6 +115,10 @@ export function computeCompletion({ stores, templates, submissions = [], done = 
   }
 
   const templateStart = new Map(templates.map(t => [t.id, startDayOf(t)]));
+  // Only the holidays that touch the days shown.
+  const rangeHolidays = days.length
+    ? holidays.filter(h => h.date_from <= days[days.length - 1] && h.date_to >= days[0])
+    : [];
 
   const storeRows = [];
   stores.forEach(store => {
@@ -126,6 +134,8 @@ export function computeCompletion({ stores, templates, submissions = [], done = 
       });
     });
     const cells = days.map((day, i) => {
+      const holiday = holidayOn(rangeHolidays, store, day);
+      if (holiday) return { day, required: 0, done: 0, missing: [], open: false, holiday };
       if (!isStoreOpenOn(store, day)) return { day, required: 0, done: 0, missing: [], open: false, closed: true };
       const due = day < storeStart ? [] : assigned.filter(t => templateStart.get(t.id) <= day);
       const doneIds = doneByDay.get(day);

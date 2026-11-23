@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { safeDate } from "@/lib/dateUtils";
 import { getUserDisplayName } from "@/lib/userDisplayName";
 import { markTicketNotificationsRead } from "@/lib/ticketNotifications";
+import { compressImage } from "@/lib/compressImage";
 
 const formatTicketDate = (value, pattern) => {
   const date = safeDate(value);
@@ -211,7 +212,9 @@ export default function TicketDetails({ ticket, user, onClose, onUpdate }) {
     const urls = [];
     
     for (const file of files) {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      // Photos are shrunk like audit photos (documents go up as they are) —
+      // storage is billed per GB.
+      const { file_url } = await base44.integrations.Core.UploadFile({ file: await compressImage(file) });
       urls.push(file_url);
     }
     
