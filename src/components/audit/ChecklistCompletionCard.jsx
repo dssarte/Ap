@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { CalendarCheck, Settings2, ChevronDown, ChevronUp, Loader2, Store, ListX, X, AlertTriangle } from "lucide-react";
+import { CalendarCheck, Settings2, ChevronDown, ChevronUp, Loader2, Store, ListX, X, AlertTriangle, Flag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
@@ -28,7 +28,9 @@ const CELL_STATES = {
   underHalf: { label: 'Less than half done', className: 'bg-[#ff5b00]' },
   none: { label: 'None done', className: 'bg-[#b91c1c]' },
   open: { label: 'In progress', className: 'bg-[#cde2fb]' },
-  // Striped, so a day the store doesn't open never reads as one it missed.
+  // A holiday carries a flag; a day the store doesn't open is striped — so
+  // neither ever reads as a day it missed.
+  holiday: { label: 'Holiday', className: 'bg-violet-100' },
   closed: { label: 'Closed', className: 'bg-slate-50', style: { backgroundImage: 'repeating-linear-gradient(135deg, #cbd5e1 0 1.5px, transparent 1.5px 4px)' } },
   notDue: { label: 'Not due', className: 'bg-slate-100' },
 };
@@ -146,6 +148,7 @@ const describeChecklist = (row) => ({
 // What a grid day says when pointed at or tapped.
 function describeCell({ row, cell }) {
   const where = `${moment(cell.day).format('ddd, MMM D')} · ${row.storeName} (${row.brandName})`;
+  if (cell.holiday) return `${where} — holiday: ${cell.holiday.name}, nothing due.`;
   if (cell.closed) return `${where} — closed (open ${describeOpenDays(storeOpenDays(row.store))}), nothing due.`;
   if (!cell.required) return `${where} — nothing due yet.`;
   if (cell.done === cell.required) return `${where} — all ${cell.required} done.`;
@@ -159,6 +162,7 @@ function CellSwatch({ state, className = 'h-4 w-4' }) {
   return (
     <span className={`inline-flex items-center justify-center rounded-[3px] ${className} ${CELL_STATES[state].className}`} style={CELL_STATES[state].style}>
       {state === 'none' && <X className="h-3 w-3 text-white" strokeWidth={3} />}
+      {state === 'holiday' && <Flag className="h-2.5 w-2.5 text-violet-700" strokeWidth={2.75} />}
     </span>
   );
 }
@@ -255,9 +259,13 @@ export default function ChecklistCompletionCard({
   const seriesColor = (s) => (focusName && focusName !== s.name ? INK.axis : s.color);
   const barChartMinWidth = trendData.length * (series.length * (MIN_BAR + BAR_GAP) + DAY_GAP) + 60;
   const openStoreCount = stores.filter(s => s.cells.some(c => c.open && c.done < c.required)).length;
-  // The legend lists "In progress" and "Closed" only when the grid has them.
+  // The legend lists "In progress", "Holiday" and "Closed" only when the
+  // grid has them.
   const hasClosed = stores.some(row => row.cells.some(cell => cell.closed));
-  const gridStates = Object.keys(CELL_STATES).filter(k => (k !== 'open' || inProgress) && (k !== 'closed' || hasClosed));
+  const hasHoliday = stores.some(row => row.cells.some(cell => cell.holiday));
+  const gridStates = Object.keys(CELL_STATES).filter(k => (k !== 'open' || inProgress)
+    && (k !== 'closed' || hasClosed)
+    && (k !== 'holiday' || hasHoliday));
 
   return (
     <>
@@ -585,7 +593,7 @@ export default function ChecklistCompletionCard({
                                   <td key={cell.day} className="p-0">
                                     <button
                                       type="button"
-                                      aria-label={`${moment(cell.day).format('MMM D')}: ${cell.closed ? 'closed' : `${cell.done} of ${cell.required} done`}`}
+                                      aria-label={`${moment(cell.day).format('MMM D')}: ${cell.holiday ? `holiday, ${cell.holiday.name}` : cell.closed ? 'closed' : `${cell.done} of ${cell.required} done`}`}
                                       onMouseEnter={() => setPointed({ row, cell })}
                                       onFocus={() => setPointed({ row, cell })}
                                       onClick={() => setPointed({ row, cell })}

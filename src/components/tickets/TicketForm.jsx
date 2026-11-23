@@ -136,7 +136,9 @@ export default function TicketForm({ user, onSuccess, onCancel }) {
     setUploading(true);
     setUploadError('');
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      // A photo attached here is shrunk like the ticket's images; documents
+      // go up as they are.
+      const { file_url } = await base44.integrations.Core.UploadFile({ file: await compressImage(file) });
       setFormData({ ...formData, attachment_url: file_url });
     } catch (error) {
       console.error('Upload failed:', error);

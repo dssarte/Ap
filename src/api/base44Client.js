@@ -11,6 +11,7 @@ const entityTables = {
   TicketComment: 'ticket_comments', TicketFeedback: 'ticket_feedback', Notification: 'notifications',
   AuditSubmission: 'audit_submissions',
   TicketStatusHistory: 'ticket_status_history',
+  StoreHoliday: 'store_holidays',
 };
 
 const unwrap = ({ data, error }) => { if (error) throw error; return data; };
