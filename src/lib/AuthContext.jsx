@@ -11,23 +11,33 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
 
   const checkUserAuth = useCallback(async (silent = false) => {
-    if (!silent) setIsLoadingAuth(true);
-  setAuthError(null);
+    // A silent re-check (sign-in, hourly token refresh) keeps the current
+    // error until it has a new answer: clearing it first would flash
+    // ProtectedRoute over to the login page, e.g. from the "not set up" screen.
+    if (!silent) {
+      setIsLoadingAuth(true);
+      setAuthError(null);
+    }
     try {
       const authenticated = await base44.auth.isAuthenticated();
       if (!authenticated) {
         setUser(null);
         setIsAuthenticated(false);
+        setAuthError(null);
         return;
       }
       const currentUser = await base44.auth.me();
       setUser(currentUser);
       setIsAuthenticated(true);
+      setAuthError(null);
     } catch (error) {
       console.error('User auth check failed:', error);
       setUser(null);
       setIsAuthenticated(false);
-      setAuthError({ type: 'auth_required', message: error?.message || 'Authentication required' });
+      setAuthError({
+        type: error?.code === 'user_not_registered' ? 'user_not_registered' : 'auth_required',
+        message: error?.message || 'Authentication required',
+      });
     } finally {
       if (!silent) setIsLoadingAuth(false);
     }
