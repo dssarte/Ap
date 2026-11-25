@@ -533,30 +533,16 @@ async function currentProfile() {
   const email = user.email?.trim().toLowerCase();
   const { data: profiles, error: profileError } = await supabase.from('users').select('*').ilike('email', email).limit(1);
   if (profileError) throw profileError;
-  let profile = profiles?.[0] || null;
+  const profile = profiles?.[0] || null;
   if (!profile) {
-    const now = new Date().toISOString();
-    const payload = {
-      // Must match auth.uid() — RLS policies and joins elsewhere assume
-      // public.users.id is the same as the authenticated user's id.
-      id: user.id, email, full_name: user.user_metadata?.full_name || email,
-      display_name: user.user_metadata?.full_name || email, role: 'user', app_role: 'user',
-      user_type: 'user', is_verified: true, verified: true, email_verified: true,
-      created_date: now, updated_date: now,
-    };
-    // Upsert on the email unique index — two tabs racing to self-heal the
-    // same missing profile would otherwise hit a duplicate-key error.
-    const attemptUpsert = () => supabase.from('users').upsert(payload, { onConflict: 'email' }).select().single();
-    let { data: upserted, error: upsertError } = await attemptUpsert();
-    if (upsertError?.code === '42501') {
-      // RLS denial here almost always means the access token expired
-      // between getUser() and this request — refresh once and retry
-      // before surfacing a raw Postgres error to the user.
-      await supabase.auth.refreshSession();
-      ({ data: upserted, error: upsertError } = await attemptUpsert());
-    }
-    if (upsertError) throw upsertError;
-    profile = upserted;
+    // No Users row for this login. Admin › Users creates the login and the
+    // Users row together, so this login was made some other way (e.g.
+    // Supabase's own sign-up). Don't create a row for it: anyone who signs
+    // up would walk straight in. ProtectedRoute shows the "not set up"
+    // screen (with a Sign out button) for this error.
+    const notSetUp = new Error("This login isn't set up in the app yet. Please ask an administrator to give you access.");
+    notSetUp.code = 'user_not_registered';
+    throw notSetUp;
   }
   if (profile.disabled === true || String(profile.disabled).toLowerCase() === 'true') {
     await supabase.auth.signOut();
@@ -570,7 +556,9 @@ const auth = {
   async isAuthenticated() { const { data } = await supabase.auth.getSession(); return Boolean(data.session); },
   async loginViaEmailPassword(email, password) { return unwrap(await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })); },
   async signUp({ email, password, full_name }) { return unwrap(await supabase.auth.signUp({ email: email.trim().toLowerCase(), password, options: { data: { full_name } } })); },
-  async logout(redirect = true) { await supabase.auth.signOut(); if (redirect) window.location.replace('/login'); },
+  // Only this device: store logins are shared, and Supabase's default
+  // ('global') would sign every device on the account out.
+  async logout(redirect = true) { await supabase.auth.signOut({ scope: 'local' }); if (redirect) window.location.replace('/login'); },
   redirectToLogin() { window.location.replace('/login'); },
   async updateMe(payload) { const me = await currentProfile(); return unwrap(await supabase.from('users').update(cleanPayload({ ...payload, updated_date: new Date().toISOString() })).eq('id', me.id).select().single()); },
   async resetPasswordRequest(email) { return unwrap(await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: `${window.location.origin}/reset-password` })); },
